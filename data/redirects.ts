@@ -38,4 +38,7 @@ export const REDIRECTS: Redirect[] = [
   // Convenience shortcut — canonical page stays at /dilapidation-reports/samples
   // (preserves the live ranking URL); this is just a shorter alias.
   { source: "/samples", destination: "/dilapidation-reports/samples", permanent: true },
+
+  // Short link for the inspector QR code sticker.
+  { source: "/qr", destination: "/inspector-links", permanent: true },
 ];

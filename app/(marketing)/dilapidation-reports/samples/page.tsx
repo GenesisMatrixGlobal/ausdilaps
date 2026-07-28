@@ -7,6 +7,7 @@ import { CtaBand } from "@/components/marketing/cta-band";
 import { JsonLd } from "@/components/seo/json-ld";
 import { faqPageSchema, breadcrumbSchema } from "@/lib/seo";
 import type { FaqItem } from "@/data/faq";
+import { listBoxFolderSamples, type BoxSample } from "@/lib/box";
 
 const CRUMBS = [
   { name: "Home", path: "/" },
@@ -21,69 +22,49 @@ export const metadata: Metadata = {
   alternates: { canonical: "/dilapidation-reports/samples" },
 };
 
-// Real published sample reports. Hosted on the live site during the transition;
-// migrate to storage before the domain cutover (see seo/content-backlog + Phase 7).
+// Live-synced from a Box folder every 30 min (see lib/box.ts + docs/box-samples-sync.md).
+// Add/remove a file in that folder and it shows up here on the next revalidation —
+// no redeploy needed. Falls back to this static list if Box is unreachable or not
+// yet configured, so the page never breaks or goes empty.
+const BOX_SAMPLES_FOLDER_ID = process.env.BOX_SAMPLES_FOLDER_ID ?? "302747543374";
+export const revalidate = 1800;
+
 const LIVE = "https://ausdilaps.com.au/wp-content/uploads";
-
-type Sample = { name: string; desc: string; url: string };
-type SampleGroup = { id: string; title: string; blurb: string; items: Sample[] };
-
-const SAMPLE_GROUPS: SampleGroup[] = [
-  {
-    id: "general",
-    title: "General documents",
-    blurb: "How we work — capability, methodology and the access letters property owners receive.",
-    items: [
-      { name: "Capability Statement", desc: "Who we are, our stats, methodology and project experience.", url: `${LIVE}/2026/04/AusDilaps-Capability-Statement-FY25-26.pdf` },
-      { name: "Methodology Statement", desc: "Our full 6-step survey and reporting methodology.", url: `${LIVE}/2025/09/AusDilaps-Methodology-FY25-26.pdf` },
-      { name: "Access Letter sample", desc: "The letter adjoining owners receive when we arrange access.", url: `${LIVE}/2025/07/AusDilaps-Sample-Access-Letter-2025.pdf` },
-    ],
-  },
-  {
-    id: "building",
-    title: "Residential & commercial building reports",
-    blurb: "Pre- and post-construction condition reports — the core dilapidation deliverable.",
-    items: [
-      { name: "Commercial — Pre-construction", desc: "A commercial dilapidation survey before works begin.", url: `${LIVE}/2025/04/AusDilaps-Sample-Commercial-Pre-Report.pdf` },
-      { name: "Commercial — Post-construction", desc: "The matching post-construction commercial survey.", url: `${LIVE}/2025/04/AusDilaps-Sample-Commercial-Post.pdf` },
-      { name: "Residential — Pre-construction", desc: "A residential dilapidation survey before works begin.", url: `${LIVE}/2025/04/AusDilaps-Sample-Residential-Pre.pdf` },
-      { name: "Residential — Post-construction", desc: "The matching post-construction residential survey.", url: `${LIVE}/2023/10/AD-Residential-Sample-Report-POST-2020.pdf` },
-      { name: "Defect-marked Floor Plan", desc: "Defects mapped to a scaled floor plan for precise location.", url: `${LIVE}/2025/04/AusDilaps-Sample-Defect-Floor-Plan.pdf` },
-    ],
-  },
-  {
-    id: "external",
-    title: "External & council-asset surveys",
-    blurb: "Georeferenced surveys of roads, kerbs, drainage and council-owned assets.",
-    items: [
-      { name: "GPS — Commercial External", desc: "Georeferenced external dilapidation survey.", url: `${LIVE}/2025/04/AusDilaps-Sample-GPS-External.pdf` },
-      { name: "GPS — Council Assets", desc: "Council-asset survey with GPS-logged imagery.", url: `${LIVE}/2024/11/Sample-Council-Assets.pdf` },
-      { name: "Roadways — Video Report", desc: "Vehicle-mounted roadway video condition survey.", url: `${LIVE}/2026/04/AusDilaps-Sample-2026-Video-Report.pdf` },
-      { name: "Rail Corridor", desc: "Dilapidation survey along a rail corridor.", url: `${LIVE}/2023/04/AD-Rail-Corridor-Sample-Report-2020.pdf` },
-    ],
-  },
-  {
-    id: "specialised",
-    title: "Specialised surveys",
-    blurb: "Tunnels, stations, drone, culvert and pipe — the right method for hard-to-reach assets.",
-    items: [
-      { name: "Tunnels", desc: "Dilapidation survey of a tunnel structure.", url: `${LIVE}/2025/04/AusDilaps-Sample-Tunnel.pdf` },
-      { name: "Train Station (GPS)", desc: "Georeferenced station dilapidation survey.", url: `${LIVE}/2026/04/AusDilaps-Sample-2026-Train-Station-GPS.pdf` },
-      { name: "Drone — Rural (with GPS)", desc: "Aerial dilapidation survey with georeferenced imagery.", url: `${LIVE}/2025/04/AusDilaps-Sample-Drone-Rural.pdf` },
-      { name: "Culvert & Pipe", desc: "Internal culvert and pipe condition inspection.", url: `${LIVE}/2025/07/AusDilaps-Sample-Culvert-2025.pdf` },
-    ],
-  },
-  {
-    id: "engineering",
-    title: "Engineering reports",
-    blurb: "Engineer-led assessments that supplement the condition record.",
-    items: [
-      { name: "DOA — Defect Origin Assessment", desc: "Evidence-based analysis of what caused a defect, and when.", url: `${LIVE}/2025/09/AusDilaps-Sample-DOA-2025.pdf` },
-      { name: "SIA — Structural Integrity Assessment", desc: "Evaluation of structural performance and stability.", url: `${LIVE}/2026/04/AusDilaps-Sample-2026-SIA.pdf` },
-      { name: "DCA — Defect Comparison Assessment", desc: "Pre- vs post-construction comparison of conditions.", url: `${LIVE}/2025/04/AusDilaps-Sample-Defect-Comparison-Assessment-DCA.pdf` },
-    ],
-  },
+const FALLBACK_SAMPLES: BoxSample[] = [
+  { name: "Capability Statement", url: `${LIVE}/2026/04/AusDilaps-Capability-Statement-FY25-26.pdf` },
+  { name: "Methodology Statement", url: `${LIVE}/2025/09/AusDilaps-Methodology-FY25-26.pdf` },
+  { name: "Access Letter sample", url: `${LIVE}/2025/07/AusDilaps-Sample-Access-Letter-2025.pdf` },
+  { name: "Commercial — Pre-construction", url: `${LIVE}/2025/04/AusDilaps-Sample-Commercial-Pre-Report.pdf` },
+  { name: "Commercial — Post-construction", url: `${LIVE}/2025/04/AusDilaps-Sample-Commercial-Post.pdf` },
+  { name: "Residential — Pre-construction", url: `${LIVE}/2025/04/AusDilaps-Sample-Residential-Pre.pdf` },
+  { name: "Residential — Post-construction", url: `${LIVE}/2023/10/AD-Residential-Sample-Report-POST-2020.pdf` },
+  { name: "Defect-marked Floor Plan", url: `${LIVE}/2025/04/AusDilaps-Sample-Defect-Floor-Plan.pdf` },
+  { name: "GPS — Commercial External", url: `${LIVE}/2025/04/AusDilaps-Sample-GPS-External.pdf` },
+  { name: "GPS — Council Assets", url: `${LIVE}/2024/11/Sample-Council-Assets.pdf` },
+  { name: "Roadways — Video Report", url: `${LIVE}/2026/04/AusDilaps-Sample-2026-Video-Report.pdf` },
+  { name: "Rail Corridor", url: `${LIVE}/2023/04/AD-Rail-Corridor-Sample-Report-2020.pdf` },
+  { name: "Tunnels", url: `${LIVE}/2025/04/AusDilaps-Sample-Tunnel.pdf` },
+  { name: "Train Station (GPS)", url: `${LIVE}/2026/04/AusDilaps-Sample-2026-Train-Station-GPS.pdf` },
+  { name: "Drone — Rural (with GPS)", url: `${LIVE}/2025/04/AusDilaps-Sample-Drone-Rural.pdf` },
+  { name: "Culvert & Pipe", url: `${LIVE}/2025/07/AusDilaps-Sample-Culvert-2025.pdf` },
+  { name: "DOA — Defect Origin Assessment", url: `${LIVE}/2025/09/AusDilaps-Sample-DOA-2025.pdf` },
+  { name: "SIA — Structural Integrity Assessment", url: `${LIVE}/2026/04/AusDilaps-Sample-2026-SIA.pdf` },
+  { name: "DCA — Defect Comparison Assessment", url: `${LIVE}/2025/04/AusDilaps-Sample-Defect-Comparison-Assessment-DCA.pdf` },
 ];
+
+function titleFromFilename(name: string): string {
+  return name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim();
+}
+
+async function getSamples(): Promise<BoxSample[]> {
+  try {
+    const live = await listBoxFolderSamples(BOX_SAMPLES_FOLDER_ID);
+    return live.length > 0 ? live : FALLBACK_SAMPLES;
+  } catch (e) {
+    console.error("[samples] Box fetch failed, using fallback list:", e);
+    return FALLBACK_SAMPLES;
+  }
+}
 
 const SAMPLES_FAQ: FaqItem[] = [
   {
@@ -104,7 +85,9 @@ const SAMPLES_FAQ: FaqItem[] = [
   },
 ];
 
-export default function SamplesPage() {
+export default async function SamplesPage() {
+  const samples = await getSamples();
+
   return (
     <>
       <JsonLd data={[faqPageSchema(SAMPLES_FAQ), breadcrumbSchema(CRUMBS)]} />
@@ -116,50 +99,25 @@ export default function SamplesPage() {
         intro="See the standard for yourself. We publish real sample reports across every capture type — from residential and commercial surveys to drone, tunnel, roadway and engineering reports. Every one is AS 4349.0-compliant, with location-referenced imagery and engineer sign-off."
       />
 
-      {/* Jump nav — lets you skip straight to a category instead of scrolling past everything */}
-      <section className="border-b border-ad-border py-5">
-        <Container>
-          <nav aria-label="Sample categories" className="flex flex-wrap gap-x-6 gap-y-2">
-            {SAMPLE_GROUPS.map((group) => (
+      <section className="py-16 lg:py-20">
+        <Container className="max-w-3xl">
+          <Eyebrow className="text-ad-accent">Sample reports</Eyebrow>
+          <div className="mt-6 divide-y divide-ad-border rounded-xl border border-ad-border bg-white">
+            {samples.map((s) => (
               <a
-                key={group.id}
-                href={`#${group.id}`}
-                className="text-sm font-medium text-ad-muted transition-colors hover:text-ad-accent"
+                key={s.url}
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-ad-surface sm:px-6"
               >
-                {group.title}
+                <h3 className="font-heading text-[0.95rem] font-semibold text-ad-ink group-hover:text-ad-accent">
+                  {titleFromFilename(s.name)}
+                </h3>
+                <span className="shrink-0 text-sm font-medium text-ad-accent">View →</span>
               </a>
             ))}
-          </nav>
-        </Container>
-      </section>
-
-      <section className="py-16 lg:py-20">
-        <Container className="max-w-3xl space-y-14">
-          {SAMPLE_GROUPS.map((group) => (
-            <div key={group.id} id={group.id} className="scroll-mt-24">
-              <Eyebrow className="text-ad-accent">{group.title}</Eyebrow>
-              <p className="mt-3 text-ad-muted">{group.blurb}</p>
-              <div className="mt-6 divide-y divide-ad-border rounded-xl border border-ad-border bg-white">
-                {group.items.map((s) => (
-                  <a
-                    key={s.name}
-                    href={s.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-ad-surface sm:px-6"
-                  >
-                    <div>
-                      <h3 className="font-heading text-[0.95rem] font-semibold text-ad-ink group-hover:text-ad-accent">
-                        {s.name}
-                      </h3>
-                      <p className="mt-0.5 text-sm leading-relaxed text-ad-muted">{s.desc}</p>
-                    </div>
-                    <span className="shrink-0 text-sm font-medium text-ad-accent">View →</span>
-                  </a>
-                ))}
-              </div>
-            </div>
-          ))}
+          </div>
         </Container>
       </section>
 

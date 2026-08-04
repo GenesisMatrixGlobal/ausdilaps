@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import type { SizingResult } from "@/lib/property-sizing/types";
+import { SitePlanTab } from "./site-plan-tab";
 
-type Mode = "text" | "image";
+type Mode = "text" | "image" | "site-plan";
 
 async function fileToBase64(file: File): Promise<{ data: string; mediaType: string }> {
   return new Promise((resolve, reject) => {
@@ -147,23 +148,37 @@ export default function PropertySizingPage() {
         dwelling area with confidence scores.
       </p>
 
+      {/* Mode tabs */}
+      <div className="mt-6 flex gap-2 border-b border-ad-border">
+        {(
+          [
+            { key: "text", label: "Paste addresses" },
+            { key: "image", label: "Upload screenshot" },
+            { key: "site-plan", label: "Measure a site plan" },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setMode(tab.key)}
+            className={cn(
+              "-mb-px border-b-2 px-3 py-2 text-sm font-medium",
+              mode === tab.key
+                ? "border-ad-orange text-ad-ink"
+                : "border-transparent text-ad-muted hover:text-ad-ink"
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {mode === "site-plan" && <SitePlanTab />}
+
+      {mode !== "site-plan" && (
+      <>
       {/* Input */}
       <div className="mt-8 rounded-xl border border-ad-border bg-white p-5">
-        <div className="mb-4 flex gap-2">
-          <button
-            className={cn(buttonVariants({ variant: mode === "text" ? "primary" : "outline", size: "sm" }))}
-            onClick={() => setMode("text")}
-          >
-            Paste addresses
-          </button>
-          <button
-            className={cn(buttonVariants({ variant: mode === "image" ? "primary" : "outline", size: "sm" }))}
-            onClick={() => setMode("image")}
-          >
-            Upload screenshot
-          </button>
-        </div>
-
         {mode === "text" ? (
           <textarea
             value={text}
@@ -336,6 +351,8 @@ export default function PropertySizingPage() {
             should be verified in CoreLogic.
           </p>
         </div>
+      )}
+      </>
       )}
     </main>
   );

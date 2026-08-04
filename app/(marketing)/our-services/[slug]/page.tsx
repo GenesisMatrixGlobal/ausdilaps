@@ -92,7 +92,7 @@ export default async function ServicePage({ params }: { params: Promise<{ slug: 
 
       <CtaBand
         heading={`Need ${service.h1.toLowerCase()} scoped?`}
-        subhead="Tell us about your project and we'll scope it within 48 hours."
+        subhead="Tell us about your project and we'll scope it."
         secondary={false}
         size="md"
       />

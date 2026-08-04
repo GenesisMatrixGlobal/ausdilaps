@@ -2,10 +2,17 @@
 
 import { useState } from "react";
 import Script from "next/script";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormRegister } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { INQUIRY_TYPES, PROPERTY_ROLES, CONTACT_METHODS, type InquiryType } from "@/lib/leads";
+import {
+  INQUIRY_TYPES,
+  PROPERTY_ROLES,
+  CONTACT_METHODS,
+  AU_STATES,
+  ASSET_COUNT_RANGES,
+  type InquiryType,
+} from "@/lib/leads";
 
 type FormValues = {
   inquiryType: InquiryType | "";
@@ -15,14 +22,22 @@ type FormValues = {
   role: string;
   company: string;
   projectName: string;
-  projectLocation: string;
-  adjoiningCount: string;
-  requiredStart: string;
-  daConditionRef: string;
+  // "New Quote" — structured project address
+  projectAddressLine: string;
+  projectAddressSuburb: string;
+  projectAddressState: string;
+  projectAddressPostcode: string;
+  assetCount: string;
   propertyRole: string;
   projectNumber: string;
   documentId: string;
+  // "I Received An Access Letter" — the enquirer's own address
   contactAddress: string;
+  // "Report Inquiry" / "General Inquiry" — structured address
+  addressLine: string;
+  addressSuburb: string;
+  addressState: string;
+  addressPostcode: string;
   contactMethod: string[];
   notes: string;
   company_website: string; // honeypot
@@ -31,6 +46,67 @@ type FormValues = {
 const inputCls =
   "mt-1.5 w-full rounded-md border border-ad-border bg-white px-4 py-2.5 text-[0.95rem] text-ad-ink placeholder:text-ad-muted/60 focus:border-ad-accent focus:outline-none focus:ring-2 focus:ring-ad-accent/30";
 const labelCls = "block text-sm font-medium text-ad-ink";
+
+function composeAddress(line: string, suburb: string, state: string, postcode: string) {
+  return [line.trim(), [suburb.trim(), state.trim(), postcode.trim()].filter(Boolean).join(" ")]
+    .filter(Boolean)
+    .join(", ");
+}
+
+/** Standard AU address section, reused for the project address (New Quote)
+ *  and the enquiry address (Report Inquiry / General Inquiry). */
+function AddressFields({
+  register,
+  namePrefix,
+  label = "Address",
+}: {
+  register: UseFormRegister<FormValues>;
+  namePrefix: "project" | "";
+  label?: string;
+}) {
+  const line = namePrefix === "project" ? "projectAddressLine" : "addressLine";
+  const suburb = namePrefix === "project" ? "projectAddressSuburb" : "addressSuburb";
+  const state = namePrefix === "project" ? "projectAddressState" : "addressState";
+  const postcode = namePrefix === "project" ? "projectAddressPostcode" : "addressPostcode";
+
+  return (
+    <div className="sm:col-span-2">
+      <label className={labelCls} htmlFor={line}>
+        {label}
+      </label>
+      <input id={line} placeholder="Street address" className={inputCls} {...register(line)} />
+      <div className="mt-4 grid grid-cols-[2fr_1fr_1fr] gap-4">
+        <div>
+          <label className={labelCls} htmlFor={suburb}>
+            Suburb
+          </label>
+          <input id={suburb} className={inputCls} {...register(suburb)} />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor={state}>
+            State
+          </label>
+          <select id={state} className={inputCls} defaultValue="" {...register(state)}>
+            <option value="" disabled>
+              —
+            </option>
+            {AU_STATES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls} htmlFor={postcode}>
+            Postcode
+          </label>
+          <input id={postcode} inputMode="numeric" maxLength={4} className={inputCls} {...register(postcode)} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function QuoteForm() {
   const {
@@ -52,11 +128,24 @@ export function QuoteForm() {
     const turnstileToken =
       (document.querySelector('[name="cf-turnstile-response"]') as HTMLInputElement | null)?.value ?? "";
     try {
+      const projectLocation = composeAddress(
+        values.projectAddressLine,
+        values.projectAddressSuburb,
+        values.projectAddressState,
+        values.projectAddressPostcode
+      );
+      const contactAddress =
+        values.inquiryType === "I Received An Access Letter"
+          ? values.contactAddress
+          : composeAddress(values.addressLine, values.addressSuburb, values.addressState, values.addressPostcode);
+
       const res = await fetch("/api/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...values,
+          projectLocation,
+          contactAddress,
           turnstileToken,
           sourcePage: typeof window !== "undefined" ? window.location.pathname : "",
         }),
@@ -81,7 +170,7 @@ export function QuoteForm() {
         <div className="rule-accent mx-auto mb-5 w-12" />
         <h3 className="font-heading text-2xl font-semibold text-ad-ink">Request received.</h3>
         <p className="mx-auto mt-3 max-w-md text-ad-muted">
-          Thanks — we&apos;ve got your details and will come back to you, typically within 48 hours.
+          Thanks — we&apos;ve got your details and will come back to you shortly.
           If it&apos;s urgent, call us on{" "}
           <a href="tel:1800345277" className="font-medium text-ad-accent">
             1800 345 277
@@ -180,52 +269,27 @@ export function QuoteForm() {
             </label>
             <input id="company" className={inputCls} {...register("company")} />
           </div>
-          <div>
+          <div className="sm:col-span-2">
             <label className={labelCls} htmlFor="projectName">
               Project name
             </label>
             <input id="projectName" className={inputCls} {...register("projectName")} />
           </div>
+          <AddressFields register={register} namePrefix="project" label="Project address" />
           <div>
-            <label className={labelCls} htmlFor="projectLocation">
-              Project address
+            <label className={labelCls} htmlFor="assetCount">
+              Approx. assets requiring inspection
             </label>
-            <input
-              id="projectLocation"
-              placeholder="Suburb / city / state"
-              className={inputCls}
-              {...register("projectLocation")}
-            />
-          </div>
-          <div>
-            <label className={labelCls} htmlFor="adjoiningCount">
-              Adjoining properties
-            </label>
-            <input
-              id="adjoiningCount"
-              type="number"
-              min={0}
-              placeholder="Approx. number"
-              className={inputCls}
-              {...register("adjoiningCount")}
-            />
-          </div>
-          <div>
-            <label className={labelCls} htmlFor="requiredStart">
-              Required start date
-            </label>
-            <input id="requiredStart" type="date" className={inputCls} {...register("requiredStart")} />
-          </div>
-          <div className="sm:col-span-2">
-            <label className={labelCls} htmlFor="daConditionRef">
-              DA condition / contract clause reference
-            </label>
-            <input
-              id="daConditionRef"
-              placeholder="If your consent or contract requires a dilapidation report"
-              className={inputCls}
-              {...register("daConditionRef")}
-            />
+            <select id="assetCount" className={inputCls} defaultValue="" {...register("assetCount")}>
+              <option value="" disabled>
+                — Select an option —
+              </option>
+              {ASSET_COUNT_RANGES.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       )}
@@ -291,6 +355,7 @@ export function QuoteForm() {
             <input id="documentId" className={inputCls} {...register("documentId")} />
             <p className="mt-1.5 text-xs text-ad-muted">Found on the front page of your report, where accessible.</p>
           </div>
+          <AddressFields register={register} namePrefix="" />
         </div>
       )}
 
@@ -307,17 +372,7 @@ export function QuoteForm() {
               {...register("projectNumber")}
             />
           </div>
-          <div>
-            <label className={labelCls} htmlFor="contactAddress">
-              Address
-            </label>
-            <input
-              id="contactAddress"
-              placeholder="Street, suburb, state, postcode"
-              className={inputCls}
-              {...register("contactAddress")}
-            />
-          </div>
+          <AddressFields register={register} namePrefix="" />
         </div>
       )}
 
@@ -362,9 +417,6 @@ export function QuoteForm() {
         <Button type="submit" size="lg" variant="accent" className={cn(isSubmitting && "opacity-70")}>
           {isSubmitting ? "Sending…" : "Submit"}
         </Button>
-        <p className="text-xs text-ad-muted">
-          We&apos;ll review your request and reply within 48 hours.
-        </p>
       </div>
     </form>
   );

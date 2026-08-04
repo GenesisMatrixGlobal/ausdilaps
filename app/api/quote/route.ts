@@ -37,9 +37,7 @@ async function sendEmails(d: QuoteInput, tier: LeadTier, testMode: boolean) {
     ["Phone", d.phone],
     ["Project", d.projectName],
     ["Location", d.projectLocation],
-    ["Adjoining properties", d.adjoiningCount],
-    ["Required start", d.requiredStart],
-    ["DA condition / clause", d.daConditionRef],
+    ["Approx. assets requiring inspection", d.assetCount],
     ["Property role", d.propertyRole],
     ["Project / OPT number", d.projectNumber],
     ["Document ID", d.documentId],
@@ -90,7 +88,7 @@ async function sendEmails(d: QuoteInput, tier: LeadTier, testMode: boolean) {
       </div>
       <div style="padding:36px;">
         <p style="margin-top:0;">Hi ${esc(firstName)},</p>
-        <p style="line-height:1.7;">Thanks for your enquiry. We've received the details of your project and will scope it and come back to you — typically within 48 hours.</p>
+        <p style="line-height:1.7;">Thanks for your enquiry. We've received the details of your project and will scope it and come back to you shortly.</p>
         <p style="line-height:1.7;">If it's urgent, call us on <strong>${SITE.phone}</strong> or reply to this email.</p>
         <p style="color:#5b6570;font-size:14px;margin-bottom:0;">— The AusDilaps team</p>
       </div>
@@ -148,9 +146,7 @@ export async function POST(req: NextRequest) {
     company: d.company || null,
     project_name: d.projectName || null,
     project_location: d.projectLocation || null,
-    adjoining_count: d.adjoiningCount ?? null,
-    required_start: d.requiredStart || null,
-    da_condition_ref: d.daConditionRef || null,
+    asset_count: d.assetCount || null,
     property_role: d.propertyRole || null,
     project_number: d.projectNumber || null,
     document_id: d.documentId || null,

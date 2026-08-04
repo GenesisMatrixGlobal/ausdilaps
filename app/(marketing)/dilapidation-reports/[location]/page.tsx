@@ -165,7 +165,7 @@ export default async function LocationPage({
 
       <CtaBand
         heading={`Need a dilapidation report in ${loc.city}?`}
-        subhead="Tell us the project, location and adjoining properties — we'll scope it within 48 hours."
+        subhead="Tell us the project, location and adjoining properties — we'll scope it."
         secondary={false}
         size="md"
       />

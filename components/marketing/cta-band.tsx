@@ -10,7 +10,7 @@ import { QUOTE_HREF, CAPABILITY_HREF } from "@/lib/site";
 export function CtaBand({
   eyebrow,
   heading = "Protect your project from the dispute that hasn't happened yet.",
-  subhead = "Tell us about your project and we'll scope it within 48 hours.",
+  subhead = "Tell us about your project and we'll scope it.",
   secondary = true,
   size = "lg",
 }: {

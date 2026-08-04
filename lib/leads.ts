@@ -14,6 +14,12 @@ export type PropertyRole = (typeof PROPERTY_ROLES)[number];
 export const CONTACT_METHODS = ["SMS", "Call", "Email"] as const;
 export type ContactMethod = (typeof CONTACT_METHODS)[number];
 
+export const AU_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"] as const;
+export type AuState = (typeof AU_STATES)[number];
+
+export const ASSET_COUNT_RANGES = ["<10", "10-100", "100+"] as const;
+export type AssetCountRange = (typeof ASSET_COUNT_RANGES)[number];
+
 /** Quote form payload. The server is the source of truth for validation; the
  *  client form mirrors these rules for UX.
  *
@@ -31,10 +37,8 @@ export const quoteSchema = z.object({
   company: z.string().trim().optional().default(""),
   projectName: z.string().trim().optional().default(""),
   projectLocation: z.string().trim().optional().default(""),
-  /** number of adjoining properties — string from the form, coerced */
-  adjoiningCount: z.coerce.number().int().nonnegative().max(100000).optional(),
-  requiredStart: z.string().trim().optional().default(""),
-  daConditionRef: z.string().trim().optional().default(""),
+  /** approx. number of assets (adjoining properties, culverts, etc.) requiring inspection */
+  assetCount: z.enum(ASSET_COUNT_RANGES).optional(),
   // "I Received An Access Letter" branch
   propertyRole: z.enum(PROPERTY_ROLES).optional(),
   // "Report Inquiry" / "General Inquiry" branches
@@ -83,20 +87,21 @@ const TIER1_SIGNALS = [
 
 /**
  * Classify the lead so sales can triage. Tier-1 = government / major-contractor
- * signals or many adjoining properties (defensible, high-value work). Tier-2 =
- * a commercial enquiry (has a company). Residential = an individual.
+ * signals, or 100+ assets requiring inspection (defensible, high-value work).
+ * Tier-2 = a commercial enquiry (has a company, or 10-100 assets). Residential
+ * = an individual.
  */
 export function classifyTier(input: {
   role?: string;
   company?: string;
-  adjoiningCount?: number;
+  assetCount?: AssetCountRange;
 }): LeadTier {
   const text = `${input.role ?? ""} ${input.company ?? ""}`.toLowerCase();
-  const count = input.adjoiningCount ?? 0;
 
-  if (count >= 20) return "tier1";
+  if (input.assetCount === "100+") return "tier1";
   if (TIER1_SIGNALS.some((k) => text.includes(k))) return "tier1";
   if ((input.company ?? "").trim().length > 1) return "tier2";
-  if (count >= 1 || (input.role ?? "").trim().length > 1) return "residential";
+  if (input.assetCount === "10-100") return "tier2";
+  if ((input.role ?? "").trim().length > 1) return "residential";
   return "unclassified";
 }

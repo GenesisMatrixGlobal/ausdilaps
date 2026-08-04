@@ -64,7 +64,7 @@ export const LOCATIONS: Location[] = [
       },
       {
         q: "How much does a dilapidation report cost in Sydney?",
-        a: "Cost depends on the number of adjoining properties, the asset types involved and access. Tell us the project, location and number of adjoining properties and we'll scope an itemised quote within 48 hours.",
+        a: "Cost depends on the number of adjoining properties, the asset types involved and access. Tell us the project, location and number of adjoining properties and we'll scope an itemised quote.",
       },
       {
         q: "Who arranges access to the neighbouring properties?",
@@ -146,7 +146,7 @@ export const LOCATIONS: Location[] = [
       },
       {
         q: "How long does a Melbourne dilapidation report take?",
-        a: "It depends on the number of properties and the scope. Smaller residential surveys can be completed quickly; larger corridor or infrastructure jobs are scheduled in stages. Send us the detail and we'll scope it within 48 hours.",
+        a: "It depends on the number of properties and the scope. Smaller residential surveys can be completed quickly; larger corridor or infrastructure jobs are scheduled in stages. Send us the detail and we'll scope it.",
       },
     ],
   },
@@ -185,7 +185,7 @@ export const LOCATIONS: Location[] = [
       },
       {
         q: "How do I get a quote for a Wollongong dilapidation report?",
-        a: "Contact us with the project, location and number of adjoining properties. We'll prepare an itemised quote — typically within 48 hours — and arrange access on your behalf once you proceed.",
+        a: "Contact us with the project, location and number of adjoining properties. We'll prepare an itemised quote and arrange access on your behalf once you proceed.",
       },
     ],
   },
@@ -229,7 +229,7 @@ export const LOCATIONS: Location[] = [
       },
       {
         q: "How do I request a Canberra dilapidation report?",
-        a: "Tell us the project, location and the adjoining or heritage-listed properties involved, and we'll scope an itemised quote within 48 hours.",
+        a: "Tell us the project, location and the adjoining or heritage-listed properties involved, and we'll scope an itemised quote.",
       },
     ],
   },
@@ -269,7 +269,7 @@ export const LOCATIONS: Location[] = [
       },
       {
         q: "How do I get a quote for a Perth dilapidation report?",
-        a: "Tell us the project, location and number of adjoining properties, and we'll prepare an itemised quote — including travel and scheduling — within 48 hours.",
+        a: "Tell us the project, location and number of adjoining properties, and we'll prepare an itemised quote — including travel and scheduling.",
       },
     ],
   },

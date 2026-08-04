@@ -114,7 +114,7 @@ export default async function InsightPage({ params }: { params: Promise<{ slug: 
 
       <CtaBand
         heading="Need a dilapidation report scoped?"
-        subhead="Tell us the project, location and adjoining properties — we'll scope it within 48 hours."
+        subhead="Tell us the project, location and adjoining properties — we'll scope it."
         secondary={false}
         size="md"
       />

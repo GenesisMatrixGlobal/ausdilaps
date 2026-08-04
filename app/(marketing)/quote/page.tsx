@@ -15,13 +15,13 @@ const CRUMBS = [
 export const metadata: Metadata = {
   title: "Request a Quote | Dilapidation Report Scoping — AusDilaps",
   description:
-    "Get your dilapidation report scoped. Tell us the project, location and adjoining properties and we'll return an itemised quote — typically within 48 hours. Reports compliant with AS 4349.0.",
+    "Get your dilapidation report scoped. Tell us the project, location and adjoining properties and we'll return an itemised quote. Reports compliant with AS 4349.0.",
   alternates: { canonical: "/quote" },
 };
 
 const STEPS = [
   { n: "01", title: "Tell us what you need", body: "Pick the option that fits — a new quote, an access letter query, a report question or something else." },
-  { n: "02", title: "We route it", body: "Your enquiry goes straight to the right person on our team — typically a response within 48 hours." },
+  { n: "02", title: "We route it", body: "Your enquiry goes straight to the right person on our team." },
   { n: "03", title: "We follow through", body: "For new projects, that means an itemised quote and, on acceptance, access arranged and the survey scheduled." },
 ];
 
@@ -40,7 +40,6 @@ export default function QuotePage() {
           <p className="mt-6 text-lg leading-relaxed text-ad-muted">
             Tell us what you need — a new project quote, a question about an access letter, an
             existing report, or something else — and we&apos;ll route it straight to the right person.
-            Typically within 48 hours.
           </p>
         </Container>
       </section>

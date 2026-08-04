@@ -60,7 +60,7 @@ export default function FaqPage() {
 
       <CtaBand
         heading="Still have a question about your project?"
-        subhead="Tell us about it and we'll scope your dilapidation report within 48 hours."
+        subhead="Tell us about it and we'll scope your dilapidation report."
         size="md"
       />
     </>

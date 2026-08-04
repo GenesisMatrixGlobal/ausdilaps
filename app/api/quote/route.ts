@@ -53,15 +53,21 @@ async function sendEmails(d: QuoteInput, tier: LeadTier, testMode: boolean) {
     )
     .join("");
 
-  const send = (payload: Record<string, unknown>) =>
-    fetch("https://api.resend.com/emails", {
+  const send = async (payload: Record<string, unknown>) => {
+    const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    if (!res.ok) {
+      console.error("[quote] resend send failed:", res.status, await res.text());
+      return false;
+    }
+    return true;
+  };
 
   // Admin notice
-  await send({
+  const adminSent = await send({
     from,
     to: [adminEmail],
     ...(tier === "tier1" && salesNotify ? { cc: [salesNotify] } : {}),
@@ -76,7 +82,7 @@ async function sendEmails(d: QuoteInput, tier: LeadTier, testMode: boolean) {
 
   // Acknowledgement (routed to admin in test mode)
   const firstName = d.name.split(" ")[0];
-  await send({
+  const ackSent = await send({
     from,
     to: [testMode ? adminEmail : d.email],
     reply_to: adminEmail,
@@ -97,7 +103,7 @@ async function sendEmails(d: QuoteInput, tier: LeadTier, testMode: boolean) {
       </div>
     </div>`,
   });
-  return true;
+  return adminSent && ackSent;
 }
 
 export async function POST(req: NextRequest) {

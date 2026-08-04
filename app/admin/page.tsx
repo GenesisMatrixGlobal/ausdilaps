@@ -8,10 +8,16 @@ const TOOLS = [
   },
   {
     title: "Road Analysis",
-    description:
-      "Build survey path .kml files, or snapshot a road with the inspection area highlighted for a site markup.",
+    description: "Build survey path .kml files, or trace real roads for a footpath/road register.",
     href: "/admin/kml-builder",
     team: "Inspectors Team",
+  },
+  {
+    title: "Site Markup",
+    description:
+      "Snapshot a road from above with the inspection area highlighted, for estimating and project scoping.",
+    href: "/admin/site-markup",
+    team: "Estimating / Projects",
   },
 ];
 

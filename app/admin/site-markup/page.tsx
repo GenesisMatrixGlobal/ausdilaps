@@ -35,7 +35,7 @@ function slugify(value: string): string {
   );
 }
 
-export function SiteMarkupTab() {
+export default function SiteMarkupPage() {
   const [roadName, setRoadName] = useState("");
   const [fromDesc, setFromDesc] = useState("");
   const [toDesc, setToDesc] = useState("");
@@ -103,15 +103,17 @@ export function SiteMarkupTab() {
   }
 
   return (
-    <div className="mt-8">
-      <p className="max-w-2xl text-ad-muted">
+    <main className="mx-auto max-w-6xl px-6 py-10">
+      <p className="text-xs uppercase tracking-[0.15em] text-ad-steel">AusDilaps · Estimating &amp; Projects</p>
+      <h1 className="mt-1 text-3xl font-semibold text-ad-ink">Site Markup</h1>
+      <p className="mt-2 max-w-2xl text-ad-muted">
         Snapshot the exact stretch of road to inspect, highlighted from above, so the field team
         knows exactly where to survey on site. Needs{" "}
         <code className="rounded bg-ad-surface px-1 py-0.5 text-xs">GOOGLE_MAPS_API_KEY</code> with
         the Maps Static API enabled (same key as the &ldquo;Find Google Maps links&rdquo; feature).
       </p>
 
-      <div className="mt-4 grid gap-4 rounded-xl border border-ad-border bg-white p-5 sm:grid-cols-2">
+      <div className="mt-8 grid gap-4 rounded-xl border border-ad-border bg-white p-5 sm:grid-cols-2">
         <label className="block text-sm font-medium text-ad-ink">
           Road name
           <input
@@ -258,6 +260,6 @@ export function SiteMarkupTab() {
           <img src={imageUrl} alt={`${roadName} site markup`} className="block w-full" />
         </div>
       )}
-    </div>
+    </main>
   );
 }

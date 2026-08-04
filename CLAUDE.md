@@ -88,6 +88,7 @@ Not a brochure. The goal is to make AusDilaps **the category authority** in Aust
 
 ## 7. Real content sources (USE THESE — never fabricate)
 
+- **`~/Documents/VSCode/Reference Files/ausdilaps/`** — external drop zone for source material (capability statements, competitor research, vendor docs, briefs, data exports, large files); see its `CLAUDE.md` for an index. Lives outside this repo (not git-tracked).
 - **`lib/site.ts`** — SITE (ABN, contact, AS 4349.0), STATS (1,000+ surveys/qtr · 1M+ photos/yr · 1,300+ hrs/mo · 600+ work orders/mo), SERVICES (Dilapidation flagship + SIA + DOA + DCA), CAPTURE_METHODS, PROCESS (the real **6-step methodology**), TEAM (Mike Burford CEO, Rhys Morgan GM, Kylie Crosson, Niro Rudrakumar, Jessica Lebbos, Martin Weng), TIER1_PROJECTS.
 - **`data/faq.ts`** — the real FAQ (Dilapidation, Structural, BASIX, NatHERS), harvested verbatim from the live site.
 - **`data/case-studies.ts`** — 3 real case studies with values: Main South Road Duplication **$1.1bn**, Ipswich Hospital **$710M**, Glenrowan Solar Farm **$170M** (client, location, metrics).

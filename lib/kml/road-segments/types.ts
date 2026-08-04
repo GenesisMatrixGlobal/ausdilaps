@@ -12,6 +12,13 @@ export interface RoadSegmentInput {
   toDesc: string;
   /** As printed on the sheet — "N/A" or blank means no footpath on this segment. */
   footpathLengthKm?: number | null;
+  /**
+   * Appended after `location` in Google geocoding queries — defaults to "QLD, Australia"
+   * (this tool's original council-register use case). Pass "Australia" (or omit the
+   * state) when `location` already carries its own state/postcode, e.g. "Newport, VIC 3015"
+   * — otherwise the two conflict and Google can geocode to somewhere nonsensical.
+   */
+  regionHint?: string;
 }
 
 export type RoadTraceStatus = "ok" | "geocode_failed" | "route_failed" | "error";

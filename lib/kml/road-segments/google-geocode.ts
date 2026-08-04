@@ -46,10 +46,11 @@ async function callGoogleMaps<T extends { status: string; error_message?: string
 export async function geocodeIntersection(
   roadName: string,
   crossDesc: string,
-  location: string
+  location: string,
+  regionHint = "QLD, Australia"
 ): Promise<GeocodedIntersection | null> {
   const url = new URL(GEOCODE_URL);
-  url.searchParams.set("address", `${roadName} & ${crossDesc}, ${location}, QLD, Australia`);
+  url.searchParams.set("address", `${roadName} & ${crossDesc}, ${location}, ${regionHint}`);
   url.searchParams.set("region", "au");
 
   const data = await callGoogleMaps<GeocodeResponse>(url);

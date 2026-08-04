@@ -21,8 +21,8 @@ function intersectionFlag(label: string, point: GeocodedIntersection): string | 
 export async function resolveSegmentRoute(segment: RoadSegmentInput): Promise<SegmentRouteResolution> {
   const flags: string[] = [];
   const [origin, destination] = await Promise.all([
-    geocodeIntersection(segment.roadName, segment.fromDesc, segment.location),
-    geocodeIntersection(segment.roadName, segment.toDesc, segment.location),
+    geocodeIntersection(segment.roadName, segment.fromDesc, segment.location, segment.regionHint),
+    geocodeIntersection(segment.roadName, segment.toDesc, segment.location, segment.regionHint),
   ]);
 
   if (!origin || !destination) {

@@ -7,9 +7,9 @@ const TOOLS = [
     team: "Estimating Team",
   },
   {
-    title: "KML Path Builder",
+    title: "Road Analysis",
     description:
-      "Enter or upload survey path coordinates and download a ready-to-use .kml file.",
+      "Build survey path .kml files, or snapshot a road with the inspection area highlighted for a site markup.",
     href: "/admin/kml-builder",
     team: "Inspectors Team",
   },

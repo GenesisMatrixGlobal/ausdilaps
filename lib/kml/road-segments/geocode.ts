@@ -29,12 +29,12 @@ interface NominatimRow {
   lon: string;
 }
 
-export async function geocodeSuburb(location: string): Promise<LatLng | null> {
+export async function geocodeSuburb(location: string, regionHint = "Queensland, Australia"): Promise<LatLng | null> {
   if (!location.trim()) return null;
 
   return throttle(async () => {
     const url = new URL(NOMINATIM_URL);
-    url.searchParams.set("q", `${location}, Queensland, Australia`);
+    url.searchParams.set("q", `${location}, ${regionHint}`);
     url.searchParams.set("format", "json");
     url.searchParams.set("limit", "1");
     url.searchParams.set("countrycodes", "au");

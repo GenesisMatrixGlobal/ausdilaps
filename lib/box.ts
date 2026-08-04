@@ -12,6 +12,14 @@ export type BoxSample = {
   url: string;
 };
 
+export type BoxCategory = {
+  name: string;
+  samples: BoxSample[];
+};
+
+/** Category label for files sitting loose in the root folder, outside any subfolder. */
+const UNCATEGORIZED = "Other";
+
 type BoxTokenResponse = { access_token: string; expires_in: number };
 
 type BoxFileItem = {
@@ -61,30 +69,53 @@ async function ensureSharedLink(fileId: string, token: string): Promise<string> 
   return data.shared_link.url;
 }
 
-/**
- * List every file in a Box folder (flat — subfolders are ignored) with a
- * public shared link each, creating shared links for any file that doesn't
- * already have one.
- */
-export async function listBoxFolderSamples(folderId: string): Promise<BoxSample[]> {
-  const token = await getAccessToken();
-
+async function listFolderItems(folderId: string, token: string): Promise<BoxFileItem[]> {
   const res = await fetch(
-    `https://api.box.com/2.0/folders/${folderId}/items?fields=name,type,shared_link&limit=200`,
+    `https://api.box.com/2.0/folders/${folderId}/items?fields=name,type,shared_link&limit=200&sort=name&direction=ASC`,
     { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
   );
   if (!res.ok) throw new Error(`Box list folder failed: ${res.status} ${await res.text()}`);
   const data = (await res.json()) as { entries: BoxFileItem[] };
+  return data.entries;
+}
 
-  const files = data.entries.filter((e) => e.type === "file");
-
+async function resolveSamples(files: BoxFileItem[], token: string): Promise<BoxSample[]> {
   const samples = await Promise.all(
     files.map(async (f) => ({
       name: f.name,
       url: f.shared_link?.url ?? (await ensureSharedLink(f.id, token)),
     }))
   );
-
-  // Stable, readable order.
   return samples.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Build the samples page's category list from a Box folder: every immediate
+ * subfolder becomes a category (named after the subfolder), its files become
+ * that category's samples. Files sitting loose in the root, not filed into
+ * any subfolder, land in a trailing "Other" category — so nothing silently
+ * disappears if it hasn't been sorted yet. One level of subfolders only.
+ */
+export async function listBoxFolderCategories(folderId: string): Promise<BoxCategory[]> {
+  const token = await getAccessToken();
+  const rootItems = await listFolderItems(folderId, token);
+
+  const subfolders = rootItems.filter((e) => e.type === "folder");
+  const rootFiles = rootItems.filter((e) => e.type === "file");
+
+  const categories = await Promise.all(
+    subfolders.map(async (folder) => {
+      const items = await listFolderItems(folder.id, token);
+      const files = items.filter((e) => e.type === "file");
+      return { name: folder.name, samples: await resolveSamples(files, token) };
+    })
+  );
+
+  const nonEmpty = categories.filter((c) => c.samples.length > 0);
+
+  if (rootFiles.length > 0) {
+    nonEmpty.push({ name: UNCATEGORIZED, samples: await resolveSamples(rootFiles, token) });
+  }
+
+  return nonEmpty;
 }

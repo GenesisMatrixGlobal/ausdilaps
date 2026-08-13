@@ -15,9 +15,9 @@ const TOOLS = [
   {
     title: "Site Markups",
     description:
-      "Snapshot a road segment, or an address with its surrounding lots and frontage highlighted, for the inspection scope on site.",
+      "Snapshot a road segment, or an address with its surrounding lots and frontage highlighted, for estimating and project scoping.",
     href: "/admin/site-markups",
-    team: "Inspectors Team",
+    team: "Estimating / Projects",
   },
 ];
 

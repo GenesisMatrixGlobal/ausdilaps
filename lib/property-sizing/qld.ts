@@ -29,25 +29,41 @@ async function fetchJson<T>(url: string, timeoutMs = 12000): Promise<T> {
   }
 }
 
-export async function lookupQld(addr: { street: string; suburb: string; postcode?: string }): Promise<LotResult> {
-  const singleLine = [addr.street, addr.suburb, "QLD", addr.postcode].filter(Boolean).join(", ");
+export interface QldGeocodeResult {
+  x: number;
+  y: number;
+  matchedAddress: string | null;
+  matchScore: number | null;
+}
 
-  let cand: NonNullable<GeocodeResp["candidates"]>[number] | undefined;
+/** Geocodes an AU address via QLD's QldLocator — free, no API key. Returns null if nothing matched. */
+export async function geocodeQld(addr: { street: string; suburb: string; postcode?: string }): Promise<QldGeocodeResult | null> {
+  const singleLine = [addr.street, addr.suburb, "QLD", addr.postcode].filter(Boolean).join(", ");
+  const g = await fetchJson<GeocodeResp>(
+    `${GEOCODE_URL}?SingleLine=${encodeURIComponent(singleLine)}&f=json&outSR=4326&maxLocations=1`
+  );
+  const cand = g.candidates?.[0];
+  if (!cand?.location) return null;
+  return {
+    x: cand.location.x,
+    y: cand.location.y,
+    matchedAddress: cand.address ?? null,
+    matchScore: typeof cand.score === "number" ? cand.score : null,
+  };
+}
+
+export async function lookupQld(addr: { street: string; suburb: string; postcode?: string }): Promise<LotResult> {
+  let geo: QldGeocodeResult | null;
   try {
-    const g = await fetchJson<GeocodeResp>(
-      `${GEOCODE_URL}?SingleLine=${encodeURIComponent(singleLine)}&f=json&outSR=4326&maxLocations=1`
-    );
-    cand = g.candidates?.[0];
+    geo = await geocodeQld(addr);
   } catch (e) {
     return { status: "error", flags: [`geocode failed: ${(e as Error).message}`] };
   }
-  if (!cand?.location) {
+  if (!geo) {
     return { status: "not_found", flags: ["address not found — verify / measure manually"] };
   }
 
-  const { x, y } = cand.location;
-  const matchedAddress = cand.address ?? null;
-  const matchScore = typeof cand.score === "number" ? cand.score : null;
+  const { x, y, matchedAddress, matchScore } = geo;
 
   try {
     const c = await fetchJson<CadastreResp>(

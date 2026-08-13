@@ -26,6 +26,17 @@ const MAX_ZOOM = 20; // satellite imagery in most AU suburbs stays sharp to ~20-
 
 export class GoogleMapsConfigError extends Error {}
 
+export interface StaticMapPolygon {
+  /** Closed automatically if not already. */
+  ring: LatLng[];
+  /** 6-digit hex, no '#'. */
+  fillColor: string;
+  fillOpacityPercent: number;
+  strokeColor: string;
+  strokeOpacityPercent: number;
+  strokeWeight?: number;
+}
+
 export interface BuildStaticMapUrlOptions {
   ways: LatLng[][];
   /** 6-digit hex, no '#'. */
@@ -35,6 +46,8 @@ export interface BuildStaticMapUrlOptions {
   weight?: number;
   /** Shifts the auto-computed tight-fit zoom — negative zooms out for more context, positive zooms in tighter. */
   zoomAdjust?: number;
+  /** Filled + outlined polygons (e.g. neighbouring lots) rendered alongside `ways`. */
+  polygons?: StaticMapPolygon[];
 }
 
 function pathColor(hexColor: string, opacityPercent: number): string {
@@ -110,11 +123,12 @@ export function buildStaticMapUrl(opts: BuildStaticMapUrlOptions): string {
   }
 
   const visibleWays = opts.ways.filter((w) => w.length >= 2);
-  if (visibleWays.length === 0) {
+  const polygons = (opts.polygons ?? []).filter((p) => p.ring.length >= 3);
+  if (visibleWays.length === 0 && polygons.length === 0) {
     throw new Error("No road geometry to render.");
   }
 
-  const bounds = bufferedBounds(visibleWays.flat());
+  const bounds = bufferedBounds([...visibleWays.flat(), ...polygons.flatMap((p) => p.ring)]);
   const center = { lat: (bounds.minLat + bounds.maxLat) / 2, lng: (bounds.minLng + bounds.maxLng) / 2 };
   const zoom = Math.max(1, Math.min(zoomToFit(bounds, IMAGE_SIZE) + (opts.zoomAdjust ?? 0), MAX_ZOOM));
 
@@ -130,6 +144,19 @@ export function buildStaticMapUrl(opts: BuildStaticMapUrlOptions): string {
   const weight = opts.weight ?? DEFAULT_WEIGHT;
   for (const way of visibleWays) {
     url.searchParams.append("path", `color:${color}|weight:${weight}|enc:${encodePolyline(way)}`);
+  }
+
+  for (const polygon of polygons) {
+    const fill = pathColor(polygon.fillColor, polygon.fillOpacityPercent);
+    const stroke = pathColor(polygon.strokeColor, polygon.strokeOpacityPercent);
+    const strokeWeight = polygon.strokeWeight ?? 2;
+    const first = polygon.ring[0];
+    const last = polygon.ring[polygon.ring.length - 1];
+    const closedRing = first.lat === last.lat && first.lng === last.lng ? polygon.ring : [...polygon.ring, first];
+    url.searchParams.append(
+      "path",
+      `color:${stroke}|weight:${strokeWeight}|fillcolor:${fill}|enc:${encodePolyline(closedRing)}`
+    );
   }
 
   url.searchParams.set("key", key);

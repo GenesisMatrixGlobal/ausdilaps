@@ -40,7 +40,7 @@ async function fetchJson<T>(url: string, params: URLSearchParams, timeoutMs = 12
 
 /** Split "8 Ironwood Ct" into a house number + road name, dropping the road type
  *  (VIC's road_name field excludes it) so "Ct" vs "Court" can't cause a mismatch. */
-function splitStreet(street: string): { houseNumber: string; roadName: string } | null {
+export function splitStreet(street: string): { houseNumber: string; roadName: string } | null {
   const m = street.trim().match(/^(\d+[a-z]?)\s+(.+?)(?:\s+[a-z]+)?$/i);
   if (!m) return null;
   const words = m[2].trim().split(/\s+/);
@@ -49,12 +49,16 @@ function splitStreet(street: string): { houseNumber: string; roadName: string } 
   return { houseNumber: m[1], roadName };
 }
 
-export async function lookupVic(addr: { street: string; suburb: string; postcode?: string }): Promise<LotResult> {
-  const split = splitStreet(addr.street);
-  if (!split) {
-    return { status: "not_found", flags: ["couldn't parse a house number from the street — verify manually"] };
-  }
+export type VicGeocodeOutcome =
+  | { status: "ok"; x: number; y: number; matchedAddress: string | null }
+  | { status: "no_candidates" }
+  | { status: "no_location"; matchedAddress: string | null };
 
+/** Queries Vicmap_Address for a house number + road name + locality — free, no API key. */
+export async function geocodeVic(
+  split: { houseNumber: string; roadName: string },
+  addr: { suburb: string; postcode?: string }
+): Promise<VicGeocodeOutcome> {
   const whereParts = [
     `house_number_1=${Number(split.houseNumber)}`,
     `UPPER(road_name) LIKE UPPER('${split.roadName.replace(/'/g, "''")}%')`,
@@ -62,33 +66,51 @@ export async function lookupVic(addr: { street: string; suburb: string; postcode
   ];
   if (addr.postcode) whereParts.push(`postcode='${addr.postcode}'`);
 
-  let feats: AddressFeature[];
-  try {
-    const a = await fetchJson<AddressResp>(
-      ADDRESS_URL,
-      new URLSearchParams({
-        where: whereParts.join(" AND "),
-        outFields: "ezi_address,is_primary",
-        returnGeometry: "true",
-        outSR: "4326",
-        f: "json",
-      })
-    );
-    feats = a.features ?? [];
-  } catch (e) {
-    return { status: "error", flags: [`geocode failed: ${(e as Error).message}`] };
-  }
-  if (!feats.length) {
-    return { status: "not_found", flags: ["address not found — verify / measure manually"] };
-  }
+  const a = await fetchJson<AddressResp>(
+    ADDRESS_URL,
+    new URLSearchParams({
+      where: whereParts.join(" AND "),
+      outFields: "ezi_address,is_primary",
+      returnGeometry: "true",
+      outSR: "4326",
+      f: "json",
+    })
+  );
+  const feats = a.features ?? [];
+  if (!feats.length) return { status: "no_candidates" };
 
   // Prefer the primary address point when several rows match (large/multi-lot sites).
   const primary = feats.find((f) => f.attributes?.is_primary === "Y") ?? feats[0];
   const { x, y } = primary.geometry ?? {};
   const matchedAddress = primary.attributes?.ezi_address ?? null;
-  if (x == null || y == null) {
-    return { status: "not_found", matchedAddress, flags: ["address matched but had no location — verify manually"] };
+  if (x == null || y == null) return { status: "no_location", matchedAddress };
+  return { status: "ok", x, y, matchedAddress };
+}
+
+export async function lookupVic(addr: { street: string; suburb: string; postcode?: string }): Promise<LotResult> {
+  const split = splitStreet(addr.street);
+  if (!split) {
+    return { status: "not_found", flags: ["couldn't parse a house number from the street — verify manually"] };
   }
+
+  let geo: VicGeocodeOutcome;
+  try {
+    geo = await geocodeVic(split, addr);
+  } catch (e) {
+    return { status: "error", flags: [`geocode failed: ${(e as Error).message}`] };
+  }
+  if (geo.status === "no_candidates") {
+    return { status: "not_found", flags: ["address not found — verify / measure manually"] };
+  }
+  if (geo.status === "no_location") {
+    return {
+      status: "not_found",
+      matchedAddress: geo.matchedAddress,
+      flags: ["address matched but had no location — verify manually"],
+    };
+  }
+
+  const { x, y, matchedAddress } = geo;
 
   try {
     const p = await fetchJson<ParcelResp>(

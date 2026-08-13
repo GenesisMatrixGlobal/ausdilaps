@@ -31,6 +31,33 @@ async function fetchJson<T>(url: string, timeoutMs = 12000): Promise<T> {
   }
 }
 
+export interface NswGeocodeResult {
+  x: number;
+  y: number;
+  matchedAddress: string | null;
+  matchScore: number | null;
+}
+
+/** Geocodes an AU address via the NSW Point geocoder — needs `key` (NSW_POINT_API_KEY). Returns null if nothing matched. */
+export async function geocodeNsw(
+  addr: { street: string; suburb: string; postcode?: string },
+  key: string
+): Promise<NswGeocodeResult | null> {
+  const singleLine = [addr.street, addr.suburb, "NSW", addr.postcode].filter(Boolean).join(", ");
+  const geocodeUrl = `https://point.six.nsw.gov.au/geo/arcgis/rest/services/${key}/NSWPoint/GeocodeServer/findAddressCandidates`;
+  const g = await fetchJson<GeocodeResp>(
+    `${geocodeUrl}?SingleLine=${encodeURIComponent(singleLine)}&f=json&outSR=4326&maxLocations=1`
+  );
+  const cand = g.candidates?.[0];
+  if (!cand?.location) return null;
+  return {
+    x: cand.location.x,
+    y: cand.location.y,
+    matchedAddress: cand.address ?? null,
+    matchScore: typeof cand.score === "number" ? cand.score : null,
+  };
+}
+
 export async function lookupNsw(addr: { street: string; suburb: string; postcode?: string }): Promise<LotResult> {
   const key = process.env.NSW_POINT_API_KEY;
   if (!key) {
@@ -40,25 +67,17 @@ export async function lookupNsw(addr: { street: string; suburb: string; postcode
     };
   }
 
-  const singleLine = [addr.street, addr.suburb, "NSW", addr.postcode].filter(Boolean).join(", ");
-  const geocodeUrl = `https://point.six.nsw.gov.au/geo/arcgis/rest/services/${key}/NSWPoint/GeocodeServer/findAddressCandidates`;
-
-  let cand: NonNullable<GeocodeResp["candidates"]>[number] | undefined;
+  let geo: NswGeocodeResult | null;
   try {
-    const g = await fetchJson<GeocodeResp>(
-      `${geocodeUrl}?SingleLine=${encodeURIComponent(singleLine)}&f=json&outSR=4326&maxLocations=1`
-    );
-    cand = g.candidates?.[0];
+    geo = await geocodeNsw(addr, key);
   } catch (e) {
     return { status: "error", flags: [`geocode failed: ${(e as Error).message}`] };
   }
-  if (!cand?.location) {
+  if (!geo) {
     return { status: "not_found", flags: ["address not found — verify / measure manually"] };
   }
 
-  const { x, y } = cand.location;
-  const matchedAddress = cand.address ?? null;
-  const matchScore = typeof cand.score === "number" ? cand.score : null;
+  const { x, y, matchedAddress, matchScore } = geo;
 
   try {
     const c = await fetchJson<CadastreResp>(

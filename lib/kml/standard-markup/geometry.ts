@@ -104,80 +104,53 @@ export function minDistanceBetween(a: LatLng[], b: LatLng[]): number {
   return min;
 }
 
-function distancePointToRing(p: LocalMetres, ringM: LocalMetres[]): number {
-  let min = Infinity;
-  for (let i = 0; i < ringM.length - 1; i++) {
-    min = Math.min(min, pointToSegmentMetres(p, ringM[i], ringM[i + 1]));
+function segmentNormal(a: LocalMetres, b: LocalMetres): LocalMetres {
+  const dx = b.east - a.east;
+  const dy = b.north - a.north;
+  const len = Math.hypot(dx, dy) || 1;
+  return { east: -dy / len, north: dx / len };
+}
+
+/**
+ * Buffers a user-drawn polyline (2-10 points, e.g. a council-asset frontage) into a
+ * ribbon polygon `widthMetres` wide. Each point is offset perpendicular to its
+ * segment(s) — the two ends use their single segment's normal, interior points use the
+ * average of their two adjacent segment normals (a simple mitre join). That average
+ * isn't length-corrected for the joint angle, so a sharp bend renders very slightly
+ * narrower right at the corner — an acceptable simplification for an indicative site
+ * marking, not worth full mitre/bevel join geometry.
+ */
+export function bufferLineToPolygon(points: LatLng[], widthMetres: number): LatLng[] {
+  if (points.length < 2) return [];
+  const origin = points[0];
+  const local = points.map((p) => projectToLocalMetres(origin, p));
+  const halfWidth = widthMetres / 2;
+
+  const segmentNormals: LocalMetres[] = [];
+  for (let i = 0; i < local.length - 1; i++) {
+    segmentNormals.push(segmentNormal(local[i], local[i + 1]));
   }
-  return min;
-}
 
-export interface CloseApproach {
-  /** Closest distance, in metres, `way` ever comes to `ring`'s boundary. */
-  minDistance: number;
-  /** Length, in metres, of the longest contiguous stretch of `way` within `thresholdM` of `ring`. */
-  runLengthMetres: number;
-}
-
-/** How closely and for how long a road/footpath way runs alongside a parcel ring. */
-export function closeApproachRun(way: LatLng[], ring: LatLng[], thresholdM: number): CloseApproach {
-  if (way.length === 0 || ring.length < 2) return { minDistance: Infinity, runLengthMetres: 0 };
-  const origin = way[0];
-  const wayM = way.map((p) => projectToLocalMetres(origin, p));
-  const ringM = closeRing(ring).map((p) => projectToLocalMetres(origin, p));
-  const dists = wayM.map((p) => distancePointToRing(p, ringM));
-
-  let bestRun = 0;
-  let currentRun = 0;
-  for (let i = 0; i < wayM.length; i++) {
-    if (dists[i] <= thresholdM) {
-      if (i > 0 && dists[i - 1] <= thresholdM) {
-        currentRun += Math.hypot(wayM[i].east - wayM[i - 1].east, wayM[i].north - wayM[i - 1].north);
-      }
-      bestRun = Math.max(bestRun, currentRun);
-    } else {
-      currentRun = 0;
-    }
+  function pointNormal(i: number): LocalMetres {
+    if (i === 0) return segmentNormals[0];
+    if (i === local.length - 1) return segmentNormals[segmentNormals.length - 1];
+    const n1 = segmentNormals[i - 1];
+    const n2 = segmentNormals[i];
+    const avg = { east: n1.east + n2.east, north: n1.north + n2.north };
+    const len = Math.hypot(avg.east, avg.north) || 1;
+    return { east: avg.east / len, north: avg.north / len };
   }
-  return { minDistance: Math.min(...dists), runLengthMetres: bestRun };
-}
 
-/** Approximates where two open polylines cross/meet most closely — used to find a
- *  road intersection from two OSM ways. Picks whichever of the four segment
- *  endpoints in the closest-approaching pair sits nearest the other way — exact
- *  when the ways share a node at the junction (the common case for real OSM data). */
-export function closestApproachPoint(a: LatLng[], b: LatLng[]): LatLng {
-  if (a.length < 2 || b.length < 2) return a[0] ?? b[0];
-  const origin = a[0];
-  const aM = a.map((p) => projectToLocalMetres(origin, p));
-  const bM = b.map((p) => projectToLocalMetres(origin, p));
-  let min = Infinity;
-  let best = aM[0];
-  for (let i = 0; i < aM.length - 1; i++) {
-    for (let j = 0; j < bM.length - 1; j++) {
-      for (const c of [aM[i], aM[i + 1], bM[j], bM[j + 1]]) {
-        const d = Math.min(pointToSegmentMetres(c, aM[i], aM[i + 1]), pointToSegmentMetres(c, bM[j], bM[j + 1]));
-        if (d < min) {
-          min = d;
-          best = c;
-        }
-      }
-    }
+  const left: LocalMetres[] = [];
+  const right: LocalMetres[] = [];
+  for (let i = 0; i < local.length; i++) {
+    const n = pointNormal(i);
+    left.push({ east: local[i].east + n.east * halfWidth, north: local[i].north + n.north * halfWidth });
+    right.push({ east: local[i].east - n.east * halfWidth, north: local[i].north - n.north * halfWidth });
   }
-  return unprojectFromLocalMetres(origin, best);
-}
 
-/** Unit vector (in local east/north metres) pointing from `a` to `b`. */
-export function unitBearingVector(a: LatLng, b: LatLng): LocalMetres {
-  const m = projectToLocalMetres(a, b);
-  const len = Math.hypot(m.east, m.north) || 1;
-  return { east: m.east / len, north: m.north / len };
-}
-
-/** Signed distance of `point` along `axis` (a unit vector), measured from `origin`. */
-export function projectOntoAxis(origin: LatLng, axis: LocalMetres, point: LatLng): number {
-  const m = projectToLocalMetres(origin, point);
-  return m.east * axis.east + m.north * axis.north;
+  const ring = [...left, ...right.reverse()].map((p) => unprojectFromLocalMetres(origin, p));
+  return closeRing(ring);
 }
 
 /** Douglas-Peucker simplification, tolerance in metres — trims redundant near-collinear

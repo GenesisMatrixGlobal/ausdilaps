@@ -5,6 +5,7 @@
 import type { LatLng } from "@/lib/kml/types";
 import { geocodeNsw } from "@/lib/property-sizing/nsw";
 import { envelopeAroundPoint } from "../geometry";
+import { describeFetchError } from "./describe-fetch-error";
 import type { ParcelFeature, ParcelQueryResult } from "./types";
 
 const CADASTRE_URL = "https://maps.six.nsw.gov.au/arcgis/rest/services/sixmaps/Boundaries/MapServer/15/query";
@@ -43,16 +44,28 @@ export async function fetchParcelsNsw(addr: {
   const key = process.env.NSW_POINT_API_KEY;
   if (!key) throw new Error("NSW lookup not configured — missing NSW_POINT_API_KEY (register at the NSW Point portal)");
 
-  const geo = await geocodeNsw(addr, key);
+  const geoStart = Date.now();
+  let geo: Awaited<ReturnType<typeof geocodeNsw>>;
+  try {
+    geo = await geocodeNsw(addr, key);
+  } catch (e) {
+    throw new Error(`NSW geocode ${describeFetchError(e, Date.now() - geoStart)}`);
+  }
   if (!geo) return null;
   const { x, y, matchedAddress, matchScore } = geo;
 
   const env = envelopeAroundPoint(x, y, ENVELOPE_HALF_WIDTH_M);
-  const c = await fetchJson<CadastreResp>(
-    `${CADASTRE_URL}?geometry=${env.xmin},${env.ymin},${env.xmax},${env.ymax}` +
-      `&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects` +
-      `&outFields=lotidstring,planlabel,planlotarea,shape_Area&returnGeometry=true&outSR=4326&f=json`
-  );
+  const parcelStart = Date.now();
+  let c: CadastreResp;
+  try {
+    c = await fetchJson<CadastreResp>(
+      `${CADASTRE_URL}?geometry=${env.xmin},${env.ymin},${env.xmax},${env.ymax}` +
+        `&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects` +
+        `&outFields=lotidstring,planlabel,planlotarea,shape_Area&returnGeometry=true&outSR=4326&f=json`
+    );
+  } catch (e) {
+    throw new Error(`NSW parcel query ${describeFetchError(e, Date.now() - parcelStart)}`);
+  }
 
   const candidates: ParcelFeature[] = (c.features ?? [])
     .map((f) => {

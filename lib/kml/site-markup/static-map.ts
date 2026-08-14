@@ -19,8 +19,8 @@ const STATIC_MAP_URL = "https://maps.googleapis.com/maps/api/staticmap";
 // Static Maps caps `size` at 640x640 on a standard billing account; `scale` doubles the
 // actual pixel output without counting against that cap or changing the geographic area
 // shown, so 500x500 @ scale 2 -> a 1000x1000px image of the same 500x500 "point" extent.
-const IMAGE_SIZE = 500;
-const SCALE = 2;
+export const IMAGE_SIZE = 500;
+export const SCALE = 2;
 const DEFAULT_WEIGHT = 14;
 const MAX_ZOOM = 20; // satellite imagery in most AU suburbs stays sharp to ~20-21
 
@@ -37,6 +37,14 @@ export interface StaticMapPolygon {
   strokeWeight?: number;
 }
 
+export interface StaticMapMarker {
+  point: LatLng;
+  /** Google Static Maps marker labels are a single character — 0-9 or A-Z. */
+  label: string;
+  /** 6-digit hex, no '#'. Defaults to Google's plain red pin if omitted. */
+  color?: string;
+}
+
 export interface BuildStaticMapUrlOptions {
   ways: LatLng[][];
   /** 6-digit hex, no '#'. */
@@ -48,6 +56,11 @@ export interface BuildStaticMapUrlOptions {
   zoomAdjust?: number;
   /** Filled + outlined polygons (e.g. neighbouring lots) rendered alongside `ways`. */
   polygons?: StaticMapPolygon[];
+  /** Numbered pins (e.g. one per neighbour lot, matching a checklist) rendered on top. */
+  markers?: StaticMapMarker[];
+  /** Raw Static Maps `style` rule strings, e.g. `"feature:poi|visibility:off"` — one
+   *  per array entry, each becomes its own `style` query param. */
+  styles?: string[];
 }
 
 function pathColor(hexColor: string, opacityPercent: number): string {
@@ -114,7 +127,13 @@ function zoomToFit(bounds: Bounds, mapPx: number): number {
   return Math.max(1, Math.min(zoomForFraction(mapPx, latFraction), zoomForFraction(mapPx, lngFraction), MAX_ZOOM));
 }
 
-export function buildStaticMapUrl(opts: BuildStaticMapUrlOptions): string {
+export interface BuildStaticMapUrlResult {
+  url: string;
+  center: LatLng;
+  zoom: number;
+}
+
+export function buildStaticMapUrl(opts: BuildStaticMapUrlOptions): BuildStaticMapUrlResult {
   const key = process.env.GOOGLE_MAPS_API_KEY;
   if (!key) {
     throw new GoogleMapsConfigError(
@@ -159,6 +178,15 @@ export function buildStaticMapUrl(opts: BuildStaticMapUrlOptions): string {
     );
   }
 
+  for (const marker of opts.markers ?? []) {
+    const color = marker.color ? `0x${marker.color}` : "red";
+    url.searchParams.append("markers", `color:${color}|label:${marker.label}|${marker.point.lat},${marker.point.lng}`);
+  }
+
+  for (const style of opts.styles ?? []) {
+    url.searchParams.append("style", style);
+  }
+
   url.searchParams.set("key", key);
-  return url.toString();
+  return { url: url.toString(), center, zoom };
 }

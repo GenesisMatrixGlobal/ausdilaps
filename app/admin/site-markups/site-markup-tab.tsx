@@ -11,13 +11,7 @@ const COLOR_PRESETS = [
   { label: "Survey cyan", value: "00c2ff" },
 ];
 
-const MAP_TYPES = [
-  { key: "satellite", label: "Satellite" },
-  { key: "hybrid", label: "Satellite + labels" },
-  { key: "roadmap", label: "Map" },
-] as const;
-
-type MapType = (typeof MAP_TYPES)[number]["key"];
+const MAP_TYPE = "hybrid";
 
 function zoomLabel(zoomAdjust: number): string {
   if (zoomAdjust === 0) return "Auto";
@@ -42,7 +36,6 @@ export function SiteMarkupTab() {
   const [area, setArea] = useState("");
   const [color, setColor] = useState(COLOR_PRESETS[0].value);
   const [opacityPercent, setOpacityPercent] = useState(55);
-  const [mapType, setMapType] = useState<MapType>("hybrid");
   const [zoomAdjust, setZoomAdjust] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +55,7 @@ export function SiteMarkupTab() {
       const res = await fetch("/api/kml/site-markup", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ roadName, fromDesc, toDesc, area, color, opacityPercent, mapType, zoomAdjust }),
+        body: JSON.stringify({ roadName, fromDesc, toDesc, area, color, opacityPercent, mapType: MAP_TYPE, zoomAdjust }),
       });
       if (!res.ok) {
         const json = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -200,27 +193,6 @@ export function SiteMarkupTab() {
             className="mt-3 w-full"
           />
         </label>
-
-        <div className="sm:col-span-2">
-          <p className="text-sm font-medium text-ad-ink">Base imagery</p>
-          <div className="mt-1 flex flex-wrap gap-2">
-            {MAP_TYPES.map((opt) => (
-              <button
-                key={opt.key}
-                type="button"
-                onClick={() => setMapType(opt.key)}
-                className={cn(
-                  "rounded-lg border px-3 py-1.5 text-sm",
-                  mapType === opt.key
-                    ? "border-ad-steel bg-ad-steel/10 text-ad-ink"
-                    : "border-ad-border text-ad-muted hover:text-ad-ink"
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">

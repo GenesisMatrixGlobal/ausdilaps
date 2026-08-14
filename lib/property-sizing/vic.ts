@@ -1,22 +1,32 @@
-// Victoria lot-size lookup — free, no API key.
-// Pipeline (validated live): address -> Vicmap_Address attribute query (house number +
-// road name + locality + postcode) -> point-in-polygon query against Vicmap_Parcel ->
-// Shape__Area in m². Both are public ArcGIS Online hosted feature services (DataVic).
-// Returns the parcel geometry too, for the building-attributes step.
+// Victoria lot-size lookup.
+// Pipeline: address -> Google Geocoding API -> point-in-polygon query against
+// Vicmap_Parcel -> Shape__Area in m².
+//
+// VIC has no working equivalent of QLD's QldLocator / NSW's NSWPoint dedicated
+// geocoder. The obvious candidate — the Vicmap_Address ArcGIS Online hosted
+// FeatureServer, queried with a house_number/road_name/locality WHERE clause — was
+// used here previously, but live testing showed it regularly takes 25-30s+ and often
+// times out entirely (confirmed: not caused by the LIKE wildcard — an exact-match
+// query was equally slow). It's a generic hosted feature layer being queried like a
+// database table, not a real geocoding service. A separate-looking GeocodeServer at
+// corp-geo.mapshare.vic.gov.au/.../VMAddressEZIAdd turned out to be an unconfigured
+// generic Esri World Geocoder template (returns nonsense POI matches). Vicmap_Parcel
+// itself (the actual cadastral data — the thing only VIC government has) is fast and
+// reliable (spatial envelope/point query, not attribute filtering) and is unchanged
+// below. GOOGLE_MAPS_API_KEY is already provisioned for Site Markup's Static Maps
+// calls and already needs the Geocoding API enabled alongside it (see
+// .env.local.example) — no new setup.
 
 import type { LotResult } from "./types";
 
-const ADDRESS_URL =
-  "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/arcgis/rest/services/Vicmap_Address/FeatureServer/0/query";
+const GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 const PARCEL_URL =
   "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Parcel/FeatureServer/0/query";
 
-interface AddressFeature {
-  attributes?: { ezi_address?: string; is_primary?: string };
-  geometry?: { x: number; y: number };
-}
-interface AddressResp {
-  features?: AddressFeature[];
+interface GoogleGeocodeResp {
+  status: string;
+  error_message?: string;
+  results?: { formatted_address?: string; geometry?: { location?: { lat: number; lng: number } } }[];
 }
 interface ParcelFeature {
   attributes?: { parcel_spi?: string; Shape__Area?: number };
@@ -26,7 +36,9 @@ interface ParcelResp {
   features?: ParcelFeature[];
 }
 
-async function fetchJson<T>(url: string, params: URLSearchParams, timeoutMs = 12000): Promise<T> {
+// Vicmap_Parcel (an ArcGIS Online hosted feature service) has been observed taking
+// 12-15s to respond on occasion — more headroom than QLD/NSW's own state-run services.
+async function fetchJson<T>(url: string, params: URLSearchParams, timeoutMs = 25000): Promise<T> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -54,37 +66,39 @@ export type VicGeocodeOutcome =
   | { status: "no_candidates" }
   | { status: "no_location"; matchedAddress: string | null };
 
-/** Queries Vicmap_Address for a house number + road name + locality — free, no API key. */
+/** Geocodes a VIC address via Google's Geocoding API (see the file-header comment for
+ *  why — Vicmap has no working dedicated geocoder). */
 export async function geocodeVic(
   split: { houseNumber: string; roadName: string },
   addr: { suburb: string; postcode?: string }
 ): Promise<VicGeocodeOutcome> {
-  const whereParts = [
-    `house_number_1=${Number(split.houseNumber)}`,
-    `UPPER(road_name) LIKE UPPER('${split.roadName.replace(/'/g, "''")}%')`,
-    `UPPER(locality_name)=UPPER('${addr.suburb.replace(/'/g, "''")}')`,
-  ];
-  if (addr.postcode) whereParts.push(`postcode='${addr.postcode}'`);
+  const key = process.env.GOOGLE_MAPS_API_KEY;
+  if (!key) {
+    throw new Error(
+      "GOOGLE_MAPS_API_KEY not configured — VIC geocoding needs the Geocoding API enabled on the same key used for Site Markup."
+    );
+  }
 
-  const a = await fetchJson<AddressResp>(
-    ADDRESS_URL,
-    new URLSearchParams({
-      where: whereParts.join(" AND "),
-      outFields: "ezi_address,is_primary",
-      returnGeometry: "true",
-      outSR: "4326",
-      f: "json",
-    })
+  const addressLine = `${split.houseNumber} ${split.roadName}, ${addr.suburb} VIC${
+    addr.postcode ? ` ${addr.postcode}` : ""
+  }, Australia`;
+
+  const resp = await fetchJson<GoogleGeocodeResp>(
+    GOOGLE_GEOCODE_URL,
+    new URLSearchParams({ address: addressLine, region: "au", key }),
+    8000
   );
-  const feats = a.features ?? [];
-  if (!feats.length) return { status: "no_candidates" };
 
-  // Prefer the primary address point when several rows match (large/multi-lot sites).
-  const primary = feats.find((f) => f.attributes?.is_primary === "Y") ?? feats[0];
-  const { x, y } = primary.geometry ?? {};
-  const matchedAddress = primary.attributes?.ezi_address ?? null;
-  if (x == null || y == null) return { status: "no_location", matchedAddress };
-  return { status: "ok", x, y, matchedAddress };
+  if (resp.status === "ZERO_RESULTS") return { status: "no_candidates" };
+  if (resp.status !== "OK" || !resp.results?.length) {
+    throw new Error(`Google geocode ${resp.status}${resp.error_message ? `: ${resp.error_message}` : ""}`);
+  }
+
+  const top = resp.results[0];
+  const location = top.geometry?.location;
+  const matchedAddress = top.formatted_address ?? null;
+  if (!location) return { status: "no_location", matchedAddress };
+  return { status: "ok", x: location.lng, y: location.lat, matchedAddress };
 }
 
 export async function lookupVic(addr: { street: string; suburb: string; postcode?: string }): Promise<LotResult> {

@@ -5,6 +5,7 @@
 import type { LatLng } from "@/lib/kml/types";
 import { geocodeVic, splitStreet } from "@/lib/property-sizing/vic";
 import { envelopeAroundPoint } from "../geometry";
+import { describeFetchError } from "./describe-fetch-error";
 import type { ParcelFeature, ParcelQueryResult } from "./types";
 
 const PARCEL_URL = "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Parcel/FeatureServer/0/query";
@@ -14,7 +15,9 @@ interface ParcelResp {
   features?: { attributes?: { parcel_spi?: string; Shape__Area?: number }; geometry?: { rings?: number[][][] } }[];
 }
 
-async function fetchJson<T>(url: string, params: URLSearchParams, timeoutMs = 12000): Promise<T> {
+// Same generous timeout as lib/property-sizing/vic.ts — VIC's ArcGIS Online hosted
+// feature services have been observed taking 12-15s to respond.
+async function fetchJson<T>(url: string, params: URLSearchParams, timeoutMs = 25000): Promise<T> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -40,24 +43,36 @@ export async function fetchParcelsVic(addr: {
   const split = splitStreet(addr.street);
   if (!split) return null;
 
-  const geo = await geocodeVic(split, addr);
+  const geoStart = Date.now();
+  let geo: Awaited<ReturnType<typeof geocodeVic>>;
+  try {
+    geo = await geocodeVic(split, addr);
+  } catch (e) {
+    throw new Error(`VIC geocode ${describeFetchError(e, Date.now() - geoStart)}`);
+  }
   if (geo.status !== "ok") return null;
   const { x, y, matchedAddress } = geo;
 
   const env = envelopeAroundPoint(x, y, ENVELOPE_HALF_WIDTH_M);
-  const p = await fetchJson<ParcelResp>(
-    PARCEL_URL,
-    new URLSearchParams({
-      geometry: `${env.xmin},${env.ymin},${env.xmax},${env.ymax}`,
-      geometryType: "esriGeometryEnvelope",
-      inSR: "4326",
-      spatialRel: "esriSpatialRelIntersects",
-      outFields: "parcel_spi,Shape__Area",
-      returnGeometry: "true",
-      outSR: "4326",
-      f: "json",
-    })
-  );
+  const parcelStart = Date.now();
+  let p: ParcelResp;
+  try {
+    p = await fetchJson<ParcelResp>(
+      PARCEL_URL,
+      new URLSearchParams({
+        geometry: `${env.xmin},${env.ymin},${env.xmax},${env.ymax}`,
+        geometryType: "esriGeometryEnvelope",
+        inSR: "4326",
+        spatialRel: "esriSpatialRelIntersects",
+        outFields: "parcel_spi,Shape__Area",
+        returnGeometry: "true",
+        outSR: "4326",
+        f: "json",
+      })
+    );
+  } catch (e) {
+    throw new Error(`VIC parcel query ${describeFetchError(e, Date.now() - parcelStart)}`);
+  }
 
   const candidates: ParcelFeature[] = (p.features ?? [])
     .map((f) => ({

@@ -5,10 +5,12 @@ import type { LatLng } from "@/lib/kml/types";
 import { closeRing, minDistanceBetween, pointInRing } from "./geometry";
 import type { ParcelFeature } from "./parcels/types";
 
-/** True adjacent parcels share boundary vertices (~0m apart); parcels across the
- *  road sit behind the road+footpath gap (typically >=10m) — a fixed tolerance
- *  reliably tells them apart without having to model the road geometry at all. */
-const ADJACENCY_TOLERANCE_M = 3;
+/** True adjacent parcels usually share boundary vertices (~0m apart), but a rear
+ *  neighbour can sit just across a narrow laneway/right-of-way — confirmed live at
+ *  3.2m for a real Melbourne inner-suburb rear lot, with the next-closest non-touching
+ *  candidate at 6.1m. 4m safely catches the former without reaching the latter; parcels
+ *  across a proper street sit behind the road+footpath gap (typically >=10m). */
+const ADJACENCY_TOLERANCE_M = 4;
 
 export interface SubjectAndNeighbours {
   subject: ParcelFeature;

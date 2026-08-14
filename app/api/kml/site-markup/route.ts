@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
 
   let mapUrl: string;
   try {
-    mapUrl = buildStaticMapUrl({ ways: [resolved.path], color, opacityPercent, mapType, zoomAdjust });
+    mapUrl = buildStaticMapUrl({ ways: [resolved.path], color, opacityPercent, mapType, zoomAdjust }).url;
   } catch (e) {
     if (e instanceof GoogleMapsConfigError) {
       return NextResponse.json({ ok: false, error: e.message }, { status: 501 });

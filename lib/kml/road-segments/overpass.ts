@@ -66,8 +66,16 @@ function escapeOverpassRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// A shorter connect timeout than undici's ~10s default — confirmed live that when one
+// of overpass-api.de's several backend IPs (it resolves to 2 IPv4 + 2 IPv6) is
+// unhealthy, undici's Agent can hang the full default timeout against it. Forcing
+// IPv4-only was tried first and made things *worse*: it happened to pin every attempt
+// to the one bad IPv4 address every time (fast ECONNREFUSED, but always the same bad
+// one), whereas leaving all 4 candidates in play lets undici's own address racing
+// (same mechanism curl's Happy Eyeballs relies on) route around a bad one — it just
+// needs a shorter timeout so a stalled candidate doesn't eat the whole budget.
 async function attemptFetch(query: string): Promise<{ elements: unknown[] } | null> {
-  const agent = new Agent({ connections: 1 });
+  const agent = new Agent({ connections: 1, connect: { timeout: 5000 } });
   try {
     const res = await undiciFetch(OVERPASS_URL, {
       method: "POST",
@@ -148,53 +156,6 @@ export async function fetchRoadsByNames(roadNames: string[], bbox: BoundingBox):
       name: e.tags!.name,
       nodes: e.geometry!.map((g) => ({ lat: g.lat, lng: g.lon })),
     }));
-}
-
-const ROAD_HIGHWAY_TAGS = new Set([
-  "motorway",
-  "trunk",
-  "primary",
-  "secondary",
-  "tertiary",
-  "unclassified",
-  "residential",
-  "living_street",
-  "service",
-]);
-const FOOTWAY_HIGHWAY_TAGS = new Set(["footway", "path", "pedestrian"]);
-
-export interface RoadNetworkNear {
-  road: OsmWay[];
-  footway: OsmWay[];
-}
-
-/**
- * Fetches every road + footpath way within `bbox`, split by type — unlike
- * `fetchRoadsByNames`, no name filter, since this serves corner-lot detection and
- * council-asset (road/footpath) rendering, both of which need "whatever's actually
- * there," not just one named road. One Overpass call for both tag groups.
- */
-export async function fetchRoadNetworkNear(bbox: BoundingBox): Promise<RoadNetworkNear> {
-  const query =
-    `[out:json][timeout:25];` +
-    `(` +
-    `way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service)$"]` +
-    `(${bbox.south},${bbox.west},${bbox.north},${bbox.east});` +
-    `way["highway"~"^(footway|path|pedestrian)$"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});` +
-    `);` +
-    `out geom;`;
-
-  const data = await overpassFetch(query);
-  const elements = (data.elements ?? []) as OverpassWayElement[];
-  const road: OsmWay[] = [];
-  const footway: OsmWay[] = [];
-  for (const e of elements) {
-    if (e.type !== "way" || !e.tags?.highway || (e.geometry?.length ?? 0) < 2) continue;
-    const way: OsmWay = { id: e.id, name: e.tags.name ?? "", nodes: e.geometry!.map((g) => ({ lat: g.lat, lng: g.lon })) };
-    if (ROAD_HIGHWAY_TAGS.has(e.tags.highway)) road.push(way);
-    else if (FOOTWAY_HIGHWAY_TAGS.has(e.tags.highway)) footway.push(way);
-  }
-  return { road, footway };
 }
 
 /** True if `wayName` (an actual OSM name tag) is a spelling variant of `targetName` (from the sheet). */

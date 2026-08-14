@@ -6,6 +6,7 @@
 import type { LatLng } from "@/lib/kml/types";
 import { geocodeQld } from "@/lib/property-sizing/qld";
 import { envelopeAroundPoint } from "../geometry";
+import { describeFetchError } from "./describe-fetch-error";
 import type { ParcelFeature, ParcelQueryResult } from "./types";
 
 const CADASTRE_URL =
@@ -42,16 +43,28 @@ export async function fetchParcelsQld(addr: {
   suburb: string;
   postcode?: string;
 }): Promise<ParcelQueryResult | null> {
-  const geo = await geocodeQld(addr);
+  const geoStart = Date.now();
+  let geo: Awaited<ReturnType<typeof geocodeQld>>;
+  try {
+    geo = await geocodeQld(addr);
+  } catch (e) {
+    throw new Error(`QLD geocode ${describeFetchError(e, Date.now() - geoStart)}`);
+  }
   if (!geo) return null;
   const { x, y, matchedAddress, matchScore } = geo;
 
   const env = envelopeAroundPoint(x, y, ENVELOPE_HALF_WIDTH_M);
-  const c = await fetchJson<CadastreResp>(
-    `${CADASTRE_URL}?geometry=${env.xmin},${env.ymin},${env.xmax},${env.ymax}` +
-      `&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects` +
-      `&outFields=lotplan,lot_area&returnGeometry=true&outSR=4326&f=json`
-  );
+  const parcelStart = Date.now();
+  let c: CadastreResp;
+  try {
+    c = await fetchJson<CadastreResp>(
+      `${CADASTRE_URL}?geometry=${env.xmin},${env.ymin},${env.xmax},${env.ymax}` +
+        `&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects` +
+        `&outFields=lotplan,lot_area&returnGeometry=true&outSR=4326&f=json`
+    );
+  } catch (e) {
+    throw new Error(`QLD parcel query ${describeFetchError(e, Date.now() - parcelStart)}`);
+  }
 
   const candidates: ParcelFeature[] = (c.features ?? [])
     .map((f) => ({

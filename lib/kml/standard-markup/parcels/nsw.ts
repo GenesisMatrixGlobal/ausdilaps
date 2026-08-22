@@ -1,6 +1,6 @@
 // NSW equivalent of ./qld.ts — same NSW SIX Maps DCDB Lot layer already used by
 // lib/property-sizing/nsw.ts, but an envelope query instead of a point query.
-// Needs NSW_POINT_API_KEY (same key as the property-sizing tool).
+// Geocodes via Google (same as the property-sizing tool); the SIX Maps cadastre is open.
 
 import type { LatLng } from "@/lib/kml/types";
 import { geocodeNsw } from "@/lib/property-sizing/nsw";
@@ -41,13 +41,10 @@ export async function fetchParcelsNsw(addr: {
   suburb: string;
   postcode?: string;
 }): Promise<ParcelQueryResult | null> {
-  const key = process.env.NSW_POINT_API_KEY;
-  if (!key) throw new Error("NSW lookup not configured — missing NSW_POINT_API_KEY (register at the NSW Point portal)");
-
   const geoStart = Date.now();
   let geo: Awaited<ReturnType<typeof geocodeNsw>>;
   try {
-    geo = await geocodeNsw(addr, key);
+    geo = await geocodeNsw(addr);
   } catch (e) {
     throw new Error(`NSW geocode ${describeFetchError(e, Date.now() - geoStart)}`);
   }
@@ -73,7 +70,11 @@ export async function fetchParcelsNsw(addr: {
       const area = attrs?.planlotarea ?? attrs?.shape_Area;
       return {
         ring: outerRingToLatLng(f.geometry?.rings),
-        idKey: String(attrs?.planlabel ?? attrs?.lotidstring ?? ""),
+        // lotidstring ("1//DP29132") is per-lot; planlabel ("DP29132") is the plan, which
+        // several lots in the same subdivision share. Preferring planlabel gave sibling
+        // lots identical ids, so the UI treated them as one parcel — ticking or excluding
+        // one silently did the same to the other.
+        idKey: String(attrs?.lotidstring || attrs?.planlabel || ""),
         areaSqm: typeof area === "number" ? Math.round(area) : null,
       };
     })

@@ -1,17 +1,20 @@
-// New South Wales lot-size lookup — free, requires a self-service NSW Point API key.
-// Pipeline: address -> NSW Point geocoder (findAddressCandidates) -> point-in-polygon
-// query against the NSW DCDB Lot layer -> planlotarea (falls back to shape_Area) in m².
+// New South Wales lot-size lookup — free, no state API key needed.
+// Pipeline: address -> Google Geocoding API -> point-in-polygon query against the NSW
+// DCDB Lot layer -> planlotarea (falls back to shape_Area) in m².
 // Returns the parcel geometry too, for the building-attributes step.
-// Register for a free key at the NSW Spatial Services "NSW Point" portal, then set
-// NSW_POINT_API_KEY in .env.local.
+//
+// Geocoding previously went through the NSW Point service, which required a registered
+// NSW_POINT_API_KEY embedded in the request path. That key covered the address->point
+// step only; the SIX Maps cadastre below is open and unauthenticated, so dropping NSW
+// Point in favour of the Google key already provisioned for Site Markup removes a
+// signup and an environment variable without losing access to any NSW-only data.
+// Trade-off: Google returns no match score, so matchScore is null here — same as VIC.
 
 import type { LotResult } from "./types";
+import { geocodeViaGoogle } from "./google-geocode";
 
 const CADASTRE_URL = "https://maps.six.nsw.gov.au/arcgis/rest/services/sixmaps/Boundaries/MapServer/15/query";
 
-interface GeocodeResp {
-  candidates?: { address?: string; score?: number; location?: { x: number; y: number } }[];
-}
 interface CadastreResp {
   features?: {
     attributes?: { lotidstring?: string; planlabel?: string; planlotarea?: number; shape_Area?: number };
@@ -38,38 +41,22 @@ export interface NswGeocodeResult {
   matchScore: number | null;
 }
 
-/** Geocodes an AU address via the NSW Point geocoder — needs `key` (NSW_POINT_API_KEY). Returns null if nothing matched. */
-export async function geocodeNsw(
-  addr: { street: string; suburb: string; postcode?: string },
-  key: string
-): Promise<NswGeocodeResult | null> {
-  const singleLine = [addr.street, addr.suburb, "NSW", addr.postcode].filter(Boolean).join(", ");
-  const geocodeUrl = `https://point.six.nsw.gov.au/geo/arcgis/rest/services/${key}/NSWPoint/GeocodeServer/findAddressCandidates`;
-  const g = await fetchJson<GeocodeResp>(
-    `${geocodeUrl}?SingleLine=${encodeURIComponent(singleLine)}&f=json&outSR=4326&maxLocations=1`
-  );
-  const cand = g.candidates?.[0];
-  if (!cand?.location) return null;
-  return {
-    x: cand.location.x,
-    y: cand.location.y,
-    matchedAddress: cand.address ?? null,
-    matchScore: typeof cand.score === "number" ? cand.score : null,
-  };
+/** Geocodes a NSW address via Google. Returns null if nothing matched. */
+export async function geocodeNsw(addr: {
+  street: string;
+  suburb: string;
+  postcode?: string;
+}): Promise<NswGeocodeResult | null> {
+  const addressLine = `${addr.street}, ${addr.suburb} NSW${addr.postcode ? ` ${addr.postcode}` : ""}, Australia`;
+  const geo = await geocodeViaGoogle(addressLine);
+  if (geo.status !== "ok") return null;
+  return { x: geo.x, y: geo.y, matchedAddress: geo.matchedAddress, matchScore: null };
 }
 
 export async function lookupNsw(addr: { street: string; suburb: string; postcode?: string }): Promise<LotResult> {
-  const key = process.env.NSW_POINT_API_KEY;
-  if (!key) {
-    return {
-      status: "error",
-      flags: ["NSW lookup not configured — missing NSW_POINT_API_KEY (register at the NSW Point portal)"],
-    };
-  }
-
   let geo: NswGeocodeResult | null;
   try {
-    geo = await geocodeNsw(addr, key);
+    geo = await geocodeNsw(addr);
   } catch (e) {
     return { status: "error", flags: [`geocode failed: ${(e as Error).message}`] };
   }

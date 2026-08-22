@@ -18,16 +18,11 @@
 // .env.local.example) — no new setup.
 
 import type { LotResult } from "./types";
+import { geocodeViaGoogle, type GoogleGeocodeOutcome } from "./google-geocode";
 
-const GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 const PARCEL_URL =
   "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Parcel/FeatureServer/0/query";
 
-interface GoogleGeocodeResp {
-  status: string;
-  error_message?: string;
-  results?: { formatted_address?: string; geometry?: { location?: { lat: number; lng: number } } }[];
-}
 interface ParcelFeature {
   attributes?: { parcel_spi?: string; Shape__Area?: number };
   geometry?: { rings?: number[][][] };
@@ -61,44 +56,18 @@ export function splitStreet(street: string): { houseNumber: string; roadName: st
   return { houseNumber: m[1], roadName };
 }
 
-export type VicGeocodeOutcome =
-  | { status: "ok"; x: number; y: number; matchedAddress: string | null }
-  | { status: "no_candidates" }
-  | { status: "no_location"; matchedAddress: string | null };
+export type VicGeocodeOutcome = GoogleGeocodeOutcome;
 
-/** Geocodes a VIC address via Google's Geocoding API (see the file-header comment for
- *  why — Vicmap has no working dedicated geocoder). */
+/** Geocodes a VIC address via Google (see the file-header comment for why — Vicmap has
+ *  no working dedicated geocoder). */
 export async function geocodeVic(
   split: { houseNumber: string; roadName: string },
   addr: { suburb: string; postcode?: string }
 ): Promise<VicGeocodeOutcome> {
-  const key = process.env.GOOGLE_MAPS_API_KEY;
-  if (!key) {
-    throw new Error(
-      "GOOGLE_MAPS_API_KEY not configured — VIC geocoding needs the Geocoding API enabled on the same key used for Site Markup."
-    );
-  }
-
   const addressLine = `${split.houseNumber} ${split.roadName}, ${addr.suburb} VIC${
     addr.postcode ? ` ${addr.postcode}` : ""
   }, Australia`;
-
-  const resp = await fetchJson<GoogleGeocodeResp>(
-    GOOGLE_GEOCODE_URL,
-    new URLSearchParams({ address: addressLine, region: "au", key }),
-    8000
-  );
-
-  if (resp.status === "ZERO_RESULTS") return { status: "no_candidates" };
-  if (resp.status !== "OK" || !resp.results?.length) {
-    throw new Error(`Google geocode ${resp.status}${resp.error_message ? `: ${resp.error_message}` : ""}`);
-  }
-
-  const top = resp.results[0];
-  const location = top.geometry?.location;
-  const matchedAddress = top.formatted_address ?? null;
-  if (!location) return { status: "no_location", matchedAddress };
-  return { status: "ok", x: location.lng, y: location.lat, matchedAddress };
+  return geocodeViaGoogle(addressLine);
 }
 
 export async function lookupVic(addr: { street: string; suburb: string; postcode?: string }): Promise<LotResult> {

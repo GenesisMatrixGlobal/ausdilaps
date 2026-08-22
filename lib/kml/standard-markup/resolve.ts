@@ -41,11 +41,23 @@ function emptyResult(status: StandardMarkupStatus, matchedAddress: string | null
 
 /** A parcel's own idKey can be blank if the source cadastre had no plan/lot attributes
  *  for it — fall back to a positional id so every neighbour still gets something stable
- *  and unique to reference across a generate -> exclude -> re-render round trip. */
+ *  and unique to reference across a generate -> exclude -> re-render round trip.
+ *
+ *  Ids must also be unique *within a single result*: the client keys its exclude-set and
+ *  its checkboxes off this id, so two neighbours sharing one would toggle and render as a
+ *  single parcel. A state cadastre handing back the same identifier for two distinct lots
+ *  is a data question we can't settle here, so collisions are suffixed rather than trusted. */
 function toStandardMarkupNeighbours(
   neighbours: { idKey: string; ring: LatLng[]; areaSqm: number | null }[]
 ): StandardMarkupNeighbour[] {
-  return neighbours.map((n, i) => ({ id: n.idKey || `n${i}`, ring: n.ring, areaSqm: n.areaSqm }));
+  const used = new Set<string>();
+  return neighbours.map((n, i) => {
+    const base = n.idKey || `n${i}`;
+    let id = base;
+    for (let dup = 2; used.has(id); dup++) id = `${base}#${dup}`;
+    used.add(id);
+    return { id, ring: n.ring, areaSqm: n.areaSqm };
+  });
 }
 
 export async function resolveStandardMarkup(

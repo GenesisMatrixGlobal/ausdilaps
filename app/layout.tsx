@@ -4,6 +4,7 @@ import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { JsonLd } from "@/components/seo/json-ld";
 import { organizationSchema, localBusinessSchema } from "@/lib/seo";
+import { IntercomMessenger } from "@/components/marketing/intercom-messenger";
 
 const GA_ID = process.env.NEXT_PUBLIC_GA4_ID;
 
@@ -37,6 +38,7 @@ export default function RootLayout({
       <body>
         <JsonLd data={[organizationSchema(), localBusinessSchema()]} />
         {children}
+        <IntercomMessenger />
         {GA_ID && (
           <>
             <Script

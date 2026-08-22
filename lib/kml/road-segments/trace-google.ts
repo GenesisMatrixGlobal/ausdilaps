@@ -24,7 +24,14 @@ async function traceOne(segment: RoadSegmentInput): Promise<RoadTraceResult> {
   const mismatch = lengthMismatchFlag(tracedLengthKm, segment.footpathLengthKm);
   const allFlags = mismatch ? [...flags, mismatch] : flags;
 
-  return { input: segment, status: "ok", coordinates: route.polyline, tracedLengthKm, flags: allFlags };
+  return {
+    input: segment,
+    status: "ok",
+    coordinates: route.polyline,
+    tracedLengthKm,
+    flags: allFlags,
+    roads: route.roads,
+  };
 }
 
 export async function traceRoadSegmentsGoogle(segments: RoadSegmentInput[]): Promise<RoadTraceResult[]> {

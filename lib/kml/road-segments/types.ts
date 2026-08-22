@@ -1,4 +1,5 @@
 import type { LatLng } from "@/lib/kml/types";
+import type { RoadLeg } from "./google-directions";
 
 /** One row of a council footpath/road register (e.g. ZONE, LOCATION, ROAD NAME, FROM DESC, TO DESC, FOOTPATH LENGTH). */
 export interface RoadSegmentInput {
@@ -32,6 +33,9 @@ export interface RoadTraceResult {
   tracedLengthKm: number | null;
   /** Human-readable notes: geocode/route failures, length-mismatch sanity check, etc. */
   flags: string[];
+  /** Ordered roads travelled, with per-road distance. Only the Google tracer can produce
+   *  this (it comes out of the Directions step instructions); the OSM tracer omits it. */
+  roads?: RoadLeg[];
 }
 
 export interface GeocodedIntersection extends LatLng {

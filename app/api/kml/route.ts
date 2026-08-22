@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isStaff } from "@/lib/auth/is-staff";
 import { kmlRequestSchema } from "@/lib/kml/schema";
 import { buildKml } from "@/lib/kml/build";
 
@@ -13,10 +14,14 @@ function slugify(value: string): string {
   );
 }
 
-// Staff gate is off for now — no admin login UI exists yet (Phase 6). Re-add
-// `isStaff("KML_BUILDER_ALLOW_UNAUTHED")` from lib/auth/is-staff.ts before
-// this tool is exposed on a domain the public can reach.
+// Gated like every other admin tool route. This was deliberately left open while there
+// was no admin login to gate it with; the shared-password gate now exists and the app is
+// deployed on a public domain, which is exactly the condition the old TODO waited for.
 export async function POST(req: NextRequest) {
+  if (!(await isStaff("KML_BUILDER_ALLOW_UNAUTHED"))) {
+    return NextResponse.json({ ok: false, error: "Not authorised." }, { status: 401 });
+  }
+
   let json: unknown;
   try {
     json = await req.json();

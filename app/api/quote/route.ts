@@ -168,7 +168,7 @@ export async function POST(req: NextRequest) {
 
   // Persist (source of truth).
   const hasSupabase = !!(
-    process.env.SUPABASE_SERVICE_ROLE_KEY &&
+    (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY) &&
     (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)
   );
   let leadId: string | null = null;

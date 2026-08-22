@@ -1,2 +1,9 @@
 # Never ship the 156MB old WordPress backup to Vercel
 20260616-AusDilaps-WordPress/
+
+# Build on Vercel's Linux runtime, never ship this Mac's build output or deps.
+# sharp ships platform-specific native binaries (@img/sharp-<os>-<arch>); uploading
+# a macOS node_modules made the linux-x64 function fail to dlopen libvips, which
+# 500'd every image render. Excluding both forces a clean install + build remotely.
+node_modules
+.next

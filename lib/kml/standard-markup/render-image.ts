@@ -7,6 +7,7 @@
 import sharp from "sharp";
 import type { LatLng } from "@/lib/kml/types";
 import { buildStaticMapUrl, GoogleMapsConfigError, IMAGE_SIZE, SCALE } from "@/lib/kml/site-markup/static-map";
+import { COMPASS_N_PATH, LEGEND_LABEL_PATHS } from "./overlay-paths";
 import { bufferLineToPolygon, simplifyRing } from "./geometry";
 import type { StandardMarkupNeighbour } from "./resolve";
 
@@ -173,7 +174,7 @@ function legendSvg(): string {
   const lines = rows
     .map(
       ([color, label], i) =>
-        `<text x="${x + 16}" y="${y + 34 + i * 30}" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#${color}">${label}</text>`
+        `<path transform="translate(${x + 16}, ${y + 34 + i * 30})" d="${LEGEND_LABEL_PATHS[label]}" fill="#${color}" />`
     )
     .join("\n    ");
   return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="10" fill="white" fill-opacity="0.9" stroke="#cccccc" stroke-width="1.5" />
@@ -189,8 +190,7 @@ function northArrowSvg(nativeSize: number): string {
   const cy = 20 + r;
   return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="white" fill-opacity="0.95" stroke="#${COMPASS_BLUE}" stroke-width="2.5" />
     <polygon points="${cx},${cy - 18} ${cx - 10},${cy - 2} ${cx + 10},${cy - 2}" fill="#${COMPASS_BLUE}" />
-    <text x="${cx}" y="${cy + 18}" font-family="Arial, sans-serif" font-size="20" font-weight="bold"
-      text-anchor="middle" dominant-baseline="middle" fill="#${COMPASS_BLUE}">N</text>`;
+    <path transform="translate(${cx}, ${cy + 18})" d="${COMPASS_N_PATH}" fill="#${COMPASS_BLUE}" />`;
 }
 
 /** Combines the legend and north arrow into one SVG sized to the native output image —

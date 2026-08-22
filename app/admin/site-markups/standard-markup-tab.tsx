@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
+import { SyncToSalesforce } from "@/components/admin/sync-to-salesforce";
 import { latLngToPixel, pixelToLatLng } from "@/lib/kml/standard-markup/projection";
 
 const MAX_COUNCIL_POINTS = 10;
@@ -390,33 +391,41 @@ export function StandardMarkupTab() {
     });
   }
 
-  // Re-renders without the numbered neighbour pins for the download — those reference
-  // numbers are for staff's own check/uncheck workflow, not something a client needs to
-  // see, so the on-screen preview and the downloaded file are deliberately different.
+  // Re-renders without the numbered neighbour pins — those reference numbers are for staff's
+  // own check/uncheck workflow, not something a client needs to see, so the on-screen preview
+  // and the exported file are deliberately different.
+  //
+  // Shared by Download and Sync To Salesforce so the file filed into Box is byte-identical to
+  // the one an operator would have downloaded and uploaded by hand.
+  async function renderCleanImageBase64(): Promise<string> {
+    if (!result) throw new Error("Generate a markup first.");
+    const res = await fetch("/api/kml/standard-markup/render", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        subjectRing: result.subjectRing,
+        neighbours: result.neighbours,
+        mapType: result.mapType,
+        zoomAdjust,
+        excludeIds: Array.from(excludedIds),
+        hideMarkers: true,
+        councilAssets: councilAssetsPayload(),
+      }),
+    });
+    const json = (await res.json().catch(() => null)) as { ok: boolean; image?: string; error?: string } | null;
+    if (!res.ok || !json?.image) {
+      throw new Error(json?.error ?? "Something went wrong rendering the image.");
+    }
+    return json.image;
+  }
+
   async function download() {
     if (!result) return;
     setError(null);
     setDownloading(true);
     try {
-      const res = await fetch("/api/kml/standard-markup/render", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          subjectRing: result.subjectRing,
-          neighbours: result.neighbours,
-          mapType: result.mapType,
-          zoomAdjust,
-          excludeIds: Array.from(excludedIds),
-          hideMarkers: true,
-          councilAssets: councilAssetsPayload(),
-        }),
-      });
-      const json = (await res.json().catch(() => null)) as { ok: boolean; image?: string; error?: string } | null;
-      if (!res.ok || !json?.image) {
-        setError(json?.error ?? "Something went wrong preparing the download.");
-        return;
-      }
-      const blob = base64ToBlob(json.image, "image/png");
+      const image = await renderCleanImageBase64();
+      const blob = base64ToBlob(image, "image/png");
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -572,6 +581,11 @@ export function StandardMarkupTab() {
         >
           {downloading ? "Preparing…" : "Download .png"}
         </button>
+        <SyncToSalesforce
+          getImageBase64={renderCleanImageBase64}
+          fallbackName={`${slugify(street)}-${slugify(suburb)}-standard-markup.png`}
+          disabled={!imageDataUrl}
+        />
         {error && <span className="text-sm text-ad-orange">{error}</span>}
       </div>
 

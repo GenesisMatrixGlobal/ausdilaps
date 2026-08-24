@@ -41,7 +41,8 @@ Not a brochure. The goal is to make AusDilaps **the category authority** in Aust
   - **SEO:** `app/sitemap.ts` (51 urls, data-driven), `app/robots.ts`, `app/llms.txt/route.ts`, `data/redirects.ts` → `next.config.ts redirects()`, GA4 env-gated in `app/layout.tsx`.
 - **Shared components** (`components/marketing/`): `breadcrumbs`, `page-hero`, `content-section` (data-driven bands), `faq-accordion` (FaqList/FaqSection), `cta-band`, `related-links`, `portfolio-card`/`portfolio-grid`, `insights-grid`, `mobile-nav`, `quote-form`. Schema builders added to `lib/seo.ts`: `localBusinessForCity`, `projectSchema`, `articleSchema`, `itemListSchema`.
 - **Design system + brand** implemented (see §5). Real logo wired into header/footer. Mobile nav added.
-- **Supabase project** exists: ref `zjgntkfzgtrqkklglhpo` (Tokyo region). Migrations `0001`–`0005` — **still not run** (the `public` schema was verified empty on 2026-08-24, so the quote form has never persisted a lead and nobody can sign in to `/staff`; see §10).
+- **Supabase project:** ref `zjgntkfzgtrqkklglhpo` (Tokyo region) — this is the one production uses (`NEXT_PUBLIC_SUPABASE_URL` in Vercel). **Migrations `0001`–`0003` ARE applied** (verified 2026-08-24 by column probe: `leads.asset_count`, `leads.inquiry_type` present). The quote form persists leads normally. Only `0004`+`0005` (staff portal) are outstanding.
+- ⚠️ **A second, EMPTY Supabase project exists: `iiedgpurcsgakehrqzcr`.** The Supabase MCP server is bound to *that* one, not production. Check `get_project_url` before trusting any MCP query, and never apply migrations through it. Decide which project is canonical and delete the other.
 - **Staff portal (BUILT — don't redo):** `/staff` = per-user magic-link auth, department-scoped. `/admin` = company admins only. See `docs/staff-portal.md`.
   - Six departments in `lib/departments.ts`: estimators, inspectors, projects, reports, accounts, office. Stored as `profiles.departments text[]`; `admin`/`superadmin` implicitly get all.
   - Auth surface is `lib/auth/session.ts` (`getStaffUser` / `requireStaff` / `requireDepartment` / `requireAdmin`). `proxy.ts` refreshes the Supabase session and does the coarse signed-in check; role/department checks live in the layouts.
@@ -148,7 +149,9 @@ Build in this order. Each page: real content, full JSON-LD, a CTA to the quote f
 
 ## 10. Setup the founder still needs to do
 
-- **Run the migrations:** `npm run migrate` (needs `DATABASE_URL` — same value as `POSTGRES_URL_NON_POOLING` in Vercel). Builds `leads`, the dormant portal tables, and the staff-portal columns/trigger. **Nothing works until this runs** — the schema is currently empty.
+- **Run migrations `0004`+`0005`:** `npm run migrate` (needs `DATABASE_URL` — same value as `POSTGRES_URL_NON_POOLING` in Vercel). `0001`–`0003` are already applied and re-running them is a no-op (idempotent). Until `0005` runs, `/staff` and `/admin` are unreachable; the marketing site and quote form are unaffected.
+- **Add `NEXT_PUBLIC_SITE_URL` to Vercel** — it is currently MISSING, and every magic link / invite is built from it (falls back to `http://localhost:3000`).
+- **Add `RESEND_API_KEY` to Vercel** — also currently missing, so quote acknowledgement emails aren't sending.
 - **Staff portal setup** (Supabase Auth URLs, disable signups, Resend SMTP, the Invite email template, then `node scripts/invite-admin.mjs <email>`): the full ordered list is in `docs/staff-portal.md`.
 - **Env vars** (`.env.local` locally + Vercel → Settings → Environment Variables) — see `.env.local.example`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `ADMIN_EMAIL=info@ausdilaps.com.au`, `NEXT_PUBLIC_SITE_URL=https://ausdilaps.com.au`, `SF_*` (Salesforce, when ready), `NEXT_PUBLIC_GA4_ID=G-81JV6BQ2R5`. The marketing site renders without any of these; the form/admin need them.
 

@@ -41,7 +41,15 @@ Not a brochure. The goal is to make AusDilaps **the category authority** in Aust
   - **SEO:** `app/sitemap.ts` (51 urls, data-driven), `app/robots.ts`, `app/llms.txt/route.ts`, `data/redirects.ts` → `next.config.ts redirects()`, GA4 env-gated in `app/layout.tsx`.
 - **Shared components** (`components/marketing/`): `breadcrumbs`, `page-hero`, `content-section` (data-driven bands), `faq-accordion` (FaqList/FaqSection), `cta-band`, `related-links`, `portfolio-card`/`portfolio-grid`, `insights-grid`, `mobile-nav`, `quote-form`. Schema builders added to `lib/seo.ts`: `localBusinessForCity`, `projectSchema`, `articleSchema`, `itemListSchema`.
 - **Design system + brand** implemented (see §5). Real logo wired into header/footer. Mobile nav added.
-- **Supabase project** exists: ref `zjgntkfzgtrqkklglhpo` (Tokyo region). `supabase/migrations/0001_init.sql` — **still not run** (the form persists only once it is + env set; see §10).
+- **Supabase project** exists: ref `zjgntkfzgtrqkklglhpo` (Tokyo region). Migrations `0001`–`0005` — **still not run** (the `public` schema was verified empty on 2026-08-24, so the quote form has never persisted a lead and nobody can sign in to `/staff`; see §10).
+- **Staff portal (BUILT — don't redo):** `/staff` = per-user magic-link auth, department-scoped. `/admin` = company admins only. See `docs/staff-portal.md`.
+  - Six departments in `lib/departments.ts`: estimators, inspectors, projects, reports, accounts, office. Stored as `profiles.departments text[]`; `admin`/`superadmin` implicitly get all.
+  - Auth surface is `lib/auth/session.ts` (`getStaffUser` / `requireStaff` / `requireDepartment` / `requireAdmin`). `proxy.ts` refreshes the Supabase session and does the coarse signed-in check; role/department checks live in the layouts.
+  - `/staff/[department]` presents two route-based tabs: **Tools** and **Training**.
+  - **Tool registry** `lib/tools/registry.ts` — tools are department-agnostic components in `components/tools/*`. Surfacing a tool to another department = adding a slug to its `departments` array. Never copy a tool.
+  - **Training** = MDX in `content/training/<department>/*.mdx` via `lib/training.ts` (mirrors `lib/insights.ts`).
+  - `/admin/staff` invites staff (Supabase `inviteUserByEmail` + the `0005` `auth.users` trigger) and assigns departments, via server actions that each re-check `requireAdmin()`.
+  - The old shared `ADMIN_ACCESS_PASSWORD` gate is **gone** (`lib/auth/admin-session.ts` and `/api/admin/login` deleted). The per-tool `*_ALLOW_UNAUTHED` env hatches are now **dev-only** — they used to leave those API routes open in production.
 - **Pre-cutover task:** `/dilapidation-reports/samples` links the LIVE WP sample PDFs (too heavy to commit; no R2 in v1) — must be re-hosted (Supabase Storage or compressed/committed) before the WP site comes down. See `seo/content-backlog.md`.
 - **Build is green.** Always keep it that way: `npm run build`.
 
@@ -80,7 +88,7 @@ Not a brochure. The goal is to make AusDilaps **the category authority** in Aust
 
 ## 6. Scope
 
-**v1 (this repo):** marketing site (expansive, SEO/AEO/GEO) + **lead engine** (form → Supabase → Salesforce + email) + **admin backend** (staff-only: manage leads + author news).
+**v1 (this repo):** marketing site (expansive, SEO/AEO/GEO) + **lead engine** (form → Supabase → Salesforce + email) + **staff portal** (`/staff` — department tools + training) + **admin** (`/admin` — staff access, tool registry; leads table + news authoring still TODO).
 - **NO client logins, no report downloads, no payments** here. The portal-era Supabase tables (`organizations/projects/reports/...`) are written-but-dormant in the migration — leave them; v1 uses only `leads` (+ `profiles`/role for staff auth).
 - A future client portal = a **separate system**.
 
@@ -119,7 +127,7 @@ Build in this order. Each page: real content, full JSON-LD, a CTA to the quote f
 
 **Phase 5 — Lead engine:** rich quote form (Name, Role, Company, Email, Phone, Project name, Location, # adjoining properties, Required start date, DA condition / contract clause, Notes) → `/api/quote`: zod validate → honeypot (+ Turnstile env-gated, optional) → classify tier (role/company/#properties) → **Supabase insert (source of truth)** → Resend (admin notice to `info@ausdilaps.com.au` + enquirer ack) → **Salesforce upsert** (behind `SF_SYNC_ENABLED`). Failure-isolate each destination. Mirror `Sigma Sync/web/src/app/api/contact/route.ts`. Plus a capability-statement gated email-capture.
 
-**Phase 6 — Admin backend (v1):** Supabase auth (staff only, `profiles.role`), `proxy.ts` guard (mirror `The Skin Collective/proxy.ts`). `/admin`: leads table (statuses new→contacted→quoted→won/lost, export) + **news authoring UI** so the team publishes insights without a developer.
+**Phase 6 — Staff portal + admin:** ✅ Supabase per-user auth, departments, tool registry, training, `/admin/staff` invites (see §3 and `docs/staff-portal.md`). **Still TODO:** `/admin/leads` table (statuses new→contacted→quoted→won/lost, export) + **news authoring UI** so the team publishes insights without a developer.
 
 **Phase 7 — SEO/AEO/GEO finalisation:** `data/redirects.ts` → `next.config.ts redirects()` — **preserve live slugs; 301 only the dated blog post + PDF samples**. `app/sitemap.ts`, `app/robots.ts`, **`public/llms.txt`** (GEO), GA4 `G-81JV6BQ2R5`, validate every schema (Rich Results), Lighthouse > 90. Domain cutover (point `ausdilaps.com.au` at Vercel) ONLY after redirects are verified — the live site stays untouched until then.
 
@@ -140,7 +148,8 @@ Build in this order. Each page: real content, full JSON-LD, a CTA to the quote f
 
 ## 10. Setup the founder still needs to do
 
-- **Run the migration:** paste `supabase/migrations/0001_init.sql` into Supabase → SQL Editor → Run (builds `leads` + the dormant portal tables).
+- **Run the migrations:** `npm run migrate` (needs `DATABASE_URL` — same value as `POSTGRES_URL_NON_POOLING` in Vercel). Builds `leads`, the dormant portal tables, and the staff-portal columns/trigger. **Nothing works until this runs** — the schema is currently empty.
+- **Staff portal setup** (Supabase Auth URLs, disable signups, Resend SMTP, the Invite email template, then `node scripts/invite-admin.mjs <email>`): the full ordered list is in `docs/staff-portal.md`.
 - **Env vars** (`.env.local` locally + Vercel → Settings → Environment Variables) — see `.env.local.example`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `ADMIN_EMAIL=info@ausdilaps.com.au`, `NEXT_PUBLIC_SITE_URL=https://ausdilaps.com.au`, `SF_*` (Salesforce, when ready), `NEXT_PUBLIC_GA4_ID=G-81JV6BQ2R5`. The marketing site renders without any of these; the form/admin need them.
 
 ---

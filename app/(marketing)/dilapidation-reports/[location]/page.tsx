@@ -106,7 +106,7 @@ export default async function LocationPage({
             <div className="max-w-2xl">
               <Eyebrow className="text-ad-accent">Proven in {loc.region}</Eyebrow>
               <h2 className="mt-5 font-heading text-3xl font-semibold tracking-tight text-ad-ink">
-                {loc.city} projects we've documented.
+                {loc.city} projects we&rsquo;ve documented.
               </h2>
               <p className="mt-4 text-ad-muted">{loc.serviceNote}</p>
             </div>

@@ -502,7 +502,7 @@ export function RoadSegmentsTab() {
         {error && <span className="text-sm text-ad-orange">{error}</span>}
       </div>
       <p className="mt-2 text-xs text-ad-muted">
-        Traces using Google Maps when it's configured (more reliable), falling back to free
+        Traces using Google Maps when it&rsquo;s configured (more reliable), falling back to free
         OpenStreetMap data otherwise.
       </p>
 

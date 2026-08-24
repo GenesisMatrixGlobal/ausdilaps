@@ -1,0 +1,67 @@
+---
+title: "Producing a residential site markup"
+summary: "How to turn an address into a marked-up aerial with the subject lot, adjoining properties and council assets, then file it against the Quote in Salesforce."
+order: 1
+duration: "8 min"
+updated: "2026-08-24"
+---
+
+## What the tool does
+
+Residential Mark Up takes a street address, finds the subject lot in the state cadastre,
+identifies the properties that genuinely adjoin it, and renders a hybrid aerial with the
+subject ring and numbered neighbours drawn on top.
+
+Cadastre coverage is **live for QLD, NSW and VIC**. SA, WA, TAS, ACT and NT are listed in
+the state picker but disabled — there's no cadastre feed wired up for them yet.
+
+## Step 1 — Find the address
+
+Start typing in the address box and pick the match from the dropdown. It's searching Google
+Places, so partial addresses work, but choose the suggestion rather than typing the whole
+thing — selecting a suggestion is what gives the tool the precise coordinates it needs.
+
+If the address won't resolve, the lot almost certainly isn't in the cadastre for that state.
+Check the state selector is right before assuming the address is wrong.
+
+## Step 2 — Check the neighbours
+
+The tool works out which lots actually share a boundary with the subject, rather than just
+grabbing everything nearby. Each one gets a number on the image and a row in the checklist.
+
+Untick anything that shouldn't be in scope — a lot across a road, a battle-axe handle, a
+neighbour already covered by a separate report. Unticking re-renders from the geometry the
+tool already has, so it's fast and doesn't re-query the cadastre.
+
+## Step 3 — Draw council assets
+
+Click directly on the image to trace council assets — kerb, footpath, driveway crossovers,
+anything the report needs to call out.
+
+- Click once per point along the asset, then finish it to close that asset off
+- **Up to 5 assets**, each with **up to 10 points**
+- Set a width per asset between 5 m and 20 m (default 10 m)
+- Undo the last point or clear the whole asset if you misclick
+
+## Step 4 — Download or sync
+
+**Download** gives you the PNG with the numbered staff pins removed, so it's clean enough to
+drop straight into a report.
+
+**Sync To Salesforce** files that same clean image against the Quote. Paste the Quote URL,
+Id or number and the tool resolves the Quote, its Opportunity and the linked Box folder, and
+shows you what it found before anything is written. Confirm, and it uploads to Box and writes
+the link into the first empty markup slot on the Quote.
+
+The file that gets synced is byte-identical to what Download produces — same render, pins
+hidden — so there's never a mismatch between what you checked and what got filed.
+
+## Common problems
+
+**"No parcel found"** — wrong state selected, or the address is outside QLD/NSW/VIC.
+
+**A neighbour is missing** — the cadastre boundary may not quite touch. Draw it as a council
+asset instead so it's still visible on the markup.
+
+**Sync says no Box folder** — the Opportunity has no Box folder link yet. You can paste a Box
+folder URL manually to override it.

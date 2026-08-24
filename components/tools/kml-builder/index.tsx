@@ -72,7 +72,7 @@ function slugify(value: string): string {
   );
 }
 
-export default function KmlBuilderPage() {
+export function KmlBuilderTool() {
   const [mode, setMode] = useState<"straight-line" | "road-segments">("straight-line");
   const [documentName, setDocumentName] = useState("AusDilaps Survey Paths");
   const [rows, setRows] = useState<Row[]>([emptyRow()]);
@@ -166,14 +166,7 @@ export default function KmlBuilderPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <p className="text-xs uppercase tracking-[0.15em] text-ad-steel">AusDilaps · Field Tools</p>
-      <h1 className="mt-1 text-3xl font-semibold text-ad-ink">KML Builder</h1>
-      <p className="mt-2 max-w-2xl text-ad-muted">
-        Enter start/end GPS coordinates for a straight path, or trace the real road between two
-        cross-streets from a footpath/road register. KML paths compile into a single .kml file,
-        ready to open in Google Earth or a GIS viewer.
-      </p>
+    <div>
 
       <div className="mt-6 flex gap-2 border-b border-ad-border">
         {(
@@ -371,6 +364,6 @@ export default function KmlBuilderPage() {
       </div>
       </>
       )}
-    </main>
+    </div>
   );
 }

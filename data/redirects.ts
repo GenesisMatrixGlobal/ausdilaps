@@ -39,6 +39,25 @@ export const REDIRECTS: Redirect[] = [
   // (preserves the live ranking URL); this is just a shorter alias.
   { source: "/samples", destination: "/dilapidation-reports/samples", permanent: true },
 
+  // Staff portal — the /admin/* field tools moved to /staff/<department>/tools/*
+  // when per-user auth landed. /admin is now company-admins only.
+  {
+    source: "/admin/property-sizing",
+    destination: "/staff/estimators/tools/property-sizing",
+    permanent: true,
+  },
+  {
+    source: "/admin/site-markups",
+    destination: "/staff/estimators/tools/site-markups",
+    permanent: true,
+  },
+  {
+    source: "/admin/kml-builder",
+    destination: "/staff/inspectors/tools/kml-builder",
+    permanent: true,
+  },
+  { source: "/admin/login", destination: "/staff/login", permanent: true },
+
   // Short link for the inspector QR code sticker.
   { source: "/qr", destination: "/inspector-links", permanent: true },
 ];

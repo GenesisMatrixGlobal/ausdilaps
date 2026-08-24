@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
-import { SyncToSalesforce } from "@/components/admin/sync-to-salesforce";
+import { SyncToSalesforce } from "@/components/tools/shared/sync-to-salesforce";
 
 const MAP_TYPE = "hybrid";
 
@@ -35,7 +35,7 @@ function slugify(value: string): string {
 
 type InputMode = "cross_streets" | "coordinates" | "route_url";
 
-export function SiteMarkupTab() {
+export function RoadMarkupTab() {
   const [inputMode, setInputMode] = useState<InputMode>("cross_streets");
   const [roadName, setRoadName] = useState("");
   const [fromDesc, setFromDesc] = useState("");

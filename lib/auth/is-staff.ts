@@ -1,37 +1,18 @@
-import { cookies } from "next/headers";
-import { createClient } from "@/lib/supabase/server";
-import { ADMIN_SESSION_COOKIE, expectedAdminSessionToken } from "./admin-session";
+import { getStaffUser } from "./session";
 
 /**
- * Staff gate shared by internal admin API routes. Real per-user auth (login UI)
- * lands with the Phase-6 admin backend; until then, the whole /admin section sits
- * behind one shared team password (see admin-session.ts + middleware.ts) — passing
- * that gate is enough to use any tool. Each tool also keeps its own
- * `*_ALLOW_UNAUTHED=true` env escape hatch for local dev. When a Supabase session
- * exists, only internal staff (admin/superadmin) pass.
+ * Staff gate for the internal API routes the tools call.
+ *
+ * A real signed-in staff account is now the only way through in production
+ * (see lib/auth/session.ts). The per-tool `*_ALLOW_UNAUTHED=true` env vars still
+ * work for local dev, but are IGNORED in production — they used to short-circuit
+ * this check first, which left the property-sizing, road-trace and site-markup
+ * routes open to the internet on the live site.
  */
 export async function isStaff(allowUnauthedEnvVar: string): Promise<boolean> {
-  if (process.env[allowUnauthedEnvVar] === "true") return true;
-
-  const expected = await expectedAdminSessionToken();
-  if (expected) {
-    const store = await cookies();
-    if (store.get(ADMIN_SESSION_COOKIE)?.value === expected) return true;
+  if (process.env.NODE_ENV !== "production" && process.env[allowUnauthedEnvVar] === "true") {
+    return true;
   }
 
-  try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return false;
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-    return profile?.role === "admin" || profile?.role === "superadmin";
-  } catch {
-    return false;
-  }
+  return (await getStaffUser()) !== null;
 }

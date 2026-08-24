@@ -185,7 +185,7 @@ export default async function SamplesPage() {
           <p className="mt-5 text-lg leading-relaxed text-ad-on-dark-muted">
             For large or complex assets we capture LiDAR point clouds and build navigable 3D models and
             digital twins — letting you inspect a highway, road corridor or building from any angle.
-            Request access and we'll share live interactive examples relevant to your project.
+            Request access and we&rsquo;ll share live interactive examples relevant to your project.
           </p>
         </Container>
       </section>

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
-import { SyncToSalesforce } from "@/components/admin/sync-to-salesforce";
+import { SyncToSalesforce } from "@/components/tools/shared/sync-to-salesforce";
 import { latLngToPixel, pixelToLatLng } from "@/lib/kml/standard-markup/projection";
 
 const MAX_COUNCIL_POINTS = 10;
@@ -215,7 +215,7 @@ function AddressSearch({ onSelect }: { onSelect: (parsed: ParsedAddress) => void
   );
 }
 
-export function StandardMarkupTab() {
+export function ResidentialMarkupTab() {
   const [street, setStreet] = useState("");
   const [suburb, setSuburb] = useState("");
   const [postcode, setPostcode] = useState("");

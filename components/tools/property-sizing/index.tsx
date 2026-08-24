@@ -30,7 +30,7 @@ function tsv(rows: string[][]): string {
 
 const fmtArea = (n: number | null) => (n == null ? "" : n.toLocaleString("en-AU"));
 
-export default function PropertySizingPage() {
+export function PropertySizingTool() {
   const [mode, setMode] = useState<Mode>("text");
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -135,13 +135,7 @@ export default function PropertySizingPage() {
   const needManual = results ? results.length - resolved : 0;
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <p className="text-xs uppercase tracking-[0.15em] text-ad-steel">AusDilaps · Estimating</p>
-      <h1 className="mt-1 text-3xl font-semibold text-ad-ink">Property Sizing Tool</h1>
-      <p className="mt-2 max-w-2xl text-ad-muted">
-        Paste a list of addresses or drop in a screenshot. The tool returns the land/lot size for each
-        property from free government cadastre data, ready to copy into your quoting sheet.
-      </p>
+    <div>
       <p className="mt-2 text-sm text-ad-muted">
         <span className="font-medium text-ad-ink">Live:</span> QLD, NSW &amp; VIC lot size.{" "}
         <span className="font-medium text-ad-ink">Coming:</span> other states, plus estimated levels and
@@ -354,6 +348,6 @@ export default function PropertySizingPage() {
       )}
       </>
       )}
-    </main>
+    </div>
   );
 }

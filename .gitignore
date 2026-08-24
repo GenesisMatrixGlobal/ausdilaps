@@ -47,3 +47,6 @@ next-env.d.ts
 
 # local Claude Code tool settings — machine-specific, not shared
 /.claude/
+
+# MCP server config — contains a Supabase access token
+.mcp.json

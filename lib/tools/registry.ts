@@ -48,6 +48,10 @@ export const TOOLS: ToolDefinition[] = [
       import("@/components/tools/property-sizing").then((m) => m.PropertySizingTool)
     ),
   },
+  // Tender Watch is deliberately NOT registered yet. The nightly scan is paused and no
+  // sources are configured, so it would be an empty screen for staff. It lives at
+  // /admin/tender-watch until the pipeline is live; re-adding it here (departments:
+  // ["accounts"]) plus the slug in lib/tenders/config.ts is the whole change.
   {
     slug: "kml-builder",
     title: "KML Builder",

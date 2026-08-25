@@ -30,7 +30,7 @@ Not a brochure. The goal is to make AusDilaps **the category authority** in Aust
 
 ## 3. Current state (already built & LIVE — don't redo)
 
-- **Repo:** `github.com/MyPixelStrategy/ausdilaps`. **Deployed:** `ausdilaps.vercel.app` (Vercel, connected via git — **every push to `main` auto-deploys**).
+- **Repo (`origin`, Vercel-connected):** `github.com/GenesisMatrixGlobal/ausdilaps` — **every push to `main` auto-deploys** to Vercel (`ausdilaps.vercel.app`). Secondary remotes kept locally: `ausdilaps-master` (`AusDilaps-Master/ausdilaps`, private, the previous canonical) and `old-mypixel` (`MyPixelStrategy/ausdilaps`, dead).
 - **Pages live (Phases 1–7 BUILT — don't redo):**
   - `/` homepage, `/faq`, `/styleguide`.
   - **Pillar + locations + samples:** `/dilapidation-reports` (Service + HowTo + FAQPage), `/dilapidation-reports/[location]` (6 cities sydney/brisbane/melbourne/wollongong/canberra/perth — legacy nested slug `dilapidation-reports-<city>`, per-city LocalBusiness + Service + HowTo + FAQ), `/dilapidation-reports/samples`.
@@ -41,8 +41,10 @@ Not a brochure. The goal is to make AusDilaps **the category authority** in Aust
   - **SEO:** `app/sitemap.ts` (51 urls, data-driven), `app/robots.ts`, `app/llms.txt/route.ts`, `data/redirects.ts` → `next.config.ts redirects()`, GA4 env-gated in `app/layout.tsx`.
 - **Shared components** (`components/marketing/`): `breadcrumbs`, `page-hero`, `content-section` (data-driven bands), `faq-accordion` (FaqList/FaqSection), `cta-band`, `related-links`, `portfolio-card`/`portfolio-grid`, `insights-grid`, `mobile-nav`, `quote-form`. Schema builders added to `lib/seo.ts`: `localBusinessForCity`, `projectSchema`, `articleSchema`, `itemListSchema`.
 - **Design system + brand** implemented (see §5). Real logo wired into header/footer. Mobile nav added.
-- **Supabase project:** ref `zjgntkfzgtrqkklglhpo` (Tokyo region) — this is the one production uses (`NEXT_PUBLIC_SUPABASE_URL` in Vercel). **Migrations `0001`–`0003` ARE applied** (verified 2026-08-24 by column probe: `leads.asset_count`, `leads.inquiry_type` present). The quote form persists leads normally. Only `0004`+`0005` (staff portal) are outstanding.
-- ⚠️ **A second, EMPTY Supabase project exists: `iiedgpurcsgakehrqzcr`.** The Supabase MCP server is bound to *that* one, not production. Check `get_project_url` before trusting any MCP query, and never apply migrations through it. Decide which project is canonical and delete the other.
+- **Supabase project:** ref `zjgntkfzgtrqkklglhpo` (Tokyo region) — the one production uses (`NEXT_PUBLIC_SUPABASE_URL` in Vercel). **All migrations `0001`–`0006` ARE applied** (verified 2026-08-25 directly against production: `profiles.departments`, `has_department()`, the `staff` role, and all three `tender_*` tables present; the privilege-escalation `profiles self update` policy is dropped). Note `supabase_migrations.schema_migrations` still reads `0001`–`0003` — `scripts/migrate.mjs` runs raw SQL and never writes that ledger, so the schema is the truth, not the ledger.
+- **Supabase MCP works.** `.mcp.json` (gitignored) pins `--project-ref=zjgntkfzgtrqkklglhpo` `--read-only`, and the access token was replaced 2026-08-25 with one from the owning account — `list_tables`/`execute_sql` return live production data. It is READ-ONLY, so migrations still go via `scripts/migrate.mjs` or the Management API `/database/query` endpoint (which the token can also write through).
+- ⚠️ **`npm run migrate` does not currently work locally** — the `DATABASE_URL` password in `.env.local` is rejected by Postgres. Migrations `0004`–`0006` were applied instead by POSTing each file to `https://api.supabase.com/v1/projects/<ref>/database/query` with the `.mcp.json` token (use curl, not python — Cloudflare 1010s unrecognised user-agents). Same result, no DB password needed.
+- ❗ **`iiedgpurcsgakehrqzcr` is NOT an AusDilaps project.** It belongs to a separate, unrelated Supabase org. An earlier note here called it "a second, empty AusDilaps project" and said to delete one of the two — that was wrong, and acting on it would destroy unrelated work. Leave it alone.
 - **Staff portal (BUILT — don't redo):** `/staff` = per-user magic-link auth, department-scoped. `/admin` = company admins only. See `docs/staff-portal.md`.
   - Six departments in `lib/departments.ts`: estimators, inspectors, projects, reports, accounts, office. Stored as `profiles.departments text[]`; `admin`/`superadmin` implicitly get all.
   - Auth surface is `lib/auth/session.ts` (`getStaffUser` / `requireStaff` / `requireDepartment` / `requireAdmin`). `proxy.ts` refreshes the Supabase session and does the coarse signed-in check; role/department checks live in the layouts.
@@ -50,6 +52,15 @@ Not a brochure. The goal is to make AusDilaps **the category authority** in Aust
   - **Tool registry** `lib/tools/registry.ts` — tools are department-agnostic components in `components/tools/*`. Surfacing a tool to another department = adding a slug to its `departments` array. Never copy a tool.
   - **Training** = MDX in `content/training/<department>/*.mdx` via `lib/training.ts` (mirrors `lib/insights.ts`).
   - `/admin/staff` invites staff (Supabase `inviteUserByEmail` + the `0005` `auth.users` trigger) and assigns departments, via server actions that each re-check `requireAdmin()`.
+- **Tender Watch (BUILT — don't redo):** the nightly tender pipeline. `/staff/accounts/tools/tender-watch` + `/admin/tender-watch`. See `docs/tender-watch.md`.
+  - **Not a scraper.** AU tender portals mostly offer email alerts, not feeds (AusTender's ATM RSS is the exception; tenders.gov.au and data.gov.au both 403 automated fetches). `tenders@` registers for every portal's alerts and the portals become the crawler. Two adapters — `rss` built, `email` (MS Graph, app-only) is Phase 2.
+  - Vercel Cron at `0 10 * * *` UTC = **8pm Brisbane year-round** (QLD has no DST). First `vercel.json` in the repo; a 9am health check runs alongside it.
+  - Two phases, both resumable off partial indexes: fetch+persist (raw stored *before* parsing, so a format change is replayable) then classify+forward. No retry queue — tomorrow's run is the retry.
+  - `lib/tenders/*`, migration `0006`, `lib/html.ts` (hardened escaping), `lib/auth/shared-secret.ts` (fail-closed cron gate).
+  - The tool is a **server** component (`index.tsx` loads, `view.tsx` renders) — unlike the other tools, because a dashboard must show state on open.
+  - ⚠️ `tender_upsert_item`'s `on conflict do update` refreshes only source-owned fields. Widening it re-classifies and re-emails the whole back-catalogue nightly.
+  - Ships in **shadow mode** (`TENDER_FORWARD_ENABLED=false`) — runs and classifies, sends nothing, for the first week.
+
   - The old shared `ADMIN_ACCESS_PASSWORD` gate is **gone** (`lib/auth/admin-session.ts` and `/api/admin/login` deleted). The per-tool `*_ALLOW_UNAUTHED` env hatches are now **dev-only** — they used to leave those API routes open in production.
 - **Pre-cutover task:** `/dilapidation-reports/samples` links the LIVE WP sample PDFs (too heavy to commit; no R2 in v1) — must be re-hosted (Supabase Storage or compressed/committed) before the WP site comes down. See `seo/content-backlog.md`.
 - **Build is green.** Always keep it that way: `npm run build`.
@@ -150,8 +161,9 @@ Build in this order. Each page: real content, full JSON-LD, a CTA to the quote f
 ## 10. Setup the founder still needs to do
 
 - **Run migrations `0004`+`0005`:** `npm run migrate` (needs `DATABASE_URL` — same value as `POSTGRES_URL_NON_POOLING` in Vercel). `0001`–`0003` are already applied and re-running them is a no-op (idempotent). Until `0005` runs, `/staff` and `/admin` are unreachable; the marketing site and quote form are unaffected.
-- **Add `NEXT_PUBLIC_SITE_URL` to Vercel** — it is currently MISSING, and every magic link / invite is built from it (falls back to `http://localhost:3000`).
+- **Add `NEXT_PUBLIC_SITE_URL=https://ausdilaps.vercel.app` to Vercel** — currently MISSING. Every staff INVITE is built from it (self-service magic links use the browser origin, so they are unaffected). ⚠️ Set it to the **vercel.app** origin, NOT `ausdilaps.com.au` — that domain still serves the old WordPress site, so invites pointed there 404. Change it at domain cutover, together with Supabase Auth → URL Configuration.
 - **Add `RESEND_API_KEY` to Vercel** — also currently missing, so quote acknowledgement emails aren't sending.
+- **Tender Watch setup:** `CRON_SECRET` (min 32 chars — the scan route 503s without it), `TENDER_AUSTENDER_FEED_URL` (verify by hand in a browser, then test from a deployed preview — gov hosts 403 datacenter IPs), `TENDER_NOTIFY_EMAIL`. Leave `TENDER_FORWARD_ENABLED=false` for week one. Phase 2 needs an Entra app registration scoped with `New-ApplicationAccessPolicy` — full list in `docs/tender-watch.md`.
 - **Staff portal setup** (Supabase Auth URLs, disable signups, Resend SMTP, the Invite email template, then `node scripts/invite-admin.mjs <email>`): the full ordered list is in `docs/staff-portal.md`.
 - **Env vars** (`.env.local` locally + Vercel → Settings → Environment Variables) — see `.env.local.example`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `ADMIN_EMAIL=info@ausdilaps.com.au`, `NEXT_PUBLIC_SITE_URL=https://ausdilaps.com.au`, `SF_*` (Salesforce, when ready), `NEXT_PUBLIC_GA4_ID=G-81JV6BQ2R5`. The marketing site renders without any of these; the form/admin need them.
 

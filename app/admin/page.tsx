@@ -4,6 +4,7 @@ import { DEPARTMENTS } from "@/lib/departments";
 import { TOOLS } from "@/lib/tools/registry";
 import { listStaff } from "./staff/actions";
 import { CardGrid, LinkCard } from "@/components/staff/card-grid";
+import { StatTiles } from "@/components/staff/stat-tiles";
 
 export default async function AdminHomePage() {
   await requireAdmin("/admin");
@@ -32,16 +33,9 @@ export default async function AdminHomePage() {
         .
       </p>
 
-      <dl className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {stats.map((s) => (
-          <div key={s.label} className="rounded-xl border border-ad-border bg-white p-4">
-            <dt className="text-xs font-semibold uppercase tracking-wide text-ad-muted">
-              {s.label}
-            </dt>
-            <dd className="mt-1 text-2xl font-semibold text-ad-ink">{s.value}</dd>
-          </div>
-        ))}
-      </dl>
+      <div className="mt-8">
+        <StatTiles stats={stats} />
+      </div>
 
       <div className="mt-8">
         <CardGrid>
@@ -54,6 +48,11 @@ export default async function AdminHomePage() {
             href="/admin/tools"
             title="Tools"
             description="Which tools exist and which departments each one appears under."
+          />
+          <LinkCard
+            href="/admin/tender-watch"
+            title="Tender Watch"
+            description="Nightly tender scan — pipeline health, source status and the classified queue."
           />
         </CardGrid>
       </div>

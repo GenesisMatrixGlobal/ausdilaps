@@ -1,0 +1,438 @@
+// AusDilaps — database schema
+// Generated from the live production database (project zjgntkfzgtrqkklglhpo) on 2026-08-25,
+// after migrations 0001–0006. Paste into https://dbdiagram.io to view.
+//
+// Four groups, and it's worth knowing which is which before reading:
+//
+//   Staff portal    profiles + auth.users. This is what /staff and /admin run on.
+//   Tender Watch    the nightly tender pipeline (built, currently paused).
+//   Lead capture    the public quote form. The only group with real data today.
+//   Client portal   written in 0001 but DORMANT — no code reads or writes these.
+//                   A future client portal is planned as a separate system.
+//
+// Everything is RLS-enabled. No INSERT/UPDATE/DELETE policies exist for anon or
+// authenticated by design — all privileged writes go through the service-role key
+// server-side. The policies below are read-only.
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+Enum user_role {
+  superadmin  [note: 'Full access. Bootstrapped via scripts/invite-admin.mjs.']
+  admin       [note: 'Company admin. Reaches /admin and every department.']
+  staff       [note: 'Added in 0004. Department-scoped access to /staff only.']
+  client_admin  [note: 'Dormant — for the future client portal.']
+  client_member [note: 'Dormant. Also the fail-closed default for any account created outside the invite flow.']
+}
+
+Enum org_type {
+  internal
+  client
+}
+
+Enum lead_tier {
+  tier1
+  tier2
+  residential
+  unclassified
+}
+
+Enum lead_status {
+  new
+  contacted
+  quoted
+  won
+  lost
+  spam
+}
+
+Enum report_status {
+  draft
+  awaiting_release
+  released
+}
+
+Enum tender_source_kind {
+  rss    [note: 'A feed we poll, e.g. the AusTender ATM feed.']
+  email  [note: 'A portal alert email arriving in the monitored inbox.']
+}
+
+Enum tender_run_trigger {
+  cron
+  manual
+  replay [note: 'Re-parsing a stored raw payload after fixing a parser.']
+}
+
+Enum tender_run_status {
+  running   [note: 'Written BEFORE any work, so a hard timeout still leaves evidence.']
+  succeeded
+  partial   [note: 'Some work left undone — including a digest that parsed to zero items.']
+  failed
+  skipped   [note: 'Refused to start, e.g. the daily classification budget was spent.']
+}
+
+Enum tender_relevance {
+  pending   [note: 'Ingested, not yet classified. This is the resume queue.']
+  match
+  maybe     [note: 'Plausible but ambiguous — a human decides.']
+  no_match
+  error     [note: 'Classification failed or returned invalid output. Never treated as no_match.']
+}
+
+Enum tender_item_status {
+  new
+  reviewing
+  bidding
+  declined
+  submitted
+  archived
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Staff portal
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table auth.users {
+  id uuid [pk]
+  email text
+  raw_user_meta_data jsonb [note: 'Invites pass full_name / role / departments through here.']
+  email_confirmed_at timestamptz
+  invited_at timestamptz
+  last_sign_in_at timestamptz
+
+  Note: '''
+  Managed by Supabase Auth — not created by our migrations.
+  Magic-link only; there is no password anywhere in this system.
+
+  An INSERT here fires trg_auth_user_created, which copies the invite metadata
+  into `profiles`. Fail-closed: anything created outside the invite flow lands as
+  client_member with no departments, which the staff gate rejects outright.
+  '''
+}
+
+Table profiles {
+  id uuid [pk, ref: - auth.users.id, note: 'Same id as the auth user — 1:1, cascade delete.']
+  org_id uuid [ref: > organizations.id, null, note: 'Dormant. Null for all staff.']
+  role user_role [not null, default: 'client_member']
+  full_name text [null]
+  email text [null]
+  phone text [null]
+
+  departments "text[]" [not null, default: '{}', note: 'NOT a foreign key — see the table note.']
+  is_active boolean [not null, default: true, note: 'False blocks sign-in without deleting history.']
+  invited_by uuid [ref: > auth.users.id, null]
+  last_seen_at timestamptz [null]
+
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Note: '''
+  The whole staff access model. One row per person.
+
+  `departments` is a text[] of slugs, deliberately NOT a foreign key to a
+  departments table. The canonical list lives in code (lib/departments.ts), so
+  adding a department is one array entry and no migration. normaliseDepartments()
+  filters unrecognised values on read, so a stale slug in the array is harmless.
+
+  Access is: role in (superadmin, admin) gets every department; role = staff gets
+  exactly what is in this array. Enforced in app code via lib/auth/session.ts, and
+  in the database via has_department().
+
+  ⚠️ There is NO update policy. 0001 shipped one with a USING clause but no WITH
+  CHECK, which let a signed-in user change their own role — dropped in 0005. All
+  profile writes now go through service-role server actions in /admin.
+  '''
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tender Watch
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table tender_sources {
+  slug text [pk, note: 'Matches an entry in lib/tenders/sources.ts.']
+  label text [not null]
+  kind tender_source_kind [not null]
+  is_enabled boolean [not null, default: true]
+
+  last_run_at timestamptz [null]
+  last_success_at timestamptz [null]
+  last_item_at timestamptz [null, note: 'Last run that yielded ANY item.']
+  consecutive_failures integer [not null, default: 0]
+  consecutive_empty integer [not null, default: 0, note: 'The silent-failure counter — see note.']
+  last_error text [null]
+
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Note: '''
+  Operational state ONLY. Feed URLs and parsers live in lib/tenders/sources.ts, so
+  a database write can never redirect the nightly server-side fetch at an internal
+  host.
+
+  `consecutive_empty` is the load-bearing column. A portal that quietly drops us
+  from its alert list produces zero errors and a perfectly green run — only a
+  count of nothing-happened catches it. Amber at 3, red at 5.
+  '''
+}
+
+Table tender_scan_runs {
+  id uuid [pk, default: `gen_random_uuid()`]
+  run_group_id uuid [not null, note: 'Groups the per-source rows from one invocation.']
+  source_slug text [not null, ref: > tender_sources.slug]
+  triggered_by tender_run_trigger [not null]
+  status tender_run_status [not null, default: 'running']
+
+  items_fetched integer [not null, default: 0]
+  items_new integer [not null, default: 0]
+  items_duplicate integer [not null, default: 0]
+  items_prefiltered integer [not null, default: 0]
+  items_classified integer [not null, default: 0]
+  items_matched integer [not null, default: 0]
+  items_forwarded integer [not null, default: 0]
+  items_errored integer [not null, default: 0]
+
+  error text [null]
+  raw_payload jsonb [null, note: 'Stored BEFORE parsing is trusted. The replay source.']
+
+  started_at timestamptz [not null, default: `now()`]
+  finished_at timestamptz [null]
+  duration_ms integer [null]
+
+  Note: '''
+  One row per (run, source). A cron invocation fans out to N rows sharing a
+  run_group_id, so a single failing source is visible without a fourth table.
+
+  The counters are a funnel — fetched → new → duplicate → prefiltered →
+  classified → matched → forwarded — kept at every stage on purpose. The failure
+  this feature is built around is a stage silently going to zero while everything
+  still reports green.
+
+  `raw_payload` is written before the parse is trusted. If a portal changes its
+  HTML and the parser yields nothing, a fixed parser can be replayed over stored
+  payloads instead of those tenders being lost.
+  '''
+}
+
+Table tender_items {
+  id uuid [pk, default: `gen_random_uuid()`]
+
+  source_slug text [not null, ref: > tender_sources.slug]
+  external_ref text [not null, note: 'Prefixed by derivation: atm: / guid: / link: / msg: / sha:']
+  content_hash text [null, note: 'Cross-source fingerprint. Deliberately NOT unique.']
+  duplicate_of uuid [ref: > tender_items.id, null, note: 'Self-reference — same tender via another portal.']
+
+  first_seen_run_id uuid [ref: > tender_scan_runs.id, null]
+  last_seen_run_id uuid [ref: > tender_scan_runs.id, null]
+
+  // As published — never model-written
+  title text [not null]
+  agency text [null]
+  jurisdiction text [null]
+  url text [null, note: 'Validated to https before storage.']
+  published_at timestamptz [null]
+  closes_at timestamptz [null]
+  excerpt text [null, note: 'Plain text, capped — exactly what the classifier saw.']
+
+  // Email provenance (null for rss sources)
+  email_message_id text [null]
+  email_from text [null]
+  auth_results text [null, note: 'Provider SPF/DKIM/DMARC verdict, verbatim.']
+  sender_trusted boolean [not null, default: false, note: 'A signal, never a gate.']
+
+  // Classification — every field here started as untrusted model output
+  relevance tender_relevance [not null, default: 'pending']
+  confidence "numeric(3,2)" [null, note: '0–1. CHECK constraint enforces the range.']
+  services "text[]" [not null, default: '{}']
+  model_summary text [null]
+  model_reasoning text [null, note: 'User-facing — this is what staff read in the digest.']
+  model text [null]
+  classified_by text [null, note: "'prefilter' | 'anthropic' | 'duplicate'"]
+  classified_at timestamptz [null]
+  classify_attempts integer [not null, default: 0]
+  classify_error text [null]
+  injection_suspected boolean [not null, default: false, note: 'True suppresses the forward, keeps the row visible.']
+
+  // Delivery
+  forwarded_at timestamptz [null]
+  forward_attempts integer [not null, default: 0]
+  forward_error text [null]
+
+  // Human pipeline
+  status tender_item_status [not null, default: 'new']
+  reviewed_by uuid [ref: > profiles.id, null]
+  reviewed_at timestamptz [null]
+  review_note text [null]
+
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (source_slug, external_ref) [unique, name: 'tender_items_source_ref_key', note: 'THE idempotency key.']
+    (created_at) [name: 'tender_items_created_at_idx']
+    (created_at) [name: 'tender_items_actionable_idx', note: "partial: relevance in (match,maybe) and status <> archived"]
+    (created_at) [name: 'tender_items_pending_idx', note: "partial: relevance = pending — the resume queue"]
+    (created_at) [name: 'tender_items_unforwarded_idx', note: "partial: match/maybe and forwarded_at is null — the retry queue"]
+    (closes_at) [name: 'tender_items_closes_at_idx']
+    (content_hash) [name: 'tender_items_content_hash_idx']
+    (source_slug, created_at) [name: 'tender_items_source_slug_idx']
+  }
+
+  Note: '''
+  One row per opportunity. (source_slug, external_ref) is the idempotency key the
+  entire at-least-once design rests on.
+
+  Writes go through ONE function, tender_upsert_item(jsonb), whose `on conflict do
+  update` refreshes only source-owned fields — never relevance, model_*,
+  forwarded_at, status or classify_attempts. Widening that clause would
+  re-classify and re-email the whole back-catalogue every night.
+
+  That function is REVOKEd from public/anon/authenticated: Supabase exposes every
+  public function at /rest/v1/rpc/<name>, and Postgres grants EXECUTE to PUBLIC by
+  default, so without the revoke anyone holding the browser-shipped anon key could
+  write tender rows.
+
+  The partial indexes are what make a crashed scan resumable — "needs classifying"
+  and "needs forwarding" are queries, not in-memory state.
+  '''
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lead capture — the public quote form
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table leads {
+  id uuid [pk, default: `gen_random_uuid()`]
+  created_at timestamptz [not null, default: `now()`]
+
+  name text [not null]
+  role text [null]
+  company text [null]
+  email text [not null]
+  phone text [null]
+  contact_address text [null]
+  contact_method "text[]" [null]
+
+  project_name text [null]
+  project_location text [null]
+  project_number text [null]
+  adjoining_count integer [null]
+  asset_count text [null]
+  required_start date [null]
+  da_condition_ref text [null]
+  inquiry_type text [null]
+  property_role text [null]
+  document_id text [null]
+  notes text [null]
+
+  tier lead_tier [not null, default: 'unclassified']
+  routing text [null]
+  source_page text [null]
+
+  salesforce_id text [null]
+  salesforce_synced boolean [not null, default: false]
+  sync_error text [null]
+  emailed boolean [not null, default: false]
+
+  ip text [null]
+  user_agent text [null]
+  status lead_status [not null, default: 'new']
+
+  Note: '''
+  The quote form. Supabase is the source of truth: the insert blocks the request,
+  while Resend and Salesforce are best-effort and never block a lead being saved.
+
+  `leads_unsynced_idx` is a partial index on salesforce_synced = false — the
+  pattern the Tender Watch retry queues were modelled on.
+
+  Read policy is is_internal() (admin/superadmin only). Ordinary staff cannot see
+  leads. /admin/leads is still to be built.
+  '''
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Client portal — DORMANT
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table organizations {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name text [not null]
+  type org_type [not null, default: 'client']
+  abn text [null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Note: 'Dormant. No code path reads or writes this in v1.'
+}
+
+Table projects {
+  id uuid [pk, default: `gen_random_uuid()`]
+  org_id uuid [not null, ref: > organizations.id]
+  name text [not null]
+  location text [null]
+  sector text [null]
+  status text [not null, default: 'active']
+  created_by uuid [ref: > profiles.id, null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Note: 'Dormant. Not the same thing as the marketing /portfolio pages, which are static data files.'
+}
+
+Table reports {
+  id uuid [pk, default: `gen_random_uuid()`]
+  project_id uuid [not null, ref: > projects.id]
+  title text [not null]
+  report_type text [null]
+  r2_key text [not null, note: 'Named for Cloudflare R2, which v1 does not use.']
+  file_name text [null]
+  file_size bigint [null]
+  content_type text [null]
+  version integer [not null, default: 1]
+  status report_status [not null, default: 'awaiting_release']
+  released_at timestamptz [null]
+  released_by uuid [ref: > profiles.id, null]
+  uploaded_by uuid [ref: > profiles.id, null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Note: 'Dormant. No client logins, report downloads or file storage exist in v1.'
+}
+
+Table report_access_log {
+  id uuid [pk, default: `gen_random_uuid()`]
+  report_id uuid [not null, ref: > reports.id]
+  accessed_by uuid [ref: > profiles.id, null]
+  action text [not null, default: 'download']
+  ip text [null]
+  user_agent text [null]
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Dormant audit trail for the future client portal.'
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Groups
+// ─────────────────────────────────────────────────────────────────────────────
+
+TableGroup "Staff portal — live" {
+  auth.users
+  profiles
+}
+
+TableGroup "Tender Watch — built, paused" {
+  tender_sources
+  tender_scan_runs
+  tender_items
+}
+
+TableGroup "Lead capture — live" {
+  leads
+}
+
+TableGroup "Client portal — dormant" {
+  organizations
+  projects
+  reports
+  report_access_log
+}

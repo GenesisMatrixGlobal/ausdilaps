@@ -14,8 +14,8 @@ export function SiteHeader() {
           <Image
             src="/logo/ad-logo.png"
             alt="AusDilaps — Specialist Building Inspections"
-            width={640}
-            height={236}
+            width={1000}
+            height={369}
             priority
             className="h-9 w-auto"
           />

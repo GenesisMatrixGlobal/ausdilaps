@@ -33,11 +33,13 @@ export default async function StaffLoginPage({
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6 py-12">
+      {/* width/height must match the file's real pixel ratio (1000x369) — they set the
+          aspect box Next reserves, so a wrong pair visibly stretches the logo. */}
       <Image
         src="/logo/ad-logo.png"
         alt="AusDilaps"
-        width={168}
-        height={48}
+        width={1000}
+        height={369}
         className="h-11 w-auto"
         priority
       />

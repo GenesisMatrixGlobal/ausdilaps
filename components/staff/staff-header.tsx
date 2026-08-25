@@ -16,8 +16,8 @@ export function StaffHeader({ user }: { user: StaffUser }) {
             <Image
               src="/logo/ad-logo.png"
               alt="AusDilaps"
-              width={640}
-              height={236}
+              width={1000}
+              height={369}
               priority
               className="h-8 w-auto"
             />

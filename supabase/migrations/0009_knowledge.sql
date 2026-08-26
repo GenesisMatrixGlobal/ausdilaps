@@ -175,12 +175,33 @@ alter table public.knowledge_sources enable row level security;
 alter table public.knowledge_chunks  enable row level security;
 alter table public.knowledge_queries enable row level security;
 
--- has_department() grants active admin/superadmin everything and checks is_active;
--- is_internal() alone does not, which is why both appear here.
+-- is_staff(): active staff, admin or superadmin.
+--
+-- NOT is_internal() — that helper is admin/superadmin ONLY (see the note at the foot of
+-- 0005: "Ordinary 'staff' must NOT inherit read access to leads or the dormant portal
+-- tables"). Using it here made the knowledge base invisible to every ordinary staff
+-- member, which reads on screen as "nothing uploaded yet" rather than as a permissions
+-- bug. The whole point of this table is that ordinary staff can search it.
+--
+-- has_department() covers the department case on its own (it checks is_active and grants
+-- admins everything); is_staff() is what gates the company-wide case, where there is no
+-- department to check.
+create or replace function public.is_staff()
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (
+      select p.is_active and p.role in ('staff', 'admin', 'superadmin')
+      from public.profiles p
+      where p.id = auth.uid()
+    ),
+    false
+  );
+$$;
+
 drop policy if exists "knowledge sources readable by department" on public.knowledge_sources;
 create policy "knowledge sources readable by department" on public.knowledge_sources for select
   using (
-    public.is_internal()
+    public.is_staff()
     and is_published
     and (
       cardinality(departments) = 0
@@ -191,7 +212,7 @@ create policy "knowledge sources readable by department" on public.knowledge_sou
 drop policy if exists "knowledge chunks readable by department" on public.knowledge_chunks;
 create policy "knowledge chunks readable by department" on public.knowledge_chunks for select
   using (
-    public.is_internal()
+    public.is_staff()
     and (
       cardinality(departments) = 0
       or exists (select 1 from unnest(departments) d where public.has_department(d))
@@ -204,6 +225,8 @@ create policy "knowledge chunks readable by department" on public.knowledge_chun
     )
   );
 
+-- Stays is_internal() (admin-only) on purpose: this is the /admin content-backlog panel,
+-- and the list of questions colleagues asked is not something all staff need to browse.
 drop policy if exists "knowledge queries internal read" on public.knowledge_queries;
 create policy "knowledge queries internal read" on public.knowledge_queries for select
   using (public.is_internal());

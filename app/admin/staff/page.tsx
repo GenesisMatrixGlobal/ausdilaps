@@ -8,9 +8,6 @@ export default async function AdminStaffPage() {
   const admin = await requireAdmin("/admin/staff");
   const { rows, error } = await listStaff();
 
-  // Never signed in, and not deactivated — someone is waiting on a link that may have expired.
-  const pending = rows.filter((r) => r.is_active && !r.last_sign_in_at);
-
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -28,19 +25,6 @@ export default async function AdminStaffPage() {
         <p className="mt-6 rounded-lg border border-ad-orange/30 bg-ad-orange/5 px-3 py-2 text-sm text-ad-ink">
           Couldn&rsquo;t load staff: {error}
         </p>
-      )}
-
-      {pending.length > 0 && (
-        <div className="mt-6 rounded-lg border border-ad-border border-l-[3px] border-l-ad-orange bg-ad-orange/5 p-3.5">
-          <p className="text-sm font-semibold text-ad-ink">
-            {pending.length} pending {pending.length === 1 ? "invite" : "invites"}
-          </p>
-          <p className="mt-0.5 text-xs leading-relaxed text-ad-muted">
-            Waiting on {pending.map((r) => r.full_name || r.email).join(", ")}. Invite links are short-lived, so if
-            it&rsquo;s been more than a day or two, use{" "}
-            <span className="font-medium text-ad-ink">Resend link</span> rather than waiting any longer.
-          </p>
-        </div>
       )}
 
       <div className="mt-8">

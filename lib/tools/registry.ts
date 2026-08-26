@@ -63,6 +63,16 @@ export const TOOLS: ToolDefinition[] = [
     ),
   },
   {
+    slug: "floor-plan",
+    title: "Floor Plan",
+    description:
+      "Turn a photo of the inspector's hand sketch into a clean A4 floor plan .png for the report.",
+    departments: ["reports"],
+    Component: dynamic(() =>
+      import("@/components/tools/floor-plan").then((m) => m.FloorPlanTool)
+    ),
+  },
+  {
     slug: "kml-builder",
     title: "KML Builder",
     description:

@@ -1,10 +1,15 @@
 import type { ReactNode } from "react";
+import { createHeadingSlugger } from "@/lib/slug";
 
 /**
  * Minimal, dependency-free Markdown renderer for the insights articles.
  * Supports the subset we author: h2/h3 headings, paragraphs, ordered and
  * unordered lists, bold and links. No build-time compilation, so it deploys
  * anywhere. (Replaces next-mdx-remote, which failed Vercel's build.)
+ *
+ * Headings carry an `id` from lib/slug.ts. That is not decoration: knowledge-base
+ * citations deep-link to `#<slug>`, and lib/knowledge/chunk.ts derives a chunk's anchor
+ * from the SAME function. Change the slug rule in one place or links break silently.
  */
 export function Markdown({ source }: { source: string }) {
   return <>{renderBlocks(source)}</>;
@@ -50,6 +55,9 @@ function renderBlocks(source: string): ReactNode[] {
   let list: string[] = [];
   let listOrdered = false;
   let key = 0;
+  // Per-document, so a repeated heading gets `-1` rather than a duplicate id. The chunker
+  // runs the identical slugger over the identical heading sequence.
+  const slug = createHeadingSlugger();
 
   const flushPara = () => {
     if (para.length) {
@@ -99,21 +107,23 @@ function renderBlocks(source: string): ReactNode[] {
       flushList();
       const level = h[1].length;
       const text = renderInline(h[2]);
+      const id = slug(h[2]);
+      // scroll-mt keeps the target clear of the sticky header when a citation jumps here.
       if (level === 1) {
         blocks.push(
-          <h2 key={key++} className="mt-12 font-heading text-3xl font-semibold tracking-tight text-ad-ink">
+          <h2 key={key++} id={id} className="mt-12 scroll-mt-24 font-heading text-3xl font-semibold tracking-tight text-ad-ink">
             {text}
           </h2>
         );
       } else if (level === 2) {
         blocks.push(
-          <h2 key={key++} className="mt-12 font-heading text-2xl font-semibold tracking-tight text-ad-ink">
+          <h2 key={key++} id={id} className="mt-12 scroll-mt-24 font-heading text-2xl font-semibold tracking-tight text-ad-ink">
             {text}
           </h2>
         );
       } else {
         blocks.push(
-          <h3 key={key++} className="mt-8 font-heading text-xl font-semibold text-ad-ink">
+          <h3 key={key++} id={id} className="mt-8 scroll-mt-24 font-heading text-xl font-semibold text-ad-ink">
             {text}
           </h3>
         );

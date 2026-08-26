@@ -26,6 +26,14 @@ export type StaffUser = {
   role: StaffRole;
   /** Admins get every department; staff get exactly what's on their profile. */
   departments: DepartmentSlug[];
+  /**
+   * May add and edit knowledge-base content for their own departments.
+   *
+   * Separate from role on purpose: curating a department's training material is a job a
+   * department lead does, not a reason to hand someone the admin panel. Admins bypass the
+   * flag entirely.
+   */
+  canManageKnowledge: boolean;
 };
 
 const STAFF_ROLES: StaffRole[] = ["staff", "admin", "superadmin"];
@@ -36,6 +44,21 @@ export function isAdmin(user: StaffUser): boolean {
 
 export function canAccess(user: StaffUser, slug: DepartmentSlug): boolean {
   return isAdmin(user) || user.departments.includes(slug);
+}
+
+/**
+ * May this person publish content tagged to exactly these departments?
+ *
+ * Mirrors public.can_edit_knowledge() in migration 0009 — keep the two in step.
+ *
+ * "Every", not "some": if belonging to one listed department were enough, an estimator
+ * could publish into Inspectors simply by tagging their own team alongside. An empty list
+ * means company-wide, which is admins only.
+ */
+export function canEditKnowledge(user: StaffUser, departments: DepartmentSlug[]): boolean {
+  if (isAdmin(user)) return true;
+  if (!user.canManageKnowledge) return false;
+  return departments.length > 0 && departments.every((d) => user.departments.includes(d));
 }
 
 /**
@@ -62,6 +85,7 @@ function previewUser(): StaffUser | null {
     fullName: "Preview (local)",
     role: "superadmin",
     departments: [...DEPARTMENT_SLUGS],
+    canManageKnowledge: true,
   };
 }
 
@@ -76,11 +100,31 @@ async function loadStaffUser(): Promise<StaffUser | null> {
     } = await supabase.auth.getUser();
     if (!user) return null;
 
-    const { data: profile } = await supabase
+    const COLUMNS = "role, full_name, email, departments, is_active, last_seen_at";
+
+    // can_manage_knowledge arrives with migration 0009. Selecting a column that doesn't
+    // exist yet is an error, not a null — and an error here logs EVERY staff member out,
+    // because this function fails closed. Migrations are applied by hand in this project,
+    // so a deploy landing before its migration is a real possibility; falling back costs
+    // one extra round trip in that window and nothing at all afterwards.
+    let profile: Record<string, unknown> | null = null;
+    const withFlag = await supabase
       .from("profiles")
-      .select("role, full_name, email, departments, is_active, last_seen_at")
+      .select(`${COLUMNS}, can_manage_knowledge`)
       .eq("id", user.id)
       .single();
+
+    if (withFlag.error && /can_manage_knowledge/.test(withFlag.error.message)) {
+      console.warn("[auth] profiles.can_manage_knowledge missing — apply migration 0009.");
+      const { data } = await supabase
+        .from("profiles")
+        .select(COLUMNS)
+        .eq("id", user.id)
+        .single();
+      profile = data as Record<string, unknown> | null;
+    } else {
+      profile = withFlag.data as Record<string, unknown> | null;
+    }
 
     if (!profile || profile.is_active === false) return null;
     if (!STAFF_ROLES.includes(profile.role as StaffRole)) return null;
@@ -90,11 +134,12 @@ async function loadStaffUser(): Promise<StaffUser | null> {
     const role = profile.role as StaffRole;
     return {
       id: user.id,
-      email: profile.email ?? user.email ?? "",
-      fullName: profile.full_name ?? null,
+      email: (profile.email as string | null) ?? user.email ?? "",
+      fullName: (profile.full_name as string | null) ?? null,
       role,
       departments:
         role === "staff" ? normaliseDepartments(profile.departments) : [...DEPARTMENT_SLUGS],
+      canManageKnowledge: profile.can_manage_knowledge === true,
     };
   } catch {
     // Supabase not configured, or network blip — fail closed.
@@ -167,6 +212,16 @@ export async function requireStaff(next?: string): Promise<StaffUser> {
 export async function requireDepartment(slug: DepartmentSlug, next?: string): Promise<StaffUser> {
   const user = await requireStaff(next);
   if (!canAccess(user, slug)) forbidden();
+  return user;
+}
+
+/** Staff who may curate this department's knowledge base, or 403. */
+export async function requireKnowledgeEditor(
+  slug: DepartmentSlug,
+  next?: string
+): Promise<StaffUser> {
+  const user = await requireStaff(next);
+  if (!canEditKnowledge(user, [slug])) forbidden();
   return user;
 }
 

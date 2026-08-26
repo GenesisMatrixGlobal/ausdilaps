@@ -25,8 +25,7 @@ import {
   type OsmWaySummary,
 } from "@/lib/kml/road-segments/overpass";
 import type { LatLng } from "@/lib/kml/types";
-import { lanesFromHighwayClass } from "./lanes";
-import { DEFAULT_LANES } from "./pricing";
+import { DEFAULT_LANES, lanesFromHighwayClass } from "./lanes";
 import { reverseGeocode } from "./reverse-geocode";
 import type { LanesSource, RoadSegment, SegmentEnrichment } from "./types";
 

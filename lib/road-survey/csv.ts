@@ -1,13 +1,14 @@
 // Row shaping and CSV/TSV output for the road survey estimator.
 //
 // One row per KML segment, in the order an estimator reads them: what the road is, how
-// long, how many lanes, where it is, what it costs. Uses papaparse (already a dependency
-// for the other tools) rather than hand-rolled joining, so a road name with a comma or a
-// quote in it cannot break the file.
+// long, how many lanes, where it is. No rates and no fees — the tool extracts road data
+// and the pricing stays in the estimating sheet. Uses papaparse (already a dependency for
+// the other tools) rather than hand-rolled joining, so a road name with a comma or a quote
+// in it cannot break the file.
 
 import Papa from "papaparse";
-import { isDividedCarriageway } from "./lanes";
-import { laneKm, priceSegment, rateCodeFor } from "./pricing";
+import { isDividedCarriageway, laneKm } from "./lanes";
+
 import type { EnrichedSegment } from "./types";
 
 /** Column order for the export. Also the header row. */
@@ -38,10 +39,7 @@ export const CSV_COLUMNS = [
   "start_lng",
   "end_lat",
   "end_lng",
-  "rate_code",
   "lane_km",
-  "price_pre_con",
-  "price_post_con",
 ] as const;
 
 export type CsvRow = Record<(typeof CSV_COLUMNS)[number], string | number>;
@@ -89,10 +87,7 @@ export function toRows(segments: EnrichedSegment[], provisionalColours: string[]
       start_lng: s.start ? n(s.start.lng, 6) : "",
       end_lat: s.end ? n(s.end.lat, 6) : "",
       end_lng: s.end ? n(s.end.lng, 6) : "",
-      rate_code: rateCodeFor(s.lengthKmGeometry),
       lane_km: n(laneKm(s.lengthKmGeometry, lanes), 2),
-      price_pre_con: n(priceSegment(s.lengthKmGeometry, lanes, "pre"), 2),
-      price_post_con: n(priceSegment(s.lengthKmGeometry, lanes, "post"), 2),
     };
   });
 }

@@ -5,8 +5,7 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { downloadBlob } from "@/components/tools/shared/download";
 import { CSV_COLUMNS, toCsv, toRows, toTsv } from "@/lib/road-survey/csv";
-import { isDividedCarriageway } from "@/lib/road-survey/lanes";
-import { DEFAULT_LANES, RATES, SHORT_SEGMENT_KM, laneKm, priceSegment, rateCodeFor } from "@/lib/road-survey/pricing";
+import { DEFAULT_LANES, isDividedCarriageway, laneKm } from "@/lib/road-survey/lanes";
 import type { EnrichedSegment, RoadSegment, SegmentEnrichment } from "@/lib/road-survey/types";
 
 interface ParseResponse {
@@ -38,7 +37,6 @@ const UNENRICHED: SegmentEnrichment = {
   postcode: null,
 };
 
-const money = (n: number) => `$${Math.round(n).toLocaleString("en-AU")}`;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 function readFileBase64(file: File): Promise<string> {
@@ -88,20 +86,17 @@ export function RoadSurveyEstimatorTool() {
 
   const totals = useMemo(() => {
     const provisionalSet = new Set(provisional.map((c) => c.toLowerCase()));
-    let km = 0, lkm = 0, pre = 0, post = 0, provKm = 0, provPre = 0;
+    let km = 0, lkm = 0, provKm = 0, provLaneKm = 0;
     for (const r of rows) {
       const lanes = r.enrichment.lanes ?? DEFAULT_LANES;
-      const p = priceSegment(r.lengthKmGeometry, lanes, "pre");
       km += r.lengthKmGeometry;
       lkm += laneKm(r.lengthKmGeometry, lanes);
-      pre += p;
-      post += priceSegment(r.lengthKmGeometry, lanes, "post");
       if (provisionalSet.has(r.colourHex.toLowerCase())) {
         provKm += r.lengthKmGeometry;
-        provPre += p;
+        provLaneKm += laneKm(r.lengthKmGeometry, lanes);
       }
     }
-    return { km, lkm, pre, post, provKm, provPre, firmPre: pre - provPre };
+    return { km, lkm, provKm, provLaneKm, firmKm: km - provKm, firmLaneKm: lkm - provLaneKm };
   }, [rows, provisional]);
 
   async function choose(file: File | null) {
@@ -182,17 +177,16 @@ export function RoadSurveyEstimatorTool() {
 
   const flagged = rows.filter((r) => r.lengthVarianceFlag || r.classMismatch);
   const assumedLanes = rows.filter((r) => r.enrichment.lanesSource === "assumed").length;
-  const vu5Count = rows.filter((r) => rateCodeFor(r.lengthKmGeometry) === "VU5").length;
   const divided = rows.filter((r) => isDividedCarriageway(r.enrichment));
   const dividedKm = divided.reduce((a, r) => a + r.lengthKmGeometry, 0);
 
   return (
     <div>
       <p className="mt-2 text-sm text-ad-muted">
-        Drop in the client&apos;s road network and get a priced, per-segment quoting sheet. Lengths are
-        measured from the file&apos;s own geometry; lanes come from OpenStreetMap where it has them.
-        Priced on the roadway-video rate card — {money(RATES.VU5.pre)}/lane flat up to {SHORT_SEGMENT_KM}km,
-        then {money(RATES.VO5.pre)}/km/lane.
+        Drop in the client&apos;s road network and get a per-segment schedule you can price in Excel.
+        Lengths are measured from the file&apos;s own geometry; lanes, surface and locality come from
+        OpenStreetMap and Google where they have them. No rates here — the numbers go into the
+        estimating sheet.
       </p>
 
       {/* Upload */}
@@ -247,14 +241,12 @@ export function RoadSurveyEstimatorTool() {
               <Stat label="Segments" value={segments.length.toLocaleString("en-AU")} />
               <Stat label="Centreline" value={`${totals.km.toFixed(1)} km`} />
               <Stat label="Lane-km" value={totals.lkm.toFixed(0)} />
-              <Stat label="Pre-con total" value={money(totals.pre)} />
+              <Stat label="Roads" value={String(new Set(rows.map((r) => r.roadName)).size)} />
             </div>
             <p className="mt-3 text-xs text-ad-muted">
-              Post-construction round: <span className="font-medium text-ad-ink">{money(totals.post)}</span>
-              {" · "}
-              {plural(vu5Count, "segment")} on the flat VU5 rate, {rows.length - vu5Count} on per-km VO5.
+              Lane-km is length × lanes — the quantity to price against.
               {assumedLanes > 0 &&
-                ` · ${plural(assumedLanes, "segment")} still on assumed ${DEFAULT_LANES} lanes.`}
+                ` · ${plural(assumedLanes, "segment")} still on assumed ${DEFAULT_LANES} lanes, so that figure will move once the lookup fills them in.`}
             </p>
           </div>
 
@@ -267,7 +259,7 @@ export function RoadSurveyEstimatorTool() {
             <p className="mt-1 text-sm text-ad-muted">
               Client briefs name a colour (&ldquo;the roads in blue are provisional&rdquo;) that often
               doesn&apos;t literally appear in the file. Tick what they meant — confirm with them if it
-              isn&apos;t obvious, because it moves real money between firm and provisional scope.
+              isn&apos;t obvious, because it moves real scope between firm and provisional.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               {colours?.map((c) => {
@@ -293,8 +285,8 @@ export function RoadSurveyEstimatorTool() {
             </div>
             {provisional.length > 0 && (
               <p className="mt-3 text-sm text-ad-ink">
-                Firm <span className="font-semibold">{money(totals.firmPre)}</span> · provisional{" "}
-                <span className="font-semibold">{money(totals.provPre)}</span> ({totals.provKm.toFixed(0)} km)
+                Firm <span className="font-semibold">{totals.firmKm.toFixed(0)} km</span> ({totals.firmLaneKm.toFixed(0)} lane-km)
+                {" · "}provisional <span className="font-semibold">{totals.provKm.toFixed(0)} km</span> ({totals.provLaneKm.toFixed(0)} lane-km)
               </p>
             )}
           </div>
@@ -373,8 +365,7 @@ export function RoadSurveyEstimatorTool() {
                   <th className="px-3 py-2 text-right font-medium">Lanes</th>
                   <th className="px-3 py-2 font-medium">Surface</th>
                   <th className="px-3 py-2 font-medium">Locality</th>
-                  <th className="px-3 py-2 font-medium">Rate</th>
-                  <th className="px-3 py-2 text-right font-medium">Pre-con</th>
+                  <th className="px-3 py-2 text-right font-medium">Lane-km</th>
                 </tr>
               </thead>
               <tbody>
@@ -421,9 +412,8 @@ export function RoadSurveyEstimatorTool() {
                         {e.locality ?? "—"}
                         {e.postcode && <span className="ml-1 text-xs">{e.postcode}</span>}
                       </td>
-                      <td className="px-3 py-2 text-ad-muted">{rateCodeFor(r.lengthKmGeometry)}</td>
                       <td className="px-3 py-2 text-right font-semibold text-ad-ink">
-                        {money(priceSegment(r.lengthKmGeometry, lanes, "pre"))}
+                        {laneKm(r.lengthKmGeometry, lanes).toFixed(1)}
                       </td>
                     </tr>
                   );
@@ -435,8 +425,8 @@ export function RoadSurveyEstimatorTool() {
           <p className="mt-3 text-xs text-ad-muted">
             Lengths are centreline, measured from the file&apos;s geometry rather than trusting its own length
             attribute — flagged rows are where the two disagree. Lane counts drive the fee directly, so check
-            the ones marked <span className="font-medium">assumed</span> before quoting. Mobilisation, traffic
-            control and travel are not in these figures.
+            the ones marked <span className="font-medium">assumed</span> before pricing. Rates, mobilisation,
+            traffic control and travel all stay in the estimating sheet — this tool only measures the network.
           </p>
         </>
       )}

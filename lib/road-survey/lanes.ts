@@ -6,8 +6,21 @@
 // "Cannot find module 'node:net'". Anything client-side must therefore reach for this
 // module, not the enrichment orchestrator.
 
-import { DEFAULT_LANES } from "./pricing";
 import type { SegmentEnrichment } from "./types";
+
+/** Lane count used when OSM has nothing to say — a sealed rural road, one lane each way. */
+export const DEFAULT_LANES = 2;
+
+/**
+ * Lane-kilometres — length times lanes.
+ *
+ * The quantity a road survey actually scales on, and the number an estimator prices
+ * against by hand in the quoting sheet. Deliberately a quantity and not a fee: this tool
+ * extracts road data, it does not price it.
+ */
+export function laneKm(lengthKm: number, lanes: number): number {
+  return lengthKm * (lanes > 0 ? lanes : DEFAULT_LANES);
+}
 
 /** Lanes inferred from the OSM highway class when no `lanes` tag exists. */
 export function lanesFromHighwayClass(highway: string): number {

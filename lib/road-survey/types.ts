@@ -1,8 +1,5 @@
 import type { LatLng } from "@/lib/kml/types";
 
-/** Which survey round a price is for. The rate card only distinguishes these two. */
-export type Stage = "pre" | "post";
-
 /** Where a segment's lane count came from — shown in the CSV so an estimator can audit it. */
 export type LanesSource =
   /** An explicit OSM `lanes` tag on ways matched to this segment. */

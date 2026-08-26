@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import type { ColorSwatch, PagePreview, Rgb, SitePlanResult } from "@/lib/property-sizing/site-plan/types";
 import { scaleRatioFromReference, type LatLng, type PixelPoint } from "@/lib/property-sizing/site-plan/georeference";
+import { downloadBlob, tsv } from "@/components/tools/shared/download";
 
 async function fileToBase64(file: File): Promise<{ data: string; mediaType: string }> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -16,10 +17,6 @@ async function fileToBase64(file: File): Promise<{ data: string; mediaType: stri
   const [prefix, data] = dataUrl.split(",", 2);
   const mediaType = prefix.match(/data:(.*);base64/)?.[1] ?? file.type ?? "application/pdf";
   return { data, mediaType };
-}
-
-function tsv(rows: string[][]): string {
-  return rows.map((r) => r.join("\t")).join("\n");
 }
 
 function parseHexColor(input: string): Rgb | null {
@@ -47,18 +44,6 @@ function parseLatLng(input: string): LatLng | null {
 
 function csvField(value: string): string {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-}
-
-function downloadBlob(content: string, filename: string, type: string) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 
 interface RefPoint {

@@ -5,6 +5,7 @@
 import sharp from "sharp";
 import type { RawImage, Blob } from "./segment";
 import type { LabelAnchor } from "./voronoi";
+import { runPool } from "@/lib/concurrency";
 
 const VISION_MODEL = process.env.ANTHROPIC_OCR_MODEL ?? "claude-haiku-4-5-20251001";
 const BATCH_SIZE = 4;
@@ -127,19 +128,6 @@ async function callVision(batch: CropJob[]): Promise<VisionRow[][]> {
   const mid = Math.ceil(batch.length / 2);
   const [left, right] = await Promise.all([callVision(batch.slice(0, mid)), callVision(batch.slice(mid))]);
   return [...left, ...right];
-}
-
-export async function runPool<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
-  return results;
 }
 
 /** Returns, per blob, the label anchors found inside/near it (absolute page-pixel coords). */

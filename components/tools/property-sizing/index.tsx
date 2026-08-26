@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import type { SizingResult } from "@/lib/property-sizing/types";
 import { SitePlanTab } from "./site-plan-tab";
+import { tsv } from "@/components/tools/shared/download";
 
 type Mode = "text" | "image" | "site-plan";
 
@@ -22,10 +23,6 @@ async function fileToBase64(file: File): Promise<{ data: string; mediaType: stri
     reader.onerror = () => reject(new Error("Could not read the file"));
     reader.readAsDataURL(file);
   });
-}
-
-function tsv(rows: string[][]): string {
-  return rows.map((r) => r.join("\t")).join("\n");
 }
 
 const fmtArea = (n: number | null) => (n == null ? "" : n.toLocaleString("en-AU"));

@@ -53,6 +53,16 @@ export const TOOLS: ToolDefinition[] = [
   // /admin/tender-watch until the pipeline is live; re-adding it here (departments:
   // ["accounts"]) plus the slug in lib/tenders/config.ts is the whole change.
   {
+    slug: "road-survey-estimator",
+    title: "Road Survey Estimator",
+    description:
+      "Turn a client's road-network .kmz into a priced, per-segment quoting sheet — lengths from the geometry, lanes from OpenStreetMap.",
+    departments: ["estimators"],
+    Component: dynamic(() =>
+      import("@/components/tools/road-survey-estimator").then((m) => m.RoadSurveyEstimatorTool)
+    ),
+  },
+  {
     slug: "kml-builder",
     title: "KML Builder",
     description:

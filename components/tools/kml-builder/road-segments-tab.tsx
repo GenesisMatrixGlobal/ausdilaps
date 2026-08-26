@@ -6,6 +6,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { buildKml } from "@/lib/kml/build";
 import type { KmlPathInput } from "@/lib/kml/types";
 import type { RoadSegmentInput, RoadTraceResult, MapsLinkResult } from "@/lib/kml/road-segments/types";
+import { downloadBlob } from "@/components/tools/shared/download";
 
 interface Row {
   id: number;
@@ -44,18 +45,6 @@ function rowToInput(row: Row): RoadSegmentInput {
     toDesc: row.toDesc.trim(),
     footpathLengthKm: parsed != null && !Number.isNaN(parsed) ? parsed : null,
   };
-}
-
-function downloadBlob(content: string, filename: string, type: string) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 
 function slugify(value: string): string {

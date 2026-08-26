@@ -7,6 +7,7 @@ import { parseKmlCsv, SAMPLE_CSV, type CsvParseError } from "@/lib/kml/csv";
 import { buildKml } from "@/lib/kml/build";
 import type { KmlPathInput } from "@/lib/kml/types";
 import { RoadSegmentsTab } from "./road-segments-tab";
+import { downloadBlob } from "@/components/tools/shared/download";
 
 interface Row {
   id: number;
@@ -49,18 +50,6 @@ function rowToPath(row: Row): KmlPathInput {
       { lat: Number(row.endLat), lng: Number(row.endLng) },
     ],
   };
-}
-
-function downloadBlob(content: string, filename: string, type: string) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 
 function slugify(value: string): string {

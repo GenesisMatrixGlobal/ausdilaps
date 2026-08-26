@@ -252,8 +252,16 @@ export function ManageView({
                         {s.url && (
                           <>
                             {" · "}
-                            <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-ad-steel hover:underline">
-                              video ↗
+                            <a
+                              href={s.url}
+                              // Training modules link to their own page in this app; only a
+                              // video kind actually points somewhere external.
+                              {...(s.kind === "video"
+                                ? { target: "_blank", rel: "noopener noreferrer" }
+                                : {})}
+                              className="text-ad-steel hover:underline"
+                            >
+                              {s.kind === "video" ? "watch ↗" : "open"}
                             </a>
                           </>
                         )}

@@ -54,12 +54,6 @@ export default async function AdminHomePage() {
             title="Tender Watch"
             description="Nightly tender scan — pipeline health, source status and the classified queue."
           />
-          <LinkCard
-            href="/admin/floor-plan"
-            title="Floor Plan"
-            description="Turn a photo of the inspector's hand sketch into an A4 floor plan .png for the report."
-            meta="WIP"
-          />
         </CardGrid>
       </div>
     </div>

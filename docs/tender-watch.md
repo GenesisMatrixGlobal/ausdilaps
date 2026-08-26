@@ -1,11 +1,16 @@
 # Tender Watch
 
-The nightly tender pipeline behind `/admin/tender-watch`.
+The nightly tender pipeline behind `/staff/accounts/tools/tender-watch`.
 
-> **Admin-only for now.** While the pipeline is inert it is not registered in
-> `lib/tools/registry.ts`, so no staff department sees it. Surfacing it to staff is two lines:
-> re-add the registry entry, and put `"accounts"` back in `TENDER_WATCH_DEPARTMENTS`
-> (`lib/tenders/config.ts`).
+> **Where it lives.** Registered in `lib/tools/registry.ts` under the `accounts` department,
+> and that is its only home — there is no `/admin` route. `canAccess()` grants admins every
+> department, so a second admin path would just be another way into the same component.
+> Admins still get the operator panels (funnel, run log, upstream errors): those are driven
+> by the `isAdmin` flag in the data, not by which route rendered it.
+>
+> The department list must stay in step across two files — `departments` on the registry
+> entry, and `TENDER_WATCH_DEPARTMENTS` in `lib/tenders/config.ts`, which the API routes
+> read. Diverge and a department sees the tool card but its data calls 401.
 
 RSS feeds and a monitored inbox → dedupe → classify with Claude → one digest email at 8pm.
 
@@ -79,7 +84,7 @@ Three Vercel caveats: crons only fire on **production** deployments, only after 
 
 ### 4. Shadow mode — do this for the first week
 
-Leave `TENDER_FORWARD_ENABLED=false`. The full pipeline runs and classifies; nothing is emailed. Read `/admin/tender-watch` each morning against what actually landed in `tenders@`.
+Leave `TENDER_FORWARD_ENABLED=false`. The full pipeline runs and classifies; nothing is emailed. Read `/staff/accounts/tools/tender-watch` each morning against what actually landed in `tenders@`.
 
 Five mornings of that comparison is worth more than any amount of design review, and it costs one env var. Then flip it on, leaving `TENDER_FORWARD_UNTRUSTED=false` for another week.
 

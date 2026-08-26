@@ -49,11 +49,6 @@ export default async function AdminHomePage() {
             title="Tools"
             description="Which tools exist and which departments each one appears under."
           />
-          <LinkCard
-            href="/admin/tender-watch"
-            title="Tender Watch"
-            description="Nightly tender scan — pipeline health, source status and the classified queue."
-          />
         </CardGrid>
       </div>
     </div>

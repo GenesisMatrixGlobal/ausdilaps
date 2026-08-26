@@ -52,7 +52,7 @@ Not a brochure. The goal is to make AusDilaps **the category authority** in Aust
   - **Tool registry** `lib/tools/registry.ts` — tools are department-agnostic components in `components/tools/*`. Surfacing a tool to another department = adding a slug to its `departments` array. Never copy a tool.
   - **Training** = MDX in `content/training/<department>/*.mdx` via `lib/training.ts` (mirrors `lib/insights.ts`).
   - `/admin/staff` invites staff (Supabase `inviteUserByEmail` + the `0005` `auth.users` trigger) and assigns departments, via server actions that each re-check `requireAdmin()`.
-- **Tender Watch (BUILT — don't redo):** the nightly tender pipeline. `/staff/accounts/tools/tender-watch` + `/admin/tender-watch`. See `docs/tender-watch.md`.
+- **Tender Watch (BUILT — don't redo):** the nightly tender pipeline. `/staff/accounts/tools/tender-watch` (no `/admin` route — admins reach it there and get the operator panels via the `isAdmin` flag). See `docs/tender-watch.md`.
   - **Not a scraper.** AU tender portals mostly offer email alerts, not feeds (AusTender's ATM RSS is the exception; tenders.gov.au and data.gov.au both 403 automated fetches). `tenders@` registers for every portal's alerts and the portals become the crawler. Two adapters — `rss` built, `email` (MS Graph, app-only) is Phase 2.
   - Vercel Cron at `0 10 * * *` UTC = **8pm Brisbane year-round** (QLD has no DST). First `vercel.json` in the repo; a 9am health check runs alongside it.
   - Two phases, both resumable off partial indexes: fetch+persist (raw stored *before* parsing, so a format change is replayable) then classify+forward. No retry queue — tomorrow's run is the retry.

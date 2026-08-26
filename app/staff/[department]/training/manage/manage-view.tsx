@@ -18,17 +18,22 @@ import {
 } from "./actions";
 
 /**
- * Three modes rather than one form with conditional fields, because the three things
- * people actually upload need different inputs — and a video without a transcript is a
- * dead end the form should refuse up front rather than accept and index as nothing.
+ * One question: is this a video?
+ *
+ * There were three modes. "Paste a note" was the third, and it was only ever "upload a
+ * file" with the file input removed — that form already had a paste box under it. Whether
+ * the content arrived as a file or a paste is something the server can see for itself, so
+ * it derives document vs note rather than asking.
+ *
+ * Video stays separate because it genuinely needs different things: a link for the
+ * citation to open, and a transcript with timestamps as its searchable content.
  */
 const MODES = [
-  { kind: "document", label: "Upload a file", blurb: "PDF, Markdown or plain text." },
-  { kind: "video", label: "Add a video", blurb: "A link plus its transcript." },
-  { kind: "note", label: "Paste a note", blurb: "Straight into the box." },
+  { mode: "content", label: "Document or note", blurb: "Upload a file, or paste the text." },
+  { mode: "video", label: "Video", blurb: "A link plus its transcript." },
 ] as const;
 
-type Mode = (typeof MODES)[number]["kind"];
+type Mode = (typeof MODES)[number]["mode"];
 
 function statusOf(s: KnowledgeSource): { tone: "ok" | "warn" | "muted"; label: string } {
   if (s.index_error) return { tone: "warn", label: "Failed" };
@@ -50,7 +55,7 @@ export function ManageView({
   assignable: { slug: DepartmentSlug; label: string }[];
   canPublishCompanyWide: boolean;
 }) {
-  const [mode, setMode] = useState<Mode>("document");
+  const [mode, setMode] = useState<Mode>("content");
   const [result, setResult] = useState<ActionResult | null>(null);
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -105,15 +110,15 @@ export function ManageView({
         <div className="flex flex-wrap gap-2 border-b border-ad-border p-4">
           {MODES.map((m) => (
             <button
-              key={m.kind}
+              key={m.mode}
               type="button"
               onClick={() => {
-                setMode(m.kind);
+                setMode(m.mode);
                 setResult(null);
               }}
               className={cn(
                 "rounded-lg border px-3 py-2 text-left transition-colors",
-                mode === m.kind
+                mode === m.mode
                   ? "border-ad-steel bg-ad-steel/5"
                   : "border-ad-border hover:border-ad-steel/50"
               )}
@@ -130,7 +135,7 @@ export function ManageView({
           onSubmit={(e) => {
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
-            fd.set("kind", mode);
+            fd.set("mode", mode);
             run(addKnowledge, fd, () => formRef.current?.reset());
           }}
         >
@@ -148,31 +153,33 @@ export function ManageView({
             </Field>
           )}
 
-          {mode !== "note" && (
-            <Field
-              label={mode === "video" ? "Transcript file" : "File"}
-              hint={
-                mode === "video"
-                  ? `A .vtt or .srt keeps the timestamps, so answers can link to the exact moment. Or paste it below.`
-                  : `Accepted: ${ACCEPTED_EXTENSIONS.join(", ")}. Scanned PDFs won't work — paste the text instead.`
-              }
-            >
-              <input
-                name="file"
-                type="file"
-                accept={ACCEPTED_EXTENSIONS.join(",")}
-                className="block w-full text-sm text-ad-muted file:mr-3 file:rounded-lg file:border-0 file:bg-ad-surface file:px-3 file:py-2 file:text-sm file:font-medium file:text-ad-ink hover:file:bg-ad-border/40"
-              />
-            </Field>
-          )}
+          <Field
+            label={mode === "video" ? "Transcript file" : "File"}
+            hint={
+              mode === "video"
+                ? "A .vtt or .srt keeps the timestamps, so answers link to the exact moment. Or paste it below."
+                : `Accepted: ${ACCEPTED_EXTENSIONS.join(", ")}. Scanned PDFs won't work — paste the text instead.`
+            }
+          >
+            <input
+              name="file"
+              type="file"
+              accept={ACCEPTED_EXTENSIONS.join(",")}
+              className="block w-full text-sm text-ad-muted file:mr-3 file:rounded-lg file:border-0 file:bg-ad-surface file:px-3 file:py-2 file:text-sm file:font-medium file:text-ad-ink hover:file:bg-ad-border/40"
+            />
+          </Field>
 
           <Field
-            label={mode === "note" ? "The note" : "Or paste the text"}
-            hint={mode === "note" ? "Markdown headings help — they become jump links in answers." : undefined}
+            label="Or paste the text"
+            hint={
+              mode === "video"
+                ? undefined
+                : "Markdown headings help — they become jump links in answers."
+            }
           >
             <textarea
               name="text"
-              rows={mode === "note" ? 8 : 4}
+              rows={6}
               className={cn(INPUT, "font-mono text-xs leading-relaxed")}
               placeholder={mode === "video" ? "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nRing the subject lot first." : ""}
             />

@@ -41,7 +41,20 @@ import {
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
-const KINDS: KnowledgeKind[] = ["document", "video", "note"];
+/**
+ * The form asks one question — is this a video? — not three.
+ *
+ * "Paste a note" used to be its own mode, but it was only ever "upload a file" with the
+ * file input taken away: that form already had a paste box. document vs note is a real
+ * distinction in the DATA (is there an original to download?) and no distinction at all in
+ * the ASKING, so it is derived here rather than put to the user.
+ */
+type Mode = "content" | "video";
+
+function kindFor(mode: Mode, hasFile: boolean): KnowledgeKind {
+  if (mode === "video") return "video";
+  return hasFile ? "document" : "note";
+}
 
 function str(fd: FormData, key: string): string {
   return String(fd.get(key) ?? "").trim();
@@ -151,14 +164,13 @@ export async function addKnowledge(fd: FormData): Promise<ActionResult> {
   const title = str(fd, "title");
   if (!title) return { ok: false, error: "Give it a title — that's what people see in the answer." };
 
-  const kind = str(fd, "kind") as KnowledgeKind;
-  if (!KINDS.includes(kind)) return { ok: false, error: "Pick what kind of thing this is." };
+  const mode: Mode = str(fd, "mode") === "video" ? "video" : "content";
 
   const dept = resolveDepartments(fd, user, department);
   if ("error" in dept) return { ok: false, error: dept.error };
 
   const url = str(fd, "url");
-  if (kind === "video") {
+  if (mode === "video") {
     if (!url) return { ok: false, error: "A video needs its link — that's what a citation opens." };
     if (!/^https:\/\//i.test(url)) return { ok: false, error: "The video link must start with https://" };
   }
@@ -168,15 +180,15 @@ export async function addKnowledge(fd: FormData): Promise<ActionResult> {
     return {
       ok: false,
       error:
-        kind === "video"
-          ? `${content.error} A video without a transcript can't be searched — paste the transcript in.`
+        mode === "video"
+          ? `${content.error} A video with no transcript can't be searched — add the .vtt/.srt, or paste it in.`
           : content.error,
     };
   }
 
   try {
     const id = await saveSource({
-      kind,
+      kind: kindFor(mode, content.storagePath !== null),
       departments: dept.departments,
       title,
       summary: str(fd, "summary") || null,

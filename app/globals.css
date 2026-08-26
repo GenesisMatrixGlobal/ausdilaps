@@ -38,6 +38,12 @@
   --color-ad-orange: #e8642a;        /* conversion accent (energy) — from Capability Statement */
   --color-ad-orange-dark: #cf5423;
   --color-ad-blue: #46688a;          /* alias kept for components */
+
+  /* Status amber. Deliberately NOT ad-orange: orange is the conversion accent (CTAs only),
+     and at #e8642a it reads as an error. Amber says "look at this", not "something broke". */
+  --color-ad-amber: #a86a12;         /* text + dots — 4.9:1 on white */
+  --color-ad-amber-line: #e8d3a8;    /* hairlines and borders */
+  --color-ad-amber-tint: #fdf8ef;    /* panel ground */
   --color-ad-ink: #2f343a;           /* charcoal — headings + body */
   --color-ad-navy: #2e3338;          /* charcoal dark band */
   --color-ad-navy-deep: #23272b;     /* deepest band / footer */

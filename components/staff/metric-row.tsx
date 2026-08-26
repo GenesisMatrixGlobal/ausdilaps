@@ -3,8 +3,13 @@ import { cn } from "@/lib/utils";
 /**
  * A row of labelled counts, each showing its share of the total.
  *
- * Generalised from the funnel grid in components/tools/tender-watch/view.tsx. Used for
- * every enquiry breakdown on /admin — by type, tier, job size and source page.
+ * Generalised from the funnel grid in components/tools/tender-watch/view.tsx.
+ *
+ * NOT CURRENTLY RENDERED. It held the /admin enquiry breakdowns until those were folded
+ * into the Enquiries panel as bare figures — with single-digit counts, a card each was far
+ * too much furniture. Kept deliberately: the GA4 traffic panel wants exactly this shape
+ * (labelled counts with a share of total), and tender-watch still has a private copy that
+ * should collapse into this one. Delete it only if both of those stop being true.
  *
  * The share matters more than the count. "12 enquiries" tells you little; "12 enquiries,
  * 60% of them New Quote" tells you what the pipeline is made of, and a shift in that

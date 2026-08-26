@@ -28,6 +28,13 @@ function supabaseConfigured(): boolean {
 }
 
 export type Alert = {
+  /**
+   * Ordering only — /admin renders every alert in the same amber.
+   *
+   * Nothing this dashboard can detect is an outage: a missing API key or a stale invite is
+   * "sort this out today", not "stop what you're doing". Keeping red unused keeps it
+   * meaningful for the day something genuinely is broken.
+   */
   tone: "critical" | "warn";
   title: string;
   detail: string;
@@ -163,6 +170,14 @@ export async function loadDashboard(origin: string) {
         });
       }
     }
+
+    // Most consequential first, then alphabetical so the order is stable between loads
+    // rather than shifting with whichever check happened to push first.
+    alerts.sort(
+      (a, b) =>
+        Number(b.tone === "critical") - Number(a.tone === "critical") ||
+        a.title.localeCompare(b.title)
+    );
 
     // ── 12-week trend, oldest first ────────────────────────────────────
     const trend: { weekStart: string; count: number }[] = [];

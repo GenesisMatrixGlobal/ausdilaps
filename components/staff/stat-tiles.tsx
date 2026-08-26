@@ -16,9 +16,11 @@ const TONE = {
   critical: "text-ad-orange font-semibold",
 } as const;
 
-export function StatTiles({ stats }: { stats: Stat[] }) {
+export function StatTiles({ stats, columns = 4 }: { stats: Stat[]; columns?: 3 | 4 | 5 }) {
+  // Explicit strings, not a template — Tailwind only ships classes it can see in source.
+  const cols = { 3: "sm:grid-cols-3", 4: "sm:grid-cols-4", 5: "sm:grid-cols-5" }[columns];
   return (
-    <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+    <dl className={`grid grid-cols-2 gap-4 ${cols}`}>
       {stats.map((s) => (
         <div key={s.label} className="rounded-xl border border-ad-border bg-white p-4">
           <dt className="text-xs font-semibold uppercase tracking-wide text-ad-muted">{s.label}</dt>

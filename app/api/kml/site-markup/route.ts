@@ -34,7 +34,7 @@ function waypointLabel(index: number): string {
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  if (!(await isStaff("KML_ROAD_TRACE_ALLOW_UNAUTHED"))) {
+  if (!(await isStaff("KML_ROAD_TRACE_ALLOW_UNAUTHED", "site-markups"))) {
     return NextResponse.json({ ok: false, error: "Not authorised." }, { status: 401 });
   }
 

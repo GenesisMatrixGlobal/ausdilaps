@@ -1,4 +1,6 @@
+import { after } from "next/server";
 import { canAccess, getStaffUser, isAdmin } from "./session";
+import { recordToolUse } from "@/lib/tools/usage";
 import type { DepartmentSlug } from "@/lib/departments";
 
 /**
@@ -9,13 +11,28 @@ import type { DepartmentSlug } from "@/lib/departments";
  * work for local dev, but are IGNORED in production — they used to short-circuit
  * this check first, which left the property-sizing, road-trace and site-markup
  * routes open to the internet on the live site.
+ *
+ * `toolSlug` is optional and only drives the usage counter on /admin/tools. It is passed
+ * explicitly rather than derived from `allowUnauthedEnvVar`, because those env vars are
+ * NOT one-to-one with tools: KML_ROAD_TRACE_ALLOW_UNAUTHED covers four routes, and
+ * KML_STANDARD_MARKUP_ALLOW_UNAUTHED is reused by both places/* routes. Deriving it would
+ * produce numbers that look right and aren't.
  */
-export async function isStaff(allowUnauthedEnvVar: string): Promise<boolean> {
-  if (process.env.NODE_ENV !== "production" && process.env[allowUnauthedEnvVar] === "true") {
-    return true;
+export async function isStaff(
+  allowUnauthedEnvVar: string,
+  toolSlug?: string
+): Promise<boolean> {
+  const devBypass =
+    process.env.NODE_ENV !== "production" && process.env[allowUnauthedEnvVar] === "true";
+  const allowed = devBypass || (await getStaffUser()) !== null;
+
+  // Count the use, never block on it. after() runs post-response but keeps the function
+  // alive until it settles — a bare floating promise can be killed when the response ends.
+  if (allowed && toolSlug) {
+    after(() => recordToolUse(toolSlug));
   }
 
-  return (await getStaffUser()) !== null;
+  return allowed;
 }
 
 /**

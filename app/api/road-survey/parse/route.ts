@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  if (!(await isStaff("ROAD_SURVEY_ALLOW_UNAUTHED"))) {
+  if (!(await isStaff("ROAD_SURVEY_ALLOW_UNAUTHED", "road-survey-estimator"))) {
     return NextResponse.json({ ok: false, error: "Not authorised." }, { status: 401 });
   }
 

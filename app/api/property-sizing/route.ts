@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  if (!(await isStaff("PROPERTY_SIZING_ALLOW_UNAUTHED"))) {
+  if (!(await isStaff("PROPERTY_SIZING_ALLOW_UNAUTHED", "property-sizing"))) {
     return NextResponse.json(
       { ok: false, error: "Not authorised — staff login required." },
       { status: 401 }

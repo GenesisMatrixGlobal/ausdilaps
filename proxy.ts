@@ -21,6 +21,13 @@ export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const res = NextResponse.next({ request: req });
 
+  // Local-only sign-in bypass — matches previewUser() in lib/auth/session.ts. Both are
+  // needed: this gets you past the middleware, that one gives the page a user. Hard-gated
+  // on NODE_ENV, which Vercel always sets to "production", so it cannot apply to a deploy.
+  if (process.env.NODE_ENV !== "production" && process.env.STAFF_PREVIEW === "1") {
+    return res;
+  }
+
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return res;
   }

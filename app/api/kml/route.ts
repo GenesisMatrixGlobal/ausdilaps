@@ -18,7 +18,7 @@ function slugify(value: string): string {
 // was no admin login to gate it with; the shared-password gate now exists and the app is
 // deployed on a public domain, which is exactly the condition the old TODO waited for.
 export async function POST(req: NextRequest) {
-  if (!(await isStaff("KML_BUILDER_ALLOW_UNAUTHED"))) {
+  if (!(await isStaff("KML_BUILDER_ALLOW_UNAUTHED", "kml-builder"))) {
     return NextResponse.json({ ok: false, error: "Not authorised." }, { status: 401 });
   }
 

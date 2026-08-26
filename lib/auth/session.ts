@@ -8,6 +8,7 @@
 // Server-only: uses next/headers.
 
 import { cache } from "react";
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -42,7 +43,32 @@ export function canAccess(user: StaffUser, slug: DepartmentSlug): boolean {
  * anyone who isn't active internal staff, so client-portal roles and
  * half-provisioned accounts can never reach a staff page.
  */
+/**
+ * Local-only sign-in bypass, for walking the portal without a magic link.
+ *
+ * HARD-GATED ON NODE_ENV. Vercel sets NODE_ENV=production on every deployment including
+ * previews, so this branch cannot run anywhere but a dev machine — even if the env var
+ * were set in Vercel by accident.
+ *
+ * Logged loudly on every use, because the failure mode for a thing like this is forgetting
+ * it is on and then wondering why an auth bug won't reproduce.
+ */
+function previewUser(): StaffUser | null {
+  if (process.env.NODE_ENV === "production" || process.env.STAFF_PREVIEW !== "1") return null;
+  console.warn("[auth] STAFF_PREVIEW=1 — sign-in bypassed. Local only; never applies to a deployment.");
+  return {
+    id: "00000000-0000-0000-0000-000000000000",
+    email: "preview@ausdilaps.com.au",
+    fullName: "Preview (local)",
+    role: "superadmin",
+    departments: [...DEPARTMENT_SLUGS],
+  };
+}
+
 async function loadStaffUser(): Promise<StaffUser | null> {
+  const preview = previewUser();
+  if (preview) return preview;
+
   try {
     const supabase = await createClient();
     const {
@@ -52,12 +78,14 @@ async function loadStaffUser(): Promise<StaffUser | null> {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role, full_name, email, departments, is_active")
+      .select("role, full_name, email, departments, is_active, last_seen_at")
       .eq("id", user.id)
       .single();
 
     if (!profile || profile.is_active === false) return null;
     if (!STAFF_ROLES.includes(profile.role as StaffRole)) return null;
+
+    touchLastSeen(user.id, profile.last_seen_at as string | null);
 
     const role = profile.role as StaffRole;
     return {
@@ -72,6 +100,44 @@ async function loadStaffUser(): Promise<StaffUser | null> {
     // Supabase not configured, or network blip — fail closed.
     return null;
   }
+}
+
+/** Don't write more often than this per person. */
+const LAST_SEEN_INTERVAL_MS = 15 * 60_000;
+
+/**
+ * Records that this person is active, for the "who is actually using the portal" panel
+ * on /admin.
+ *
+ * Two things this must not do, both learned the hard way:
+ *
+ *   1. Slow the request down. It runs inside after(), so it happens post-response — the
+ *      user never waits on it, and Vercel keeps the function alive until it settles.
+ *   2. Write on every request. Without the interval check this would add a round trip to
+ *      Sydney to every single page load, undoing the work that took /admin from ~1s to
+ *      ~180ms. Fifteen minutes is plenty of resolution for "signed in this week".
+ *
+ * Uses the SERVICE-ROLE client on purpose: profiles has no update policy for ordinary
+ * users. 0005 dropped "profiles self update" because it had a USING clause with no WITH
+ * CHECK, which let anyone change their own role. That stays dropped.
+ */
+function touchLastSeen(userId: string, lastSeenAt: string | null): void {
+  const due =
+    !lastSeenAt || Date.now() - new Date(lastSeenAt).getTime() > LAST_SEEN_INTERVAL_MS;
+  if (!due) return;
+
+  after(async () => {
+    try {
+      const { createAdminClient } = await import("@/lib/supabase/admin");
+      await createAdminClient()
+        .from("profiles")
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq("id", userId);
+    } catch (e) {
+      // Never let presence tracking break a page load.
+      console.error("[auth] last_seen_at update failed:", (e as Error).message);
+    }
+  });
 }
 
 /**

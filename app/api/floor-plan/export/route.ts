@@ -15,7 +15,7 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  if (!(await isStaff("FLOOR_PLAN_ALLOW_UNAUTHED"))) {
+  if (!(await isStaff("FLOOR_PLAN_ALLOW_UNAUTHED", "floor-plan"))) {
     return NextResponse.json({ ok: false, error: "Not authorised." }, { status: 401 });
   }
 

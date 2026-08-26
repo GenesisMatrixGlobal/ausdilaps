@@ -56,6 +56,16 @@ create table if not exists public.knowledge_sources (
 
   is_published  boolean not null default false,
 
+  -- The extracted text, kept as the SOURCE OF TRUTH for indexing.
+  --
+  -- Chunks are derived data. Keeping the text here means the chunker can be improved and
+  -- everything re-chunked without asking anyone to re-upload — and re-indexing a pasted
+  -- note works at all, since there is no file to go back to. Worth the duplication.
+  body          text,
+  -- Which chunker to run over `body`. Set once at upload; re-index reads it back.
+  format        text not null default 'plain'
+                  check (format in ('markdown', 'transcript', 'plain')),
+
   -- Indexing state. indexed_at null + index_error null = still working.
   indexed_at    timestamptz,
   index_error   text,
@@ -66,9 +76,32 @@ create table if not exists public.knowledge_sources (
   updated_at    timestamptz not null default now()
 );
 
--- One row per training file, so re-running the indexer updates rather than duplicates.
+-- Columns added after this migration first ran somewhere. `create table if not exists`
+-- above is a NO-OP on a database that already has the table, so anything added to that
+-- block later never lands — it has to be repeated here. Add new columns in BOTH places:
+-- the create for a fresh database, an alter for an existing one.
+alter table public.knowledge_sources add column if not exists body   text;
+alter table public.knowledge_sources add column if not exists format text not null default 'plain';
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'knowledge_sources_format_check'
+  ) then
+    alter table public.knowledge_sources add constraint knowledge_sources_format_check
+      check (format in ('markdown', 'transcript', 'plain'));
+  end if;
+end $$;
+
+-- One row per training file, so re-running the repo indexer updates in place rather than
+-- creating a second copy of every module.
+--
+-- NOT a partial index (`where source_ref is not null`), which is what this was first:
+-- Postgres will not accept a partial index as an ON CONFLICT target unless the statement
+-- repeats the predicate, and PostgREST has no way to send one. A plain unique index is
+-- correct anyway — NULLs compare as distinct, so any number of uploads can have no
+-- source_ref, and a NULL never triggers the conflict path.
+drop index if exists public.knowledge_sources_ref_idx;
 create unique index if not exists knowledge_sources_ref_idx
-  on public.knowledge_sources(source_ref) where source_ref is not null;
+  on public.knowledge_sources(source_ref);
 
 create index if not exists knowledge_sources_dept_idx
   on public.knowledge_sources using gin(departments);

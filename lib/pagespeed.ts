@@ -14,10 +14,16 @@ import "server-only";
 
 const ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 
-/** Two pages: the homepage, and the page the whole SEO strategy is built around. */
+/**
+ * Two pages: where people land, and where they convert.
+ *
+ * /quote is the contact page — QUOTE_HREF in lib/site.ts, and the target of every CTA on
+ * the site. It's the one page where slowness costs money directly, so it's worth watching
+ * more closely than any content page.
+ */
 export const PAGESPEED_TARGETS = [
   { label: "Homepage", path: "/" },
-  { label: "Dilapidation reports", path: "/dilapidation-reports" },
+  { label: "Quote / contact form", path: "/quote" },
 ] as const;
 
 export type PageSpeedScore = {

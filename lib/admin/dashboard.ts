@@ -2,7 +2,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadToolUsage } from "@/lib/tools/usage";
-import { loadPageSpeed, type PageSpeedScore } from "@/lib/pagespeed";
+import { loadPageSpeed, PAGESPEED_TARGETS, type PageSpeedScore } from "@/lib/pagespeed";
 import { INQUIRY_TYPES, ASSET_COUNT_RANGES } from "@/lib/leads";
 
 /**
@@ -45,7 +45,9 @@ export type DashboardData = Awaited<ReturnType<typeof loadDashboard>>;
  */
 const cachedPageSpeed = unstable_cache(
   async (origin: string) => loadPageSpeed(origin),
-  ["pagespeed"],
+  // The measured paths are part of the key, so editing PAGESPEED_TARGETS busts the cache
+  // instead of serving yesterday's scores under today's labels for up to 24 hours.
+  ["pagespeed", PAGESPEED_TARGETS.map((t) => t.path).join(",")],
   { revalidate: 86_400, tags: ["pagespeed"] }
 );
 

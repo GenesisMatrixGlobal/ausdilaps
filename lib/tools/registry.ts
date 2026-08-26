@@ -48,10 +48,18 @@ export const TOOLS: ToolDefinition[] = [
       import("@/components/tools/property-sizing").then((m) => m.PropertySizingTool)
     ),
   },
-  // Tender Watch is deliberately NOT registered yet. The nightly scan is paused and no
-  // sources are configured, so it would be an empty screen for staff. It lives at
-  // /admin/tender-watch until the pipeline is live; re-adding it here (departments:
-  // ["accounts"]) plus the slug in lib/tenders/config.ts is the whole change.
+  {
+    slug: "tender-watch",
+    title: "Tender Watch",
+    description:
+      "Nightly tender scan — pipeline health, source status and the classified queue.",
+    // Must stay in step with TENDER_WATCH_DEPARTMENTS in lib/tenders/config.ts, which the API
+    // routes read. Diverge and a department sees the tool card but its data calls 401.
+    departments: ["accounts"],
+    Component: dynamic(() =>
+      import("@/components/tools/tender-watch").then((m) => m.TenderWatchTool)
+    ),
+  },
   {
     slug: "road-survey-estimator",
     title: "Road Survey Estimator",

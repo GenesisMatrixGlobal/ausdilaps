@@ -3,16 +3,15 @@ import type { DepartmentSlug } from "@/lib/departments";
 /**
  * Which staff departments see Tender Watch.
  *
- * EMPTY on purpose while the pipeline is inert: the nightly scan is paused and no sources
- * are configured, so the screen lives at /admin/tender-watch only and staff see nothing.
- * Putting "accounts" back here is the single change that surfaces it in /staff — that plus
- * re-adding the registry entry in lib/tools/registry.ts.
+ * Read by the API routes so access can never drift between the page and its data. This list
+ * MUST match the `departments` on the tender-watch entry in lib/tools/registry.ts — otherwise
+ * a department gets a tool card whose data calls then 401.
  *
- * Read by the API routes so access can never drift between the page and its data. Note the
- * routes must ALSO allow company admins outright, because an empty list here means
- * isStaffInAnyDepartment() is false for everyone — admins included.
+ * The routes ALSO allow company admins outright, independently of this list. That was
+ * load-bearing while this was empty (isStaffInAnyDepartment([]) is false for everyone, admins
+ * included), and it is still what adds the operator panels on top of the ordinary view.
  */
-export const TENDER_WATCH_DEPARTMENTS: readonly DepartmentSlug[] = [];
+export const TENDER_WATCH_DEPARTMENTS: readonly DepartmentSlug[] = ["accounts"];
 
 /** Dev-only unauth hatch for the read routes. IGNORED in production — see lib/auth/is-staff.ts. */
 export const TENDER_WATCH_ALLOW_UNAUTHED_ENV = "TENDER_WATCH_ALLOW_UNAUTHED";

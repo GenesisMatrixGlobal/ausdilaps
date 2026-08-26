@@ -7,6 +7,7 @@
 //
 // Server-only: uses next/headers.
 
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -41,7 +42,7 @@ export function canAccess(user: StaffUser, slug: DepartmentSlug): boolean {
  * anyone who isn't active internal staff, so client-portal roles and
  * half-provisioned accounts can never reach a staff page.
  */
-export async function getStaffUser(): Promise<StaffUser | null> {
+async function loadStaffUser(): Promise<StaffUser | null> {
   try {
     const supabase = await createClient();
     const {
@@ -72,6 +73,22 @@ export async function getStaffUser(): Promise<StaffUser | null> {
     return null;
   }
 }
+
+/**
+ * Memoised for the lifetime of ONE request.
+ *
+ * Each call costs two round trips to Supabase (verify the JWT, then read the
+ * profile), and Supabase is in Tokyo — roughly 100ms each from Sydney. Without
+ * this, a single /admin render paid for that repeatedly: the layout calls
+ * requireAdmin(), the page calls it again, and listStaff() calls it a third time.
+ * Eight sequential Tokyo round trips for one page, which measured ~1s.
+ *
+ * React's cache() is scoped to a single request, so this changes nothing about
+ * security: every incoming request still verifies from scratch, and server
+ * actions — which are separate requests — still re-check for themselves, which is
+ * what the note at the top of app/admin/staff/actions.ts requires.
+ */
+export const getStaffUser = cache(loadStaffUser);
 
 /** Signed-in staff, or bounce to login preserving where they were headed. */
 export async function requireStaff(next?: string): Promise<StaffUser> {

@@ -10,6 +10,12 @@ const nextConfig: NextConfig = {
       // { protocol: "https", hostname: "<account>.r2.cloudflarestorage.com" },
     ],
   },
+  experimental: {
+    // Knowledge-base uploads go through a server action, and the default cap is 1MB —
+    // small enough that the very first real PDF would fail with an opaque error. Matches
+    // MAX_UPLOAD_BYTES in lib/knowledge/extract.ts; change both together.
+    serverActions: { bodySizeLimit: "25mb" },
+  },
   async redirects() {
     return REDIRECTS;
   },

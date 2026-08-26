@@ -31,11 +31,14 @@ type ButtonProps = VariantProps<typeof buttonVariants> & {
   children: React.ReactNode;
   type?: "button" | "submit";
   onClick?: () => void;
+  /** Button form only. The base cva class already styles disabled: it just was never
+   *  passed through, so every caller needing it hand-rolled its own button. */
+  disabled?: boolean;
   /** open the href in a new tab (for PDFs / external links) */
   newTab?: boolean;
 };
 
-export function Button({ variant, size, className, href, children, type, onClick, newTab }: ButtonProps) {
+export function Button({ variant, size, className, href, children, type, onClick, newTab, disabled }: ButtonProps) {
   const cls = cn(buttonVariants({ variant, size }), className);
   if (href) {
     return (
@@ -50,7 +53,7 @@ export function Button({ variant, size, className, href, children, type, onClick
     );
   }
   return (
-    <button type={type ?? "button"} onClick={onClick} className={cls}>
+    <button type={type ?? "button"} onClick={onClick} disabled={disabled} className={cls}>
       {children}
     </button>
   );

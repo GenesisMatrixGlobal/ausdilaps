@@ -1,5 +1,9 @@
 import "server-only";
 import { chunkMarkdown, chunkPlainText, chunkTranscript, type Chunk } from "./chunk";
+import { ACCEPTED_EXTENSIONS, MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL, type SourceFormat } from "./formats";
+
+// Re-exported so server callers keep importing everything upload-related from one place.
+export { ACCEPTED_EXTENSIONS, MAX_UPLOAD_BYTES, type SourceFormat };
 
 /**
  * Getting searchable text out of whatever someone uploaded.
@@ -9,19 +13,12 @@ import { chunkMarkdown, chunkPlainText, chunkTranscript, type Chunk } from "./ch
  * "0 chunks indexed" is worse than a refusal — it looks like the upload worked.
  */
 
-export type SourceFormat = "markdown" | "transcript" | "plain";
-
 export type Extracted = {
   text: string;
   format: SourceFormat;
   /** Shown in the admin row. Not an error — the upload still worked. */
   warning?: string;
 };
-
-/** Everything the upload form should accept, for the `accept` attribute and validation. */
-export const ACCEPTED_EXTENSIONS = [".md", ".mdx", ".txt", ".vtt", ".srt", ".pdf"] as const;
-
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 /** Thrown when we understood the file but got nothing usable out of it. */
 export class UnreadableUpload extends Error {}
@@ -77,7 +74,7 @@ export async function extractUpload(filename: string, bytes: ArrayBuffer): Promi
   if (bytes.byteLength === 0) throw new UnreadableUpload("That file is empty.");
   if (bytes.byteLength > MAX_UPLOAD_BYTES) {
     throw new UnreadableUpload(
-      `That file is ${(bytes.byteLength / 1024 / 1024).toFixed(1)}MB. The limit is 25MB — split it, or upload the transcript instead of the video.`
+      `That file is ${(bytes.byteLength / 1024 / 1024).toFixed(1)}MB. The limit is ${MAX_UPLOAD_LABEL} — split it, or upload the transcript instead of the video.`
     );
   }
 

@@ -1,7 +1,8 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { chunkFor, type SourceFormat } from "./extract";
+import { chunkFor } from "./extract";
+import type { SourceFormat } from "./formats";
 import type { DepartmentSlug } from "@/lib/departments";
 
 /**

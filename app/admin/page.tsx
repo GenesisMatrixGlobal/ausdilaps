@@ -5,7 +5,7 @@ import { loadDashboard, type Alert } from "@/lib/admin/dashboard";
 import { StatTiles, type Stat } from "@/components/staff/stat-tiles";
 import { MetricRow } from "@/components/staff/metric-row";
 import { Sparkline } from "@/components/staff/sparkline";
-import { Pill } from "@/components/staff/pill";
+import { ComingSoon } from "@/components/staff/coming-soon";
 
 /**
  * The GM's dashboard.
@@ -22,15 +22,6 @@ export const metadata = {
 };
 
 const GA4_URL = "https://analytics.google.com/analytics/web/";
-
-function relative(iso: string | null, now: number): string {
-  if (!iso) return "never";
-  const hours = (now - new Date(iso).getTime()) / 3_600_000;
-  if (hours < 1) return "just now";
-  if (hours < 24) return `${Math.floor(hours)} hr${Math.floor(hours) === 1 ? "" : "s"} ago`;
-  const days = Math.floor(hours / 24);
-  return `${days} day${days === 1 ? "" : "s"} ago`;
-}
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -153,10 +144,6 @@ export default async function AdminHomePage() {
         </div>
       </Section>
 
-      <Section title="What people are asking for" hint="last 90 days">
-        <MetricRow metrics={e.byType.map((b) => ({ label: b.label, value: b.count }))} />
-      </Section>
-
       <Section
         title="Job size and client type"
         hint="Tier is estimated by keyword — treat it as a signal, not a fact"
@@ -177,49 +164,6 @@ export default async function AdminHomePage() {
             />
           </div>
         </div>
-      </Section>
-
-      <Section title="Which pages bring enquiries" hint="the SEO payoff, measured">
-        {e.bySource.length === 0 ? (
-          <p className="text-sm text-ad-muted">No enquiries recorded yet.</p>
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-ad-border">
-            {e.bySource.map((s) => (
-              <div
-                key={s.label}
-                className="flex items-center justify-between gap-4 border-b border-ad-border bg-white px-4 py-2.5 last:border-b-0"
-              >
-                <code className="truncate text-xs text-ad-ink">{s.label}</code>
-                <span className="shrink-0 text-sm font-semibold tabular-nums text-ad-ink">{s.count}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      <Section title="Who's using the portal" hint="Per-tool usage is on the Tools tab">
-        {staff.rows.length === 0 ? (
-          <p className="text-sm text-ad-muted">No staff accounts yet.</p>
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-ad-border">
-            {staff.rows.map((s) => (
-              <div
-                key={s.name}
-                className="flex flex-wrap items-center justify-between gap-3 border-b border-ad-border bg-white px-4 py-2.5 last:border-b-0"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-ad-ink">{s.name}</span>
-                  <Pill tone="muted">{s.role}</Pill>
-                </div>
-                {s.lastSeenAt ? (
-                  <span className="text-xs text-ad-muted">Last seen {relative(s.lastSeenAt, d.now)}</span>
-                ) : (
-                  <Pill tone="warn">Never signed in</Pill>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
       </Section>
 
       <Section title="Site health" hint="Google's own scores, refreshed daily">
@@ -272,6 +216,42 @@ export default async function AdminHomePage() {
           </a>
         </p>
       </Section>
+
+      <Section
+        title="Not connected yet"
+        hint="Each one lists what's standing in the way"
+      >
+        <div className="grid gap-3 lg:grid-cols-3">
+          <ComingSoon
+            title="Search rankings"
+            what="Where we rank for the terms the whole site is built to win — and whether that's moving. Impressions, clicks and average position per query."
+            needs={[
+              "Enable the Google Search Console API",
+              "A service account, added as a user on the Search Console property",
+            ]}
+          />
+          <ComingSoon
+            title="Website traffic"
+            what="Visits, top landing pages and where people come from. Pairs with enquiries to give a conversion rate per page."
+            needs={[
+              "Enable the Google Analytics Data API",
+              "A service account with Viewer on the GA4 property",
+              "The numeric Property ID (not G-81JV6BQ2R5)",
+            ]}
+          />
+          <ComingSoon
+            title="Tender pipeline"
+            what="Tenders scanned, matches found and what was sent on. Built and tested — deliberately switched off."
+            needs={[
+              "A tender feed URL (verify it in a browser first)",
+              "A CRON_SECRET of at least 32 characters",
+              'Restore the cron block in vercel.json (currently "crons": [])',
+            ]}
+            docs="docs/tender-watch.md"
+          />
+        </div>
+      </Section>
+
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadToolUsage } from "@/lib/tools/usage";
 import { loadPageSpeed, PAGESPEED_TARGETS, type PageSpeedScore } from "@/lib/pagespeed";
-import { INQUIRY_TYPES, ASSET_COUNT_RANGES } from "@/lib/leads";
+import { ASSET_COUNT_RANGES } from "@/lib/leads";
 
 /**
  * Everything /admin renders, in one call.
@@ -54,14 +54,15 @@ const cachedPageSpeed = unstable_cache(
 type LeadRow = {
   created_at: string;
   tier: string | null;
-  inquiry_type: string | null;
   asset_count: string | null;
-  source_page: string | null;
   emailed: boolean | null;
-  salesforce_synced: boolean | null;
 };
 
-function tally(rows: LeadRow[], pick: (r: LeadRow) => string | null, order?: readonly string[]): Breakdown[] {
+function tally(
+  rows: LeadRow[],
+  pick: (r: LeadRow) => string | null,
+  order?: readonly string[]
+): Breakdown[] {
   const counts = new Map<string, number>();
   for (const r of rows) {
     const key = pick(r);
@@ -88,10 +89,12 @@ export async function loadDashboard(origin: string) {
     const [leadsRes, staffRes, sourcesRes, usage, speed] = await Promise.all([
       db
         .from("leads")
-        .select("created_at, tier, inquiry_type, asset_count, source_page, emailed, salesforce_synced")
+        // Only the columns still rendered — inquiry_type, source_page and salesforce_synced
+        // went with the panels that used them.
+        .select("created_at, tier, asset_count, emailed")
         .gte("created_at", since90)
         .order("created_at", { ascending: false }),
-      db.from("profiles").select("email, full_name, role, is_active, last_seen_at, created_at"),
+      db.from("profiles").select("is_active, last_seen_at"),
       db.from("tender_sources").select("label, consecutive_empty, consecutive_failures, is_enabled"),
       loadToolUsage(),
       cachedPageSpeed(origin).catch(() => [] as PageSpeedScore[]),
@@ -183,10 +186,8 @@ export async function loadDashboard(origin: string) {
         total90: leads.length,
         daysSinceLast: daysQuiet,
         trend,
-        byType: tally(leads, (l) => l.inquiry_type, INQUIRY_TYPES),
         byTier: tally(leads, (l) => l.tier),
         bySize: tally(leads, (l) => l.asset_count, ASSET_COUNT_RANGES),
-        bySource: tally(leads, (l) => l.source_page).slice(0, 6),
       },
       staff: {
         active: staff.filter((s) => s.is_active).length,
@@ -194,14 +195,6 @@ export async function loadDashboard(origin: string) {
           (s) => s.last_seen_at && new Date(s.last_seen_at).getTime() >= now - WEEK
         ).length,
         neverSignedIn,
-        rows: staff
-          .filter((s) => s.is_active)
-          .map((s) => ({
-            name: (s.full_name as string | null) ?? (s.email as string),
-            role: s.role as string,
-            lastSeenAt: (s.last_seen_at as string | null) ?? null,
-          }))
-          .sort((a, b) => (b.lastSeenAt ?? "").localeCompare(a.lastSeenAt ?? "")),
       },
       tools: {
         usedThisWeek: [...usage.values()].reduce((n, s) => n + s.last7Days, 0),
@@ -230,16 +223,13 @@ function empty(unavailable: string, now: number) {
       total90: 0,
       daysSinceLast: null as number | null,
       trend: [] as { weekStart: string; count: number }[],
-      byType: [] as Breakdown[],
       byTier: [] as Breakdown[],
       bySize: [] as Breakdown[],
-      bySource: [] as Breakdown[],
     },
     staff: {
       active: 0,
       activeThisWeek: 0,
       neverSignedIn: 0,
-      rows: [] as { name: string; role: string; lastSeenAt: string | null }[],
     },
     tools: {
       usedThisWeek: 0,

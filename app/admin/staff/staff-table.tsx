@@ -13,6 +13,21 @@ import {
   type StaffRow,
 } from "./actions";
 
+/** "3 days ago" — only used for invites, so days is the right resolution. */
+function inviteAge(iso: string | null): string | null {
+  if (!iso) return null;
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days < 1) return "today";
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+/** Supabase invite links are short-lived, so an old unaccepted invite needs resending
+ *  rather than chasing. Three days is comfortably past any sensible expiry. */
+function isStale(iso: string | null): boolean {
+  if (!iso) return false;
+  return Date.now() - new Date(iso).getTime() > 3 * 86_400_000;
+}
+
 export function StaffTable({
   rows,
   departments,
@@ -84,6 +99,11 @@ export function StaffTable({
                         Deactivated
                       </span>
                     )}
+                    {row.is_active && !row.last_sign_in_at && (
+                      <span className="rounded bg-ad-orange/10 px-2 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wide text-ad-orange">
+                        Pending invite
+                      </span>
+                    )}
                   </div>
                   <p className="mt-1 truncate text-sm text-ad-muted">{row.email}</p>
                   <p className="mt-1.5 text-sm text-ad-muted">
@@ -95,6 +115,14 @@ export function StaffTable({
                             .join(", ")
                         : "No departments assigned"}
                   </p>
+                  {row.is_active && !row.last_sign_in_at && (
+                    <p className="mt-1.5 text-sm text-ad-orange">
+                      {inviteAge(row.invited_at) === null
+                        ? "Hasn't signed in yet."
+                        : `Invited ${inviteAge(row.invited_at)} — not accepted yet.`}
+                      {isStale(row.invited_at) && " The link has almost certainly expired — send a new one."}
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex shrink-0 flex-wrap gap-2">

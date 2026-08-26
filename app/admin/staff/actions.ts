@@ -236,6 +236,10 @@ export type StaffRow = {
   is_active: boolean;
   last_seen_at: string | null;
   created_at: string;
+  /** From auth.users, not profiles. Null means the invite was never accepted. */
+  last_sign_in_at: string | null;
+  /** When the invite was issued, for "invited 9 days ago, still pending". */
+  invited_at: string | null;
 };
 
 /** Everyone with a profile, newest first. Internal roles first so the staff list
@@ -254,11 +258,37 @@ export async function listStaff(): Promise<{ rows: StaffRow[]; error: string | n
 
   if (error) return { rows: [], error: error.message };
 
+  // Whether someone has ever signed in lives in auth.users, not profiles, and
+  // supabase-js cannot join across that boundary — hence the second call. Worth it:
+  // profiles.last_seen_at only started being written recently, so it would report
+  // anyone who signed in before that as a pending invite. auth is the truth.
+  //
+  // Best-effort: if this call fails the list still renders, just without the pending
+  // badges. A staff list that loads is worth more than one that is perfectly labelled.
+  const authByEmail = new Map<string, { lastSignInAt: string | null; invitedAt: string | null }>();
+  try {
+    const { data: list } = await conn.client.auth.admin.listUsers({ perPage: 1000 });
+    for (const u of list?.users ?? []) {
+      if (!u.email) continue;
+      authByEmail.set(u.email.toLowerCase(), {
+        lastSignInAt: u.last_sign_in_at ?? null,
+        invitedAt: u.invited_at ?? null,
+      });
+    }
+  } catch (e) {
+    console.error("[admin] couldn't read auth users for invite status:", (e as Error).message);
+  }
+
   return {
-    rows: (data ?? []).map((r) => ({
-      ...r,
-      departments: normaliseDepartments(r.departments),
-    })) as StaffRow[],
+    rows: (data ?? []).map((r) => {
+      const auth = authByEmail.get((r.email ?? "").toLowerCase());
+      return {
+        ...r,
+        departments: normaliseDepartments(r.departments),
+        last_sign_in_at: auth?.lastSignInAt ?? null,
+        invited_at: auth?.invitedAt ?? null,
+      };
+    }) as StaffRow[],
     error: null,
   };
 }

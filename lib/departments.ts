@@ -3,16 +3,17 @@
 // Adding a department = one entry here. No migration needed: profiles.departments
 // is a text[] and these slugs are what go in it.
 //
-// Slug note: the back-office department is `office`, not `admin` — /staff/admin
-// sitting next to /admin (company admins) would be a permanent source of confusion.
+// Slug note: the back-office/finance department is `accounts`, not `admin` — /staff/admin
+// sitting next to /admin (company admins) would be a permanent source of confusion. It
+// carries the label "Admin & Accounts": back-office admin and finance are one team here,
+// so they were merged from the original separate `accounts` and `office` departments.
 
 export type DepartmentSlug =
   | "estimators"
   | "inspectors"
   | "projects"
   | "reports"
-  | "accounts"
-  | "office";
+  | "accounts";
 
 export type Department = {
   slug: DepartmentSlug;
@@ -44,13 +45,8 @@ export const DEPARTMENTS: Department[] = [
   },
   {
     slug: "accounts",
-    label: "Accounts",
-    blurb: "Invoicing, billing and finance processes.",
-  },
-  {
-    slug: "office",
-    label: "Admin & Office",
-    blurb: "Back-office processes, leads and general company reference.",
+    label: "Admin & Accounts",
+    blurb: "Invoicing, billing and finance, plus back-office processes, leads and general company reference.",
   },
 ];
 

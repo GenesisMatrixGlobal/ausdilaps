@@ -20,9 +20,10 @@ Departments are defined in [`lib/departments.ts`](../lib/departments.ts) and sto
 because code is the source of truth for valid slugs and `normaliseDepartments()` filters
 anything unrecognised out of the database value.
 
-Six departments ship: `estimators`, `inspectors`, `projects`, `reports`, `accounts`, `office`.
-(`office` = "Admin & Office" — deliberately not `admin`, so `/staff/admin` never gets confused
-with `/admin`.)
+Five departments ship: `estimators`, `inspectors`, `projects`, `reports`, `accounts`.
+(`accounts` = "Admin & Accounts" — back-office admin and finance are one team, merged from
+what were originally separate `accounts` and `office` departments. Deliberately not slugged
+`admin`, so `/staff/admin` never gets confused with `/admin`.)
 
 ### The auth surface
 

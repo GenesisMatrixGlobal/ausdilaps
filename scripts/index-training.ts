@@ -1,15 +1,29 @@
 /**
  * Indexes the training modules that live in the repo into the knowledge base.
  *
- *   npm run index:training           # all departments
- *   npm run index:training -- reports
+ *   npm run index:training              # all departments, full re-index
+ *   npm run index:training -- reports   # one department
+ *   npm run index:training -- --on-deploy
  *
  * Why this exists: content/training/**\/*.mdx is authored in git, but the search bar reads
  * knowledge_chunks. Without this, the modules people already rely on would be the one
  * thing the search couldn't find.
  *
- * Idempotent — each module upserts on source_ref, so re-running updates in place rather
- * than creating a second copy. Safe to run on every deploy.
+ * --on-deploy is the postbuild hook. It differs from a manual run in three ways, all of
+ * which matter once nobody is watching it:
+ *
+ *   1. It only runs on a Vercel PRODUCTION build. There is one Supabase project and no dev
+ *      database, so an unguarded hook would mean every local `npm run build` and every
+ *      branch preview wrote its own copy of the content into live search.
+ *   2. It never fails the build. A training module failing to index is not a reason to stop
+ *      shipping the marketing site — it warns and exits 0.
+ *   3. It skips modules whose body is already indexed unchanged, so a deploy that touched no
+ *      training content does no writes at all. A manual run always re-indexes everything,
+ *      which is what you want after changing the chunker (lib/knowledge/chunk.ts) — the
+ *      stored `body` exists precisely so improved chunking can be replayed.
+ *
+ * Both modes prune: a module deleted from the repo, or flipped to `draft: true`, has its
+ * knowledge source removed. Otherwise search keeps confidently citing a page that 404s.
  *
  * Deliberately does NOT import lib/knowledge/ingest.ts: that module is `server-only`,
  * which is a guard worth keeping. It talks to Supabase directly and reuses the pure
@@ -22,20 +36,52 @@ import { chunkMarkdown } from "../lib/knowledge/chunk";
 import { getTrainingModules, getTrainingModule } from "../lib/training";
 import { DEPARTMENT_SLUGS, isDepartmentSlug, type DepartmentSlug } from "../lib/departments";
 
+const ON_DEPLOY = process.argv.includes("--on-deploy");
+
+// Checked before anything else, including the env check: on a local build or a preview
+// deploy there is nothing to complain about, because there is nothing to do.
+if (ON_DEPLOY && process.env.VERCEL_ENV !== "production") {
+  const where = process.env.VERCEL_ENV ? `a ${process.env.VERCEL_ENV} deploy` : "a local build";
+  console.log(`[index:training] skipped — ${where} shares the production database.`);
+  process.exit(0);
+}
+
 // Same as scripts/migrate.mjs — dotenv's default is .env, which this repo doesn't use.
+// Absent on Vercel, where the values come from the build environment instead.
 config({ path: ".env.local" });
 
 const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY;
 
-if (!url || !key) {
-  console.error("Missing Supabase env. Need NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
+/** In deploy mode nothing here is worth failing a build over. */
+function bail(message: string): never {
+  if (ON_DEPLOY) {
+    console.warn(`[index:training] skipped — ${message}`);
+    process.exit(0);
+  }
+  console.error(message);
   process.exit(1);
 }
 
-const db = createClient(url, key);
+if (!url || !key) {
+  bail("Missing Supabase env. Need NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
+}
 
-async function indexDepartment(department: DepartmentSlug) {
+const db = createClient(url!, key!);
+
+type ExistingSource = {
+  id: string;
+  source_ref: string | null;
+  body: string | null;
+  indexed_at: string | null;
+  index_error: string | null;
+};
+
+async function indexDepartment(
+  department: DepartmentSlug,
+  existing: Map<string, ExistingSource>,
+  keep: Set<string>
+) {
   const modules = getTrainingModules(department);
   if (modules.length === 0) {
     console.log(`  ${department}: no modules`);
@@ -47,6 +93,14 @@ async function indexDepartment(department: DepartmentSlug) {
     if (!mod) continue;
 
     const sourceRef = `content/training/${department}/${meta.slug}.mdx`;
+    keep.add(sourceRef);
+
+    const prev = existing.get(sourceRef);
+    if (ON_DEPLOY && prev && prev.body === mod.content && prev.indexed_at && !prev.index_error) {
+      console.log(`  ${sourceRef} — unchanged`);
+      continue;
+    }
+
     const chunks = chunkMarkdown(mod.content);
 
     const { data, error } = await db
@@ -107,9 +161,39 @@ async function indexDepartment(department: DepartmentSlug) {
   }
 }
 
+/** Remove sources for modules that are no longer in the repo, or are now drafts.
+ *  Scoped to the departments actually indexed this run, so `-- reports` can't delete
+ *  another department's modules. Only ever touches kind='training' rows — uploaded
+ *  documents and videos are nobody's business here. Chunks go with the source via
+ *  the on-delete-cascade in 0009. */
+async function prune(
+  departments: DepartmentSlug[],
+  existing: Map<string, ExistingSource>,
+  keep: Set<string>
+) {
+  const orphans = [...existing.values()].filter((row) => {
+    const ref = row.source_ref;
+    if (!ref || keep.has(ref)) return false;
+    return departments.some((d) => ref.startsWith(`content/training/${d}/`));
+  });
+
+  if (orphans.length === 0) return;
+
+  const { error } = await db
+    .from("knowledge_sources")
+    .delete()
+    .in("id", orphans.map((o) => o.id));
+
+  if (error) {
+    console.error(`  prune failed: ${error.message}`);
+    return;
+  }
+  for (const o of orphans) console.log(`  ${o.source_ref} — removed (no longer in the repo)`);
+}
+
 async function main() {
   const requested = process.argv.slice(2).filter((a) => !a.startsWith("-"));
-  const departments = requested.length > 0 ? requested : [...DEPARTMENT_SLUGS];
+  const departments = (requested.length > 0 ? requested : [...DEPARTMENT_SLUGS]) as string[];
 
   const bad = departments.filter((d) => !isDepartmentSlug(d));
   if (bad.length > 0) {
@@ -118,12 +202,34 @@ async function main() {
     process.exit(1);
   }
 
+  const slugs = departments as DepartmentSlug[];
+
+  // One read up front: lets a deploy skip unchanged modules, and tells prune() what
+  // is in the database that is no longer on disk.
+  const { data: rows, error } = await db
+    .from("knowledge_sources")
+    .select("id, source_ref, body, indexed_at, index_error")
+    .eq("kind", "training");
+
+  if (error) bail(`Couldn't read existing training sources: ${error.message}`);
+
+  const existing = new Map<string, ExistingSource>();
+  for (const r of (rows ?? []) as ExistingSource[]) {
+    if (r.source_ref) existing.set(r.source_ref, r);
+  }
+
   console.log(`Indexing training into ${url!.replace(/^https?:\/\//, "").split(".")[0]}…`);
-  for (const d of departments as DepartmentSlug[]) await indexDepartment(d);
+  const keep = new Set<string>();
+  for (const d of slugs) await indexDepartment(d, existing, keep);
+  await prune(slugs, existing, keep);
   console.log("Done.");
 }
 
 main().catch((e) => {
+  if (ON_DEPLOY) {
+    console.warn(`[index:training] skipped — ${(e as Error).message}`);
+    process.exit(0);
+  }
   console.error(e);
   process.exit(1);
 });

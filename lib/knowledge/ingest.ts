@@ -2,6 +2,8 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { chunkFor } from "./extract";
+import { renderPdf } from "./vision";
+import { summariseSource } from "./summarise";
 import type { SourceFormat } from "./formats";
 import type { DepartmentSlug } from "@/lib/departments";
 
@@ -42,6 +44,12 @@ export type SaveSourceInput = {
   isPublished: boolean;
   body: string;
   format: SourceFormat;
+  /** The uploader's three guided answers — see 0011. Fed to summarise.ts and
+   *  indexed at weight C, so a document becomes findable by the situation it
+   *  answers rather than only by the words it happens to contain. */
+  contextCovers?: string | null;
+  contextWhen?: string | null;
+  contextCalled?: string | null;
 };
 
 export type KnowledgeSource = {
@@ -60,10 +68,16 @@ export type KnowledgeSource = {
   chunk_count: number;
   created_at: string;
   updated_at: string;
+  context_covers: string | null;
+  context_when: string | null;
+  context_called: string | null;
+  ai_summary: string | null;
+  ai_keywords: string | null;
+  ai_summary_edited: boolean;
 };
 
 const SOURCE_COLUMNS =
-  "id, kind, departments, title, summary, url, storage_path, source_ref, is_published, format, indexed_at, index_error, chunk_count, created_at, updated_at";
+  "id, kind, departments, title, summary, url, storage_path, source_ref, is_published, format, indexed_at, index_error, chunk_count, created_at, updated_at, context_covers, context_when, context_called, ai_summary, ai_keywords, ai_summary_edited";
 
 /**
  * Creates or updates a source row and clears its index state.
@@ -86,12 +100,18 @@ export async function saveSource(input: SaveSourceInput): Promise<string> {
     is_published: input.isPublished,
     body: input.body,
     format: input.format,
+    context_covers: input.contextCovers?.trim() || null,
+    context_when: input.contextWhen?.trim() || null,
+    context_called: input.contextCalled?.trim() || null,
     indexed_at: null,
     index_error: null,
   };
 
   if (input.id) {
-    const { error } = await db.from("knowledge_sources").update(row).eq("id", input.id);
+    const { error } = await db
+      .from("knowledge_sources")
+      .update(row)
+      .eq("id", input.id);
     if (error) throw new Error(error.message);
     return input.id;
   }
@@ -100,10 +120,13 @@ export async function saveSource(input: SaveSourceInput): Promise<string> {
     .from("knowledge_sources")
     // onConflict on source_ref so re-running the repo indexer updates in place rather than
     // creating a second copy of every training module.
-    .upsert({ ...row, created_by: input.createdBy ?? null }, {
-      onConflict: "source_ref",
-      ignoreDuplicates: false,
-    })
+    .upsert(
+      { ...row, created_by: input.createdBy ?? null },
+      {
+        onConflict: "source_ref",
+        ignoreDuplicates: false,
+      },
+    )
     .select("id")
     .single();
 
@@ -118,19 +141,44 @@ export async function saveSource(input: SaveSourceInput): Promise<string> {
  * table with a Re-index button — an upload that silently indexed nothing is the one
  * failure mode guaranteed to go unnoticed, because the source row still looks fine.
  */
-export async function indexSource(id: string): Promise<{ chunks: number; error?: string }> {
+export async function indexSource(
+  id: string,
+): Promise<{ chunks: number; error?: string }> {
   const db = createAdminClient();
 
   try {
     const { data: source, error: readErr } = await db
       .from("knowledge_sources")
-      .select("body, format")
+      .select(
+        "title, body, format, storage_path, context_covers, context_when, context_called, ai_summary_edited",
+      )
       .eq("id", id)
       .single();
     if (readErr) throw new Error(readErr.message);
 
-    const body = (source?.body as string | null) ?? "";
-    const chunks = chunkFor((source?.format as SourceFormat) ?? "plain", body);
+    let body = (source?.body as string | null) ?? "";
+    let format = (source?.format as SourceFormat) ?? "plain";
+
+    // A PDF's text layer has no pictures in it, and for these documents the pictures
+    // are half the instruction. Re-read it properly and let the transcription become
+    // the body — it is the document's own words, so it stays citable.
+    //
+    // Reads the bytes back from Storage rather than taking them as an argument, so a
+    // re-index gets the same treatment without anyone re-uploading.
+    const storagePath = source?.storage_path as string | null;
+    if (storagePath && storagePath.toLowerCase().endsWith(".pdf")) {
+      const rendered = await renderPdfFromStorage(storagePath);
+      if (rendered) {
+        body = rendered;
+        format = "markdown";
+        await db
+          .from("knowledge_sources")
+          .update({ body, format })
+          .eq("id", id);
+      }
+    }
+
+    const chunks = chunkFor(format, body);
 
     if (chunks.length === 0) {
       throw new Error("Nothing to index — the extracted text was empty.");
@@ -139,7 +187,10 @@ export async function indexSource(id: string): Promise<{ chunks: number; error?:
     // Replace wholesale. Chunks are derived data with a unique (source_id, ordinal), so
     // deleting first is simpler and safer than trying to reconcile a shorter new set
     // against a longer old one — which would silently leave orphans answering questions.
-    const { error: delErr } = await db.from("knowledge_chunks").delete().eq("source_id", id);
+    const { error: delErr } = await db
+      .from("knowledge_chunks")
+      .delete()
+      .eq("source_id", id);
     if (delErr) throw new Error(delErr.message);
 
     for (let i = 0; i < chunks.length; i += CHUNK_BATCH) {
@@ -153,14 +204,48 @@ export async function indexSource(id: string): Promise<{ chunks: number; error?:
           anchor: c.anchor,
           // departments deliberately omitted — the 0009 trigger fills it from the source,
           // so it can never drift from what RLS is enforcing.
-        }))
+        })),
       );
       if (error) throw new Error(error.message);
     }
 
+    // Source-level only, never a chunk: this is the model's reading of the material,
+    // and a chunk is what gets quoted back to someone as the document's own words.
+    // 0011 indexes it at weight B/C so it widens recall without outranking a title.
+    if (source?.ai_summary_edited) {
+      console.info(
+        `[knowledge] ${id} has a hand-edited summary — leaving it alone.`,
+      );
+    } else {
+      const summary = await summariseSource({
+        title: (source?.title as string) ?? "",
+        body,
+        context: {
+          covers: source?.context_covers as string | null,
+          when: source?.context_when as string | null,
+          called: source?.context_called as string | null,
+        },
+      });
+      if (summary.ok) {
+        await db
+          .from("knowledge_sources")
+          .update({
+            ai_summary: summary.summary,
+            ai_keywords: summary.keywords,
+          })
+          .eq("id", id);
+      } else {
+        console.warn(`[knowledge] no AI summary for ${id}: ${summary.reason}`);
+      }
+    }
+
     await db
       .from("knowledge_sources")
-      .update({ indexed_at: new Date().toISOString(), index_error: null, chunk_count: chunks.length })
+      .update({
+        indexed_at: new Date().toISOString(),
+        index_error: null,
+        chunk_count: chunks.length,
+      })
       .eq("id", id);
 
     return { chunks: chunks.length };
@@ -177,9 +262,14 @@ export async function indexSource(id: string): Promise<{ chunks: number; error?:
 }
 
 /** Sources a person may see in the manage table. Service-role, so scope explicitly. */
-export async function listSources(departments: DepartmentSlug[] | "all"): Promise<KnowledgeSource[]> {
+export async function listSources(
+  departments: DepartmentSlug[] | "all",
+): Promise<KnowledgeSource[]> {
   const db = createAdminClient();
-  let q = db.from("knowledge_sources").select(SOURCE_COLUMNS).order("updated_at", { ascending: false });
+  let q = db
+    .from("knowledge_sources")
+    .select(SOURCE_COLUMNS)
+    .order("updated_at", { ascending: false });
 
   if (departments !== "all") {
     // Overlaps, plus company-wide (empty array), which everyone can read.
@@ -192,7 +282,11 @@ export async function listSources(departments: DepartmentSlug[] | "all"): Promis
 
 export async function getSource(id: string): Promise<KnowledgeSource | null> {
   const db = createAdminClient();
-  const { data } = await db.from("knowledge_sources").select(SOURCE_COLUMNS).eq("id", id).single();
+  const { data } = await db
+    .from("knowledge_sources")
+    .select(SOURCE_COLUMNS)
+    .eq("id", id)
+    .single();
   return (data as unknown as KnowledgeSource) ?? null;
 }
 
@@ -218,7 +312,11 @@ function storageKey(filename: string): string {
 }
 
 /** Stores the original upload. Private bucket — reads are signed, server-side, per request. */
-export async function uploadOriginal(filename: string, bytes: ArrayBuffer, contentType?: string) {
+export async function uploadOriginal(
+  filename: string,
+  bytes: ArrayBuffer,
+  contentType?: string,
+) {
   const db = createAdminClient();
   const path = storageKey(filename);
   const { error } = await db.storage.from(BUCKET).upload(path, bytes, {
@@ -236,8 +334,43 @@ export async function uploadOriginal(filename: string, bytes: ArrayBuffer, conte
  * the client alongside a list. The bucket is private and has no storage.objects policy, so
  * this is the only way in.
  */
-export async function signedUrlFor(path: string, expiresInSeconds = 300): Promise<string | null> {
+export async function signedUrlFor(
+  path: string,
+  expiresInSeconds = 300,
+): Promise<string | null> {
   const db = createAdminClient();
-  const { data } = await db.storage.from(BUCKET).createSignedUrl(path, expiresInSeconds);
+  const { data } = await db.storage
+    .from(BUCKET)
+    .createSignedUrl(path, expiresInSeconds);
   return data?.signedUrl ?? null;
+}
+
+/** Downloads a stored PDF and transcribes it. Returns null on any failure — the
+ *  caller keeps whatever text extraction already produced. The AI path is an
+ *  improvement to indexing, never a precondition for it. */
+async function renderPdfFromStorage(path: string): Promise<string | null> {
+  try {
+    const db = createAdminClient();
+    const { data, error } = await db.storage.from(BUCKET).download(path);
+    if (error || !data) {
+      console.warn(
+        `[knowledge] couldn't download ${path} for vision: ${error?.message}`,
+      );
+      return null;
+    }
+    const result = await renderPdf(
+      new Uint8Array(await data.arrayBuffer()),
+      path.split("/").pop() ?? "document.pdf",
+    );
+    if (!result.ok) {
+      console.warn(`[knowledge] vision skipped for ${path}: ${result.reason}`);
+      return null;
+    }
+    return result.markdown;
+  } catch (e) {
+    console.warn(
+      `[knowledge] vision failed for ${path}: ${(e as Error).message}`,
+    );
+    return null;
+  }
 }

@@ -10,6 +10,12 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
+/** Reading a PDF visually takes tens of seconds and runs in after(), which is still
+ *  inside this function's lifetime on Vercel. 290 matches the other long routes in
+ *  this repo (app/api/tenders/scan, floor-plan/extract). Without it the upload
+ *  succeeds and the indexing is killed halfway. */
+export const maxDuration = 290;
+
 export default async function ManageKnowledgePage({
   params,
 }: {

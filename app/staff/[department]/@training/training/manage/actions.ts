@@ -22,6 +22,7 @@ import {
   type StaffUser,
 } from "@/lib/auth/session";
 import { isDepartmentSlug, normaliseDepartments, type DepartmentSlug } from "@/lib/departments";
+import { aiConfigured } from "@/lib/knowledge/ai";
 import {
   extractUpload,
   detectFormat,
@@ -127,14 +128,38 @@ async function readContent(
   const pasted = str(fd, textField);
 
   if (file instanceof File && file.size > 0) {
+    const bytes = await file.arrayBuffer();
+    const isPdf = file.name.toLowerCase().endsWith(".pdf");
+
+    let extracted: { text: string; format: SourceFormat } | null = null;
+    let unreadable: string | null = null;
     try {
-      const bytes = await file.arrayBuffer();
-      const extracted = await extractUpload(file.name, bytes);
-      const storagePath = await uploadOriginal(file.name, bytes, file.type);
-      return { text: extracted.text, format: extracted.format, storagePath };
+      // A COPY, deliberately. unpdf hands the buffer to pdf.js, which takes ownership
+      // and detaches it — every byte-length afterwards reads 0. That is why the
+      // "original" of every PDF uploaded before this fix is a 0-byte file in Storage:
+      // extraction ran first and the upload stored an empty buffer.
+      extracted = await extractUpload(file.name, bytes.slice(0));
     } catch (e) {
-      if (e instanceof UnreadableUpload) return { error: e.message };
-      return { error: `Couldn't read that file: ${(e as Error).message}` };
+      if (!(e instanceof UnreadableUpload)) {
+        return { error: `Couldn't read that file: ${(e as Error).message}` };
+      }
+      unreadable = e.message;
+    }
+
+    // A PDF with no text layer used to be refused outright. It no longer has to be:
+    // the background vision pass reads the pages as images and writes the body. Only
+    // refuse when there is no second chance coming.
+    if (unreadable && !(isPdf && aiConfigured())) return { error: unreadable };
+
+    try {
+      const storagePath = await uploadOriginal(file.name, bytes, file.type);
+      return {
+        text: extracted?.text ?? "",
+        format: extracted?.format ?? "markdown",
+        storagePath,
+      };
+    } catch (e) {
+      return { error: `Couldn't store that file: ${(e as Error).message}` };
     }
   }
 
@@ -198,6 +223,9 @@ export async function addKnowledge(fd: FormData): Promise<ActionResult> {
       isPublished: str(fd, "publish") === "on",
       body: content.text,
       format: content.format,
+      contextCovers: str(fd, "context_covers"),
+      contextWhen: str(fd, "context_when"),
+      contextCalled: str(fd, "context_called"),
     });
 
     indexInBackground(id, department);
@@ -290,4 +318,48 @@ export async function knowledgeDownloadUrl(
 
   const url = await signedUrlFor(check.source.storage_path);
   return url ? { ok: true, url } : { ok: false, error: "Couldn't create a download link." };
+}
+
+
+/** Correct what the model wrote.
+ *
+ *  A wrong summary is quietly expensive: it decides what surfaces in search, and the
+ *  uploader is the one person who would spot it. Edits are NOT overwritten on the next
+ *  re-index of the same body — reindexKnowledge only regenerates when the fields are
+ *  empty (see below), so a correction sticks.
+ */
+export async function updateContextAndSignal(fd: FormData): Promise<ActionResult> {
+  const g = await gate(fd);
+  if ("error" in g) return { ok: false, error: g.error };
+
+  const id = str(fd, "id");
+  const check = await assertCanEditSource(g.user, id);
+  if ("error" in check) return { ok: false, error: check.error };
+
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const { error } = await createAdminClient()
+    .from("knowledge_sources")
+    .update({
+      context_covers: str(fd, "context_covers") || null,
+      context_when: str(fd, "context_when") || null,
+      context_called: str(fd, "context_called") || null,
+      ai_summary: str(fd, "ai_summary") || null,
+      ai_keywords: str(fd, "ai_keywords") || null,
+      // Clearing it hands the document back to the model on the next re-index.
+      ai_summary_edited: !!str(fd, "ai_summary"),
+    })
+    .eq("id", id);
+
+  if (error) return { ok: false, error: error.message };
+
+  // Context only changes what people can find until it reaches the index. Re-index
+  // in the background so adding context to material already uploaded actually does
+  // something, rather than sitting in a column waiting for someone to press a button.
+  after(async () => {
+    await indexSource(id);
+    revalidatePath(`/staff/${g.department}/training/manage`);
+  });
+
+  revalidatePath(`/staff/${g.department}/training/manage`);
+  return { ok: true, message: "Saved. Re-indexing with the new context — refresh in a moment." };
 }

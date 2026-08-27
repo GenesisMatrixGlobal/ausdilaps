@@ -12,6 +12,7 @@ import {
   addKnowledge,
   reindexKnowledge,
   removeKnowledge,
+  updateContextAndSignal,
   setKnowledgePublished,
   knowledgeDownloadUrl,
   type ActionResult,
@@ -147,6 +148,46 @@ export function ManageView({
             <input name="summary" className={INPUT} placeholder="How a new estimator gets set up." />
           </Field>
 
+          <fieldset className="rounded-lg border border-ad-border bg-ad-surface/40 p-4">
+            <legend className="px-1 text-sm font-medium text-ad-ink">Context</legend>
+            <p className="text-xs leading-relaxed text-ad-muted">
+              The part a document never says about itself. People search for situations
+              (&ldquo;client wants a locked copy&rdquo;) far more than for topics, and that
+              only exists in your head until you write it here. Rough notes are fine.
+              <span className="mt-1 block">
+                Talking is faster than typing — press <strong>fn fn</strong> on a Mac, or{" "}
+                <strong>Win + H</strong> on Windows, and dictate into any box below.
+              </span>
+            </p>
+
+            <div className="mt-3 space-y-3">
+              <Field label="What does this cover?">
+                <textarea
+                  name="context_covers"
+                  rows={2}
+                  className={INPUT}
+                  placeholder="Watermarking a survey as draft and password-protecting the PDF."
+                />
+              </Field>
+              <Field label="When would someone need it?">
+                <textarea
+                  name="context_when"
+                  rows={2}
+                  className={INPUT}
+                  placeholder="A client asks for a copy of a survey before it's finalised, and it can't be edited or passed on."
+                />
+              </Field>
+              <Field label="What do we call it internally?">
+                <textarea
+                  name="context_called"
+                  rows={2}
+                  className={INPUT}
+                  placeholder="draft issue, locked survey, watermarked copy"
+                />
+              </Field>
+            </div>
+          </fieldset>
+
           {mode === "video" && (
             <Field label="Video link" hint="Loom, YouTube or SharePoint. Citations open this at the right timestamp.">
               <input name="url" type="url" required className={INPUT} placeholder="https://www.loom.com/share/…" />
@@ -276,6 +317,8 @@ export function ManageView({
                       {s.index_error && (
                         <p className="mt-1.5 text-xs text-ad-amber">Indexing failed — {s.index_error}</p>
                       )}
+
+                      <IndexSignal source={s} onSave={(fd) => run(updateContextAndSignal, fd)} busy={busy} />
                     </div>
 
                     <div className="flex shrink-0 flex-wrap gap-2">
@@ -321,6 +364,101 @@ export function ManageView({
 const INPUT =
   "mt-1 w-full rounded-lg border border-ad-border bg-white px-3 py-2 text-sm text-ad-ink placeholder:text-ad-muted/60 focus:border-ad-steel focus:outline-none focus:ring-1 focus:ring-ad-steel";
 
+/** What the model wrote about a source, and the chance to correct it.
+ *
+ *  Worth showing rather than hiding: this is what decides whether the document turns
+ *  up in a search, and a wrong reading is invisible from the outside — the document
+ *  just quietly stops being found. The person who uploaded it is the only one who
+ *  would notice. Saving marks it hand-edited so a re-index leaves it alone; clearing
+ *  it hands the document back to the model. */
+function IndexSignal({
+  source,
+  onSave,
+  busy,
+}: {
+  source: KnowledgeSource;
+  onSave: (fd: FormData) => void;
+  busy: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const hasSignal = !!(source.ai_summary || source.ai_keywords);
+  const keywords = (source.ai_keywords ?? "")
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean);
+
+  return (
+    <div className="mt-2.5 rounded-lg border border-ad-border bg-ad-surface/40 p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ad-muted">
+          Context &amp; search summary {source.ai_summary_edited && "· edited"}
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="text-xs font-medium text-ad-steel hover:underline"
+        >
+          {open ? "Cancel" : hasSignal ? "Edit" : "Add context"}
+        </button>
+      </div>
+
+      {open ? (
+        <form
+          className="mt-2 space-y-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
+            fd.set("id", source.id);
+            onSave(fd);
+            setOpen(false);
+          }}
+        >
+          <Field label="What does this cover?">
+            <textarea name="context_covers" rows={2} defaultValue={source.context_covers ?? ""} className={INPUT} />
+          </Field>
+          <Field label="When would someone need it?">
+            <textarea name="context_when" rows={2} defaultValue={source.context_when ?? ""} className={INPUT} />
+          </Field>
+          <Field label="What do we call it internally?">
+            <textarea name="context_called" rows={2} defaultValue={source.context_called ?? ""} className={INPUT} />
+          </Field>
+          <Field label="Search summary" hint="Leave blank to let the model rewrite it on re-index.">
+            <textarea name="ai_summary" rows={3} defaultValue={source.ai_summary ?? ""} className={INPUT} />
+          </Field>
+          <input
+            name="ai_keywords"
+            defaultValue={source.ai_keywords ?? ""}
+            className={INPUT}
+            placeholder="comma, separated, search phrases"
+          />
+          <SmallButton type="submit" disabled={busy}>
+            Save
+          </SmallButton>
+        </form>
+      ) : (
+        <>
+          <p className="mt-1 text-sm leading-relaxed text-ad-muted">
+            {source.ai_summary ?? "No context yet — add it so this can be found by what it's for."}
+          </p>
+          {keywords.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {keywords.map((k) => (
+                <span
+                  key={k}
+                  className="rounded bg-white px-1.5 py-0.5 text-[0.7rem] text-ad-muted ring-1 ring-ad-border"
+                >
+                  {k}
+                </span>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function Field({
   label,
   hint,
@@ -343,16 +481,18 @@ function SmallButton({
   onClick,
   disabled,
   tone,
+  type = "button",
   children,
 }: {
-  onClick: () => void;
+  type?: "button" | "submit";
+  onClick?: () => void;
   disabled?: boolean;
   tone?: "danger";
   children: React.ReactNode;
 }) {
   return (
     <button
-      type="button"
+      type={type}
       onClick={onClick}
       disabled={disabled}
       className={cn(

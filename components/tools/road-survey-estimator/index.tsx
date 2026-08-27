@@ -6,12 +6,14 @@ import { buttonVariants } from "@/components/ui/button";
 import { downloadBlob } from "@/components/tools/shared/download";
 import { CSV_COLUMNS, toCsv, toRows, toTsv } from "@/lib/road-survey/csv";
 import { DEFAULT_LANES, isDividedCarriageway, laneKm } from "@/lib/road-survey/lanes";
+import { RebuildMap } from "./rebuild-map";
 import type { EnrichedSegment, RoadSegment, SegmentEnrichment } from "@/lib/road-survey/types";
 
 interface ParseResponse {
   ok: boolean;
   error?: string;
   segments?: RoadSegment[];
+  fingerprint?: string;
   documentName?: string | null;
   colours?: { colourHex: string; folder: string; count: number; totalKm: number }[];
 }
@@ -61,6 +63,7 @@ export function RoadSurveyEstimatorTool() {
   const [copied, setCopied] = useState(false);
 
   const [documentName, setDocumentName] = useState<string | null>(null);
+  const [fingerprint, setFingerprint] = useState<string>("");
   const [segments, setSegments] = useState<RoadSegment[] | null>(null);
   const [colours, setColours] = useState<ParseResponse["colours"]>([]);
   const [enrichment, setEnrichment] = useState<Record<string, SegmentEnrichment>>({});
@@ -113,6 +116,7 @@ export function RoadSurveyEstimatorTool() {
     setProvisional([]);
     setWarnings([]);
     setEnriched(false);
+    setFingerprint("");
     setLoading(true);
     try {
       const data = await readFileBase64(file);
@@ -130,6 +134,7 @@ export function RoadSurveyEstimatorTool() {
       setSegments(json.segments ?? []);
       setColours(json.colours ?? []);
       setDocumentName(json.documentName ?? null);
+      setFingerprint(json.fingerprint ?? "");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -378,7 +383,7 @@ export function RoadSurveyEstimatorTool() {
                       <td className="px-3 py-2 text-ad-ink">
                         <span className="mr-2 inline-block h-2 w-2 rounded-full align-middle" style={{ background: r.colourHex }} />
                         {r.roadName}
-                        {r.segmentParts > 1 && <span className="ml-1 text-xs text-ad-muted">({r.segmentParts} parts)</span>}
+                        {r.parts.length > 1 && <span className="ml-1 text-xs text-ad-muted">({r.parts.length} parts)</span>}
                       </td>
                       <td className="px-3 py-2 text-ad-muted">{r.folder}</td>
                       <td className="px-3 py-2 text-right text-ad-ink">{r.lengthKmGeometry.toFixed(2)}</td>
@@ -422,9 +427,16 @@ export function RoadSurveyEstimatorTool() {
             </table>
           </div>
 
+          <RebuildMap
+            segments={segments}
+            fingerprint={fingerprint}
+            documentName={documentName}
+            sourceFileName={fileName}
+          />
+
           <p className="mt-3 text-xs text-ad-muted">
             Lengths are centreline, measured from the file&apos;s geometry rather than trusting its own length
-            attribute — flagged rows are where the two disagree. Lane counts drive the fee directly, so check
+            attribute — flagged rows are where the two disagree. Lane counts drive the lane-km directly, so check
             the ones marked <span className="font-medium">assumed</span> before pricing. Rates, mobilisation,
             traffic control and travel all stay in the estimating sheet — this tool only measures the network.
           </p>

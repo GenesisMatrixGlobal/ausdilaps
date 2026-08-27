@@ -3,8 +3,8 @@
 // Both of these were copy-pasted per tool — downloadBlob in three components, tsv in two —
 // which is how they came to live here. There is nothing tool-specific in either.
 
-/** Triggers a browser download of in-memory text. */
-export function downloadBlob(content: string, filename: string, type: string) {
+/** Triggers a browser download of in-memory content — text, or bytes for a binary file. */
+export function downloadBlob(content: BlobPart, filename: string, type: string) {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

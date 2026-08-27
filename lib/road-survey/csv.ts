@@ -13,6 +13,7 @@ import type { EnrichedSegment } from "./types";
 
 /** Column order for the export. Also the header row. */
 export const CSV_COLUMNS = [
+  "segment_id",
   "road_name",
   "folder",
   "classific_attr",
@@ -59,6 +60,9 @@ export function toRows(segments: EnrichedSegment[], provisionalColours: string[]
   return segments.map((s) => {
     const lanes = s.enrichment.lanes ?? 0;
     return {
+      // The join key when the client sends this sheet back. Do not let anything
+      // downstream reformat or renumber it.
+      segment_id: s.id,
       road_name: s.roadName,
       folder: s.folder,
       classific_attr: s.classificAttr,
@@ -66,7 +70,7 @@ export function toRows(segments: EnrichedSegment[], provisionalColours: string[]
       colour_hex: s.colourHex,
       provisional: provisional.has(s.colourHex.toLowerCase()) ? "PROVISIONAL" : "",
       fid: s.fid,
-      segment_parts: s.segmentParts,
+      segment_parts: s.parts.length,
       length_km_geometry: n(s.lengthKmGeometry, 3),
       length_km_attribute: s.lengthKmAttribute === null ? "" : n(s.lengthKmAttribute, 3),
       length_variance_flag: s.lengthVarianceFlag ?? "",

@@ -73,7 +73,7 @@ export const TOOLS: ToolDefinition[] = [
     code: "RSE",
     title: "Road Survey Estimator",
     description:
-      "Turn a client's road-network .kmz into a priced, per-segment quoting sheet — lengths from the geometry, lanes from OpenStreetMap.",
+      "Turn a client's road-network .kmz into a per-segment quoting sheet, and turn their edited sheet back into a map for Google Earth.",
     departments: ["estimators"],
     Component: dynamic(() =>
       import("@/components/tools/road-survey-estimator").then((m) => m.RoadSurveyEstimatorTool)

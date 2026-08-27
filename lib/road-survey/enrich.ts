@@ -86,7 +86,7 @@ function buildTiles(segments: RoadSegment[]): { bbox: BoundingBox; names: string
     // corridor, a metro network) with a stack overflow rather than a useful error.
     let south = Infinity, west = Infinity, north = -Infinity, east = -Infinity;
     for (const s of group) {
-      for (const p of s.path) {
+      for (const p of s.parts.flat()) {
         if (p.lat < south) south = p.lat;
         if (p.lat > north) north = p.lat;
         if (p.lng < west) west = p.lng;
@@ -116,7 +116,7 @@ function buildTiles(segments: RoadSegment[]): { bbox: BoundingBox; names: string
  * at several hundred ways against 34,000 segment vertices.
  */
 function wayTouchesSegment(way: OsmWaySummary, segment: RoadSegment): boolean {
-  return segment.path.some((p) => haversineKm(p, way.center) <= MATCH_TOLERANCE_KM);
+  return segment.parts.some((part) => part.some((p) => haversineKm(p, way.center) <= MATCH_TOLERANCE_KM));
 }
 
 /** Most frequently occurring value, weighted by how many ways carry it. */

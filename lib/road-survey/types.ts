@@ -13,7 +13,13 @@ export type LanesSource =
 
 /** One Placemark from the KMZ, priced but not yet enriched. */
 export interface RoadSegment {
-  /** Stable key for React lists and for merging enrichment back on. */
+  /**
+   * Stable key for React lists, for merging enrichment on, and — critically — the
+   * `segment_id` written into the exported sheet. Shaped "A7F3-001": a fingerprint of the
+   * whole network plus the segment's position, so a returned sheet can be matched back
+   * against a freshly parsed source file and a mismatched revision is caught. See
+   * fingerprint.ts.
+   */
   id: string;
   roadName: string;
   /** The KML Folder the Placemark sat in — authoritative (see classMismatch). */
@@ -25,8 +31,7 @@ export interface RoadSegment {
   /** Line colour as `#rrggbb`, decoded from KML's `aabbggrr`. */
   colourHex: string;
   fid: string;
-  /** How many LineStrings made up this Placemark (MultiGeometry parts). */
-  segmentParts: number;
+
   /** Summed geodesic length of every part. The number we price on. */
   lengthKmGeometry: number;
   /** The `Length` attribute from the description table, in km. Null when absent. */
@@ -37,8 +42,15 @@ export interface RoadSegment {
   end: LatLng | null;
   /** Midpoint of the whole path — what we reverse-geocode and bbox around. */
   midpoint: LatLng | null;
-  /** Every point of every part, kept for OSM proximity matching. */
-  path: LatLng[];
+  /**
+   * The segment's geometry, one entry per LineString in the source Placemark.
+   *
+   * Kept as separate parts rather than one flattened list: a MultiGeometry holds
+   * DISCONTINUOUS runs of the same road, so joining them draws a phantom leg across
+   * country between the parts. 8 of the 123 segments in the Ferrovial network are
+   * multi-part, one with 10 parts.
+   */
+  parts: LatLng[][];
 }
 
 /** OSM + geocode data laid over a RoadSegment. Every field is optional by design. */

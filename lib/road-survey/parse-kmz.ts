@@ -16,6 +16,7 @@
 import { unzipSync, strFromU8 } from "fflate";
 import { decodeEntities } from "@/lib/html";
 import { haversineKm, pathLengthKm } from "@/lib/kml/road-segments/geo";
+import { fingerprintNetwork, segmentId } from "./fingerprint";
 import type { LatLng } from "@/lib/kml/types";
 import type { RoadSegment } from "./types";
 
@@ -141,6 +142,8 @@ function midpointOf(path: LatLng[]): LatLng | null {
 
 export interface ParseResult {
   segments: RoadSegment[];
+  /** Four hex chars identifying this exact network — the prefix on every segment id. */
+  fingerprint: string;
   /** Document-level <name>, so the tool can show which layer was loaded. */
   documentName: string | null;
   /** Every distinct colour found, with how much network each covers. */
@@ -182,16 +185,15 @@ export function parseRoadSurveyKml(kml: string): ParseResult {
       // discontinuous run of the same road, so lengths sum but the paths must not be
       // joined end-to-end — a naive concat would add a phantom leg between parts.
       let lengthKm = 0;
-      let parts = 0;
-      const path: LatLng[] = [];
+      const parts: LatLng[][] = [];
       for (const coords of block.matchAll(/<coordinates\b[^>]*>([\s\S]*?)<\/coordinates>/gi)) {
         const pts = parseCoordinates(coords[1]);
         if (pts.length < 2) continue;
-        parts++;
+        parts.push(pts);
         lengthKm += pathLengthKm(pts);
-        path.push(...pts);
       }
-      if (parts === 0) continue; // a point or an empty geometry — not a road to survey
+      if (parts.length === 0) continue; // a point or empty geometry — not a road to survey
+      const flat = parts.flat();
 
       const attrMetres = parseAttrMetres(attrs.Length);
       const lengthKmAttribute = attrMetres === null ? null : attrMetres / 1000;
@@ -203,7 +205,8 @@ export function parseRoadSurveyKml(kml: string): ParseResult {
 
       const classificAttr = decodeEntities(attrs.Classific ?? "");
       segments.push({
-        id: `${attrs.FID ?? "x"}-${segments.length}`,
+        // Placeholder — real ids need the fingerprint, which needs every segment first.
+        id: "",
         roadName,
         folder,
         classificAttr,
@@ -211,17 +214,23 @@ export function parseRoadSurveyKml(kml: string): ParseResult {
           !!folder && !!classificAttr && normaliseClass(folder) !== normaliseClass(classificAttr),
         colourHex,
         fid: attrs.FID ?? "",
-        segmentParts: parts,
         lengthKmGeometry: lengthKm,
         lengthKmAttribute,
         lengthVarianceFlag,
-        start: path[0] ?? null,
-        end: path[path.length - 1] ?? null,
-        midpoint: midpointOf(path),
-        path,
+        start: flat[0] ?? null,
+        end: flat[flat.length - 1] ?? null,
+        midpoint: midpointOf(flat),
+        parts,
       });
     }
   }
+
+  // Ids can only be assigned once the whole network is known, since the fingerprint
+  // covers all of it.
+  const fingerprint = fingerprintNetwork(segments);
+  segments.forEach((s, i) => {
+    s.id = segmentId(fingerprint, i);
+  });
 
   const byColour = new Map<string, { colourHex: string; folder: string; count: number; totalKm: number }>();
   for (const s of segments) {
@@ -234,6 +243,7 @@ export function parseRoadSurveyKml(kml: string): ParseResult {
 
   return {
     segments,
+    fingerprint,
     documentName,
     colours: [...byColour.values()].sort((a, b) => b.totalKm - a.totalKm),
   };

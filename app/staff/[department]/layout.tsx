@@ -51,8 +51,10 @@ export default async function DepartmentLayout({
       </div>
 
       <Container className="py-8">
-        {/* null on every real route; on the bare /staff/<department> it's the
-            page.tsx redirect to /tools. */}
+        {/* Always default.tsx (null) — there is no page.tsx. The bare
+            /staff/<department> is redirected to /tools by proxy.ts, deliberately:
+            a redirect living in this slot gets retained across soft navigations
+            and re-fires. See departmentIndexRedirect() in proxy.ts. */}
         {children}
         <DepartmentPanes department={department} tools={tools} training={training} />
       </Container>

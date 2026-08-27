@@ -25,7 +25,7 @@ export default async function DepartmentTrainingPage({
   const canManage = user ? canEditKnowledge(user, [department]) : false;
 
   const header = (
-    <div className="max-w-3xl space-y-4">
+    <div className="space-y-4">
       {canManage && (
         <div className="flex justify-end">
           <Link

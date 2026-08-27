@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { getDepartment, isDepartmentSlug } from "@/lib/departments";
 import { toolsForDepartment } from "@/lib/tools/registry";
-import { CardGrid, LinkCard } from "@/components/staff/card-grid";
+import { RowList, LinkRow } from "@/components/staff/row-list";
 import { EmptyState } from "@/components/staff/empty-state";
 
 export default async function DepartmentToolsPage({
@@ -25,15 +25,16 @@ export default async function DepartmentToolsPage({
   }
 
   return (
-    <CardGrid>
+    <RowList>
       {tools.map((tool) => (
-        <LinkCard
+        <LinkRow
           key={tool.slug}
           href={`/staff/${department}/tools/${tool.slug}`}
+          code={tool.code}
           title={tool.title}
           description={tool.description}
         />
       ))}
-    </CardGrid>
+    </RowList>
   );
 }

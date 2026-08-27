@@ -19,6 +19,11 @@ import { canAccess, type StaffUser } from "@/lib/auth/session";
 
 export type ToolDefinition = {
   slug: string;
+  /** Short reference code (SMK, PSZ, ...) so a tool can be named in a message
+   *  without spelling it out. Deliberately NOT department-prefixed: tools move
+   *  between departments, and a code that changes retroactively breaks every
+   *  discussion that used it. Once assigned, a code is permanent. */
+  code: string;
   title: string;
   /** One line — shown on the tool card and as the page subtitle. */
   description: string;
@@ -30,6 +35,7 @@ export type ToolDefinition = {
 export const TOOLS: ToolDefinition[] = [
   {
     slug: "site-markups",
+    code: "SMK",
     title: "Site Markups",
     description:
       "Snapshot a road segment, or an address with its surrounding lots and frontage highlighted, for estimating and project scoping.",
@@ -40,6 +46,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     slug: "property-sizing",
+    code: "PSZ",
     title: "Property Sizing",
     description:
       "Paste addresses or upload a screenshot to get land and lot sizes from government cadastre data, ready for a quoting sheet.",
@@ -50,6 +57,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     slug: "tender-watch",
+    code: "TDW",
     title: "Tender Watch",
     description:
       "Nightly tender scan — pipeline health, source status and the classified queue.",
@@ -62,6 +70,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     slug: "road-survey-estimator",
+    code: "RSE",
     title: "Road Survey Estimator",
     description:
       "Turn a client's road-network .kmz into a priced, per-segment quoting sheet — lengths from the geometry, lanes from OpenStreetMap.",
@@ -72,6 +81,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     slug: "floor-plan",
+    code: "FPL",
     title: "Floor Plan",
     description:
       "Turn a photo of the inspector's hand sketch into a clean A4 floor plan .png for the report.",
@@ -82,6 +92,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     slug: "kml-builder",
+    code: "KML",
     title: "KML Builder",
     description:
       "Build survey path .kml files from lat/lng coordinates or by tracing the real road between two cross-streets.",
@@ -94,6 +105,11 @@ export const TOOLS: ToolDefinition[] = [
 
 export function getTool(slug: string): ToolDefinition | undefined {
   return TOOLS.find((t) => t.slug === slug);
+}
+
+export function getToolByCode(code: string): ToolDefinition | undefined {
+  const upper = code.toUpperCase();
+  return TOOLS.find((t) => t.code === upper);
 }
 
 export function toolsForDepartment(slug: DepartmentSlug): ToolDefinition[] {

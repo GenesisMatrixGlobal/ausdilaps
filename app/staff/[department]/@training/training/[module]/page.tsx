@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { isDepartmentSlug } from "@/lib/departments";
 import { getTrainingModule } from "@/lib/training";
 import { Markdown } from "@/components/marketing/markdown";
+import { ScrollToHash } from "@/components/staff/scroll-to-hash";
 
 export async function generateMetadata({
   params,
@@ -30,6 +31,7 @@ export default async function TrainingModulePage({
 
   return (
     <article className="max-w-3xl">
+      <ScrollToHash />
       <Link
         href={`/staff/${department}/training`}
         className="text-sm font-medium text-ad-steel hover:underline"

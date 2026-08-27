@@ -104,6 +104,11 @@ export function StaffTable({
                         Pending invite
                       </span>
                     )}
+                    {!isAdminRole && row.can_manage_knowledge && (
+                      <span className="rounded bg-ad-steel/10 px-2 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wide text-ad-steel">
+                        Knowledge
+                      </span>
+                    )}
                   </div>
                   <p className="mt-1 truncate text-sm text-ad-muted">{row.email}</p>
                   <p className="mt-1.5 text-sm text-ad-muted">
@@ -253,6 +258,22 @@ function EditFields({ row, departments }: { row: StaffRow; departments: Departme
               </label>
             ))}
           </div>
+
+          <label className="mt-3 flex items-start gap-2 text-sm text-ad-ink">
+            <input
+              type="checkbox"
+              name="can_manage_knowledge"
+              defaultChecked={row.can_manage_knowledge}
+              className="mt-0.5 size-4 rounded border-ad-border accent-ad-steel"
+            />
+            <span>
+              Can upload training material
+              <span className="mt-0.5 block text-xs font-normal text-ad-muted">
+                Lets them add documents, videos and notes to the knowledge base for the
+                departments ticked above. Company-wide material stays admin-only.
+              </span>
+            </span>
+          </label>
         </fieldset>
       )}
     </div>

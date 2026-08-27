@@ -39,7 +39,7 @@ export default async function ManageKnowledgePage({
           </Link>
           <h2 className="mt-3 text-2xl font-semibold text-ad-ink">Manage knowledge</h2>
           <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ad-muted">
-            Everything here can be used to answer questions in the search bar. Upload a file or
+            Everything here is searchable from the bar on the Training tab. Upload a file or
             paste the text — or add a video with its transcript.
           </p>
         </div>

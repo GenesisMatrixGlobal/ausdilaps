@@ -3,6 +3,7 @@ import { getDepartment, isDepartmentSlug } from "@/lib/departments";
 import { requireDepartment } from "@/lib/auth/session";
 import { Container } from "@/components/marketing/container";
 import { DepartmentTabs } from "@/components/staff/department-tabs";
+import { DepartmentPanes } from "@/components/staff/department-panes";
 
 export async function generateMetadata({
   params,
@@ -17,12 +18,18 @@ export async function generateMetadata({
   };
 }
 
+/** Tools and Training arrive as parallel-route slots rather than as `children`
+ *  so that toggling between them keeps both mounted — see DepartmentPanes. */
 export default async function DepartmentLayout({
   params,
   children,
+  tools,
+  training,
 }: {
   params: Promise<{ department: string }>;
   children: React.ReactNode;
+  tools: React.ReactNode;
+  training: React.ReactNode;
 }) {
   const { department } = await params;
   if (!isDepartmentSlug(department)) notFound();
@@ -43,7 +50,12 @@ export default async function DepartmentLayout({
         </Container>
       </div>
 
-      <Container className="py-8">{children}</Container>
+      <Container className="py-8">
+        {/* null on every real route; on the bare /staff/<department> it's the
+            page.tsx redirect to /tools. */}
+        {children}
+        <DepartmentPanes department={department} tools={tools} training={training} />
+      </Container>
     </>
   );
 }

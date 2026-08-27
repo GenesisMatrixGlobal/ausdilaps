@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { getDepartment, isDepartmentSlug } from "@/lib/departments";
 import { getTrainingModules } from "@/lib/training";
 import { getStaffUser, canEditKnowledge } from "@/lib/auth/session";
-import { CardGrid, LinkCard } from "@/components/staff/card-grid";
+import { RowList, LinkRow } from "@/components/staff/row-list";
+import { KnowledgeSearch } from "@/components/staff/knowledge-search";
+import { searchDepartmentKnowledge, knowledgeSourceFile } from "./search-action";
 import { EmptyState } from "@/components/staff/empty-state";
 
 export default async function DepartmentTrainingPage({
@@ -22,24 +24,37 @@ export default async function DepartmentTrainingPage({
   const user = await getStaffUser();
   const canManage = user ? canEditKnowledge(user, [department]) : false;
 
-  const manageLink = canManage ? (
-    <Link
-      href={`/staff/${department}/training/manage`}
-      className="text-sm font-medium text-ad-steel hover:underline"
-    >
-      Manage knowledge →
-    </Link>
-  ) : null;
+  const header = (
+    <div className="max-w-3xl space-y-4">
+      {canManage && (
+        <div className="flex justify-end">
+          <Link
+            href={`/staff/${department}/training/manage`}
+            className="text-sm font-medium text-ad-steel hover:underline"
+          >
+            Manage knowledge →
+          </Link>
+        </div>
+      )}
+      {/* Above the module list, because uploaded documents and video transcripts
+          are searchable without ever appearing as a module below. */}
+      <KnowledgeSearch
+        department={department}
+        search={searchDepartmentKnowledge}
+        getFile={knowledgeSourceFile}
+      />
+    </div>
+  );
 
   if (modules.length === 0) {
     return (
       <div className="space-y-5">
-        {manageLink && <div className="flex justify-end">{manageLink}</div>}
+        {header}
         <EmptyState
           title={`No ${dept.label} training yet`}
           body={
             canManage
-              ? "Add the first document, video or note from Manage knowledge — anything you add can also answer questions in the search bar."
+              ? "Add the first document, video or note from Manage knowledge — anything you add is searchable from the bar above straight away."
               : "Nothing has been published for this department yet. Ask a company admin or your department lead to add it."
           }
         />
@@ -49,10 +64,10 @@ export default async function DepartmentTrainingPage({
 
   return (
     <div className="space-y-5">
-      {manageLink && <div className="flex justify-end">{manageLink}</div>}
-      <CardGrid>
+      {header}
+      <RowList>
         {modules.map((m) => (
-          <LinkCard
+          <LinkRow
             key={m.slug}
             href={`/staff/${department}/training/${m.slug}`}
             title={m.title}
@@ -60,7 +75,7 @@ export default async function DepartmentTrainingPage({
             meta={m.duration}
           />
         ))}
-      </CardGrid>
+      </RowList>
     </div>
   );
 }

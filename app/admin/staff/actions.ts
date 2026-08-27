@@ -48,6 +48,7 @@ export async function inviteStaff(formData: FormData): Promise<ActionResult> {
   const fullName = String(formData.get("full_name") ?? "").trim();
   const role = parseRole(formData.get("role"));
   const departments = normaliseDepartments(formData.getAll("departments").map(String));
+  const canManageKnowledge = formData.get("can_manage_knowledge") === "on";
 
   if (!email.includes("@")) return { ok: false, error: "Enter a valid email address." };
   if (!role) return { ok: false, error: "Pick a role." };
@@ -65,6 +66,9 @@ export async function inviteStaff(formData: FormData): Promise<ActionResult> {
       role,
       // Admins get every department implicitly, so don't store any for them.
       departments: role === "staff" ? departments : [],
+      // Admins can already edit any knowledge, so the flag only means something
+      // for staff. 0009's handle_new_user() reads this key.
+      can_manage_knowledge: role === "staff" ? canManageKnowledge : false,
       invited_by: admin.id,
     },
   });
@@ -87,13 +91,14 @@ export async function inviteStaff(formData: FormData): Promise<ActionResult> {
   return { ok: true, message: `Invite sent to ${email}.` };
 }
 
-/** Change someone's role and/or departments. */
+/** Change someone's role, departments and/or knowledge-upload permission. */
 export async function updateStaff(formData: FormData): Promise<ActionResult> {
   const admin = await requireAdmin();
 
   const id = String(formData.get("id") ?? "");
   const role = parseRole(formData.get("role"));
   const departments = normaliseDepartments(formData.getAll("departments").map(String));
+  const canManageKnowledge = formData.get("can_manage_knowledge") === "on";
 
   if (!id) return { ok: false, error: "Missing user." };
   if (!role) return { ok: false, error: "Pick a role." };
@@ -116,7 +121,14 @@ export async function updateStaff(formData: FormData): Promise<ActionResult> {
 
   const { error } = await conn.client
     .from("profiles")
-    .update({ role, departments: role === "staff" ? departments : [] })
+    .update({
+      role,
+      departments: role === "staff" ? departments : [],
+      // Cleared for admins the same way departments are — they pass
+      // canEditKnowledge() on role alone, so a stored true would just be noise
+      // that reads as meaningful if they're later demoted to staff.
+      can_manage_knowledge: role === "staff" ? canManageKnowledge : false,
+    })
     .eq("id", id);
 
   if (error) return { ok: false, error: error.message };
@@ -233,6 +245,7 @@ export type StaffRow = {
   full_name: string | null;
   role: string;
   departments: DepartmentSlug[];
+  can_manage_knowledge: boolean;
   is_active: boolean;
   last_seen_at: string | null;
   created_at: string;
@@ -252,7 +265,9 @@ export async function listStaff(): Promise<{ rows: StaffRow[]; error: string | n
 
   const { data, error } = await conn.client
     .from("profiles")
-    .select("id, email, full_name, role, departments, is_active, last_seen_at, created_at")
+    .select(
+      "id, email, full_name, role, departments, can_manage_knowledge, is_active, last_seen_at, created_at"
+    )
     .in("role", ["staff", "admin", "superadmin"])
     .order("created_at", { ascending: false });
 
@@ -285,6 +300,7 @@ export async function listStaff(): Promise<{ rows: StaffRow[]; error: string | n
       return {
         ...r,
         departments: normaliseDepartments(r.departments),
+        can_manage_knowledge: r.can_manage_knowledge === true,
         last_sign_in_at: auth?.lastSignInAt ?? null,
         invited_at: auth?.invitedAt ?? null,
       };

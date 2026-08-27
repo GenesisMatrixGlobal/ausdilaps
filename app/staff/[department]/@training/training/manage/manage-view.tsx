@@ -235,7 +235,7 @@ export function ManageView({
         {sources.length === 0 ? (
           <EmptyState
             title="Nothing uploaded yet"
-            body={`Once you add something here, ${departmentLabel} can find it from the search bar at the top of the page.`}
+            body={`Once you add something here, ${departmentLabel} can find it from the search bar on the Training tab.`}
           />
         ) : (
           <div className="overflow-hidden rounded-xl border border-ad-border bg-white">

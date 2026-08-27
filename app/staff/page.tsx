@@ -1,13 +1,22 @@
+import { redirect } from "next/navigation";
 import { DEPARTMENTS } from "@/lib/departments";
 import { requireStaff, canAccess, isAdmin } from "@/lib/auth/session";
 import { toolsForDepartment } from "@/lib/tools/registry";
 import { getTrainingModules } from "@/lib/training";
 import { Container } from "@/components/marketing/container";
-import { CardGrid, LinkCard } from "@/components/staff/card-grid";
+import { RowList, LinkRow } from "@/components/staff/row-list";
 import { EmptyState } from "@/components/staff/empty-state";
 
 export default async function StaffHomePage() {
   const user = await requireStaff("/staff");
+
+  // Someone who only belongs to one department has nothing to pick — send them
+  // straight there. Admins implicitly hold every department, so they'd never
+  // qualify anyway; they keep the list because overseeing all five is the job.
+  if (!isAdmin(user) && user.departments.length === 1) {
+    redirect(`/staff/${user.departments[0]}`);
+  }
+
   const departments = DEPARTMENTS.filter((d) => canAccess(user, d.slug));
   const firstName = user.fullName?.split(" ")[0];
 
@@ -32,7 +41,7 @@ export default async function StaffHomePage() {
             body="Your account is active but no departments have been added to it. Ask a company admin to assign your access."
           />
         ) : (
-          <CardGrid>
+          <RowList>
             {departments.map((d) => {
               const tools = toolsForDepartment(d.slug).length;
               const modules = getTrainingModules(d.slug).length;
@@ -42,7 +51,7 @@ export default async function StaffHomePage() {
               ].join(" · ");
 
               return (
-                <LinkCard
+                <LinkRow
                   key={d.slug}
                   href={`/staff/${d.slug}`}
                   title={d.label}
@@ -51,7 +60,7 @@ export default async function StaffHomePage() {
                 />
               );
             })}
-          </CardGrid>
+          </RowList>
         )}
       </div>
     </Container>

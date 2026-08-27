@@ -39,7 +39,7 @@ export default async function ToolPage({
         ← All tools
       </Link>
       <div className="mt-4">
-        <ToolFrame title={tool.title} description={tool.description}>
+        <ToolFrame title={tool.title} code={tool.code} description={tool.description}>
           <Component />
         </ToolFrame>
       </div>

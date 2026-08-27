@@ -5,6 +5,7 @@ import { getTrainingModules } from "@/lib/training";
 import { getStaffUser, canEditKnowledge } from "@/lib/auth/session";
 import { RowList, LinkRow } from "@/components/staff/row-list";
 import { KnowledgeSearch } from "@/components/staff/knowledge-search";
+import { listDepartmentSources } from "@/lib/knowledge/retrieve";
 import { searchDepartmentKnowledge, knowledgeSourceFile } from "./search-action";
 import { EmptyState } from "@/components/staff/empty-state";
 
@@ -17,7 +18,12 @@ export default async function DepartmentTrainingPage({
   if (!isDepartmentSlug(department)) notFound();
 
   const dept = getDepartment(department)!;
+
+  // Two sources of truth, deliberately: modules are authored in the repo as MDX,
+  // uploads live in the database. Listing only the first is what made a department
+  // with real uploaded material report "no training yet".
   const modules = getTrainingModules(department);
+  const uploads = await listDepartmentSources(department);
 
   // The layout already established this person can see the department; this only decides
   // whether the Manage link is worth showing them.
@@ -46,7 +52,7 @@ export default async function DepartmentTrainingPage({
     </div>
   );
 
-  if (modules.length === 0) {
+  if (modules.length === 0 && uploads.length === 0) {
     return (
       <div className="space-y-5">
         {header}
@@ -72,7 +78,16 @@ export default async function DepartmentTrainingPage({
             href={`/staff/${department}/training/${m.slug}`}
             title={m.title}
             description={m.summary}
-            meta={m.duration}
+            meta={m.duration ?? "MODULE"}
+          />
+        ))}
+        {uploads.map((u) => (
+          <LinkRow
+            key={u.id}
+            href={u.href}
+            title={u.title}
+            description={u.summary ?? "Uploaded to the knowledge base."}
+            meta={u.badge}
           />
         ))}
       </RowList>

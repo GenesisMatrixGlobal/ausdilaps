@@ -80,13 +80,24 @@ function plainish(text: string): string {
     .trim();
 }
 
-function hrefFor(row: Row): string | null {
-  if (!row.source_url) return null;
-  if (row.start_seconds !== null) return withTimestamp(row.source_url, row.start_seconds);
-  // The anchor and the heading id on the rendered page come from the same
-  // headingSlug() in lib/slug.ts. Don't recompute it here.
-  if (row.anchor) return `${row.source_url}#${row.anchor}`;
-  return row.source_url;
+function hrefFor(row: Row, department: DepartmentSlug): string | null {
+  if (row.source_url) {
+    if (row.start_seconds !== null) return withTimestamp(row.source_url, row.start_seconds);
+    // The anchor and the heading id on the rendered page come from the same
+    // headingSlug() in lib/slug.ts. Don't recompute it here.
+    if (row.anchor) return `${row.source_url}#${row.anchor}`;
+    return row.source_url;
+  }
+  // Uploads carry no url — a training module points at the page it already has,
+  // but a PDF has nowhere of its own. This is that page.
+  return knowledgeHref(department, row.source_id);
+}
+
+/** The viewer page for an uploaded source. Under /training/ on purpose: both
+ *  DepartmentTabs and DepartmentPanes decide the active tab with
+ *  pathname.startsWith(`${base}/training`). */
+export function knowledgeHref(department: DepartmentSlug, sourceId: string): string {
+  return `/staff/${department}/training/knowledge/${sourceId}`;
 }
 
 export async function searchKnowledge({
@@ -126,7 +137,7 @@ export async function searchKnowledge({
     // ts_headline returns null when the query matched only the title; the opening
     // of the chunk is still the most useful thing to show.
     snippet: plainish(row.snippet ?? row.content),
-    href: hrefFor(row),
+    href: hrefFor(row, department),
     timestamp: row.start_seconds !== null ? `▶ ${formatTimestamp(row.start_seconds)}` : null,
     hasOriginal: Boolean(row.source_storage_path),
   }));
@@ -149,4 +160,72 @@ function logQuery(query: string, department: DepartmentSlug, resultCount: number
       console.error("[knowledge] couldn't log query:", (e as Error).message);
     }
   });
+}
+
+
+export type DepartmentSource = {
+  id: string;
+  kind: KnowledgeKind;
+  title: string;
+  summary: string | null;
+  /** MODULE / PDF / VIDEO / DOCUMENT / NOTE — the badge on the row. */
+  badge: string;
+  href: string;
+  updatedAt: string | null;
+};
+
+const KIND_BADGE: Record<KnowledgeKind, string> = {
+  training: "MODULE",
+  document: "DOCUMENT",
+  video: "VIDEO",
+  note: "NOTE",
+};
+
+/** Everything published to a department, for the Training tab.
+ *
+ *  User-scoped client, so RLS decides what comes back — same rule as
+ *  searchKnowledge(). Deliberately NOT listSources() from ingest.ts: that one runs
+ *  service-role for the manage screen, where the caller has already been proven to
+ *  be an editor. Here the caller is any staff member.
+ *
+ *  Repo-authored training modules are filtered out: they are already listed from
+ *  content/training/**\/*.mdx, and the indexer writes a knowledge_sources row for
+ *  each one, so returning both would show every module twice. */
+export async function listDepartmentSources(
+  department: DepartmentSlug
+): Promise<DepartmentSource[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("knowledge_sources")
+    .select("id, kind, title, summary, storage_path, is_published, updated_at")
+    .neq("kind", "training")
+    // Tagged for THIS department, or company-wide. Not redundant with RLS:
+    // has_department() (0005) returns true for admins on every department, so
+    // without this an admin browsing Reports sees Estimators' uploads too. Same
+    // rule search_knowledge() enforces in 0010, and the same shape listSources()
+    // uses in ingest.ts.
+    .or(`departments.ov.{${department}},departments.eq.{}`)
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    // A department that can't list its uploads should still see its modules.
+    console.error("[knowledge] couldn't list sources:", error.message);
+    return [];
+  }
+
+  return (data ?? [])
+    .filter((r) => r.is_published)
+    .map((r) => {
+      const kind = r.kind as KnowledgeKind;
+      const isPdf = (r.storage_path ?? "").toLowerCase().endsWith(".pdf");
+      return {
+        id: r.id as string,
+        kind,
+        title: r.title as string,
+        summary: (r.summary as string | null) ?? null,
+        badge: kind === "document" && isPdf ? "PDF" : KIND_BADGE[kind],
+        href: knowledgeHref(department, r.id as string),
+        updatedAt: (r.updated_at as string | null) ?? null,
+      };
+    });
 }

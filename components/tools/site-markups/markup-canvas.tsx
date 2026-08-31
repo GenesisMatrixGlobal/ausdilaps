@@ -27,10 +27,23 @@ export interface Projection {
   scale: number;
 }
 
-type Drag =
+/** How far the pointer must travel before a press counts as a drag rather than a click,
+ *  in CSS pixels. Without it, the tiny movement almost everyone makes while clicking
+ *  nudged whatever was under the cursor — placing a point could shift the whole shape a
+ *  few metres. 4px is the usual desktop dead zone and is well below deliberate movement. */
+const DRAG_THRESHOLD_PX = 4;
+
+type DragTarget =
   | { kind: "point"; shapeId: string; index: number }
-  | { kind: "shape"; shapeId: string; lastPoint: LatLng }
-  | null;
+  | { kind: "shape"; shapeId: string; lastPoint: LatLng };
+
+type Drag = (DragTarget & {
+  /** Where the press landed, in client pixels — the origin the dead zone measures from. */
+  originX: number;
+  originY: number;
+  /** False until the pointer leaves the dead zone. Nothing moves before that. */
+  armed: boolean;
+}) | null;
 
 /** The ring an shape will actually render as — computed with the SAME functions the
  *  server renderer uses, so the preview can't drift from the exported PNG (same width
@@ -81,6 +94,10 @@ export function MarkupCanvas({
     const el = containerRef.current;
     if (!el || !projection) return null;
     const rect = el.getBoundingClientRect();
+    // A collapsed container (hidden panel, mid-resize, display:none ancestor) makes this
+    // a division by ~zero, which turns a few pixels of travel into thousands of metres
+    // and corrupts the shape. Treat a container with no area as "no position".
+    if (rect.width < 1 || rect.height < 1) return null;
     return pixelToLatLng(projection, {
       x: ((e.clientX - rect.left) / rect.width) * projection.imageSizePx,
       y: ((e.clientY - rect.top) / rect.height) * projection.imageSizePx,
@@ -97,15 +114,25 @@ export function MarkupCanvas({
     shapes.addPoint(point);
   }
 
-  function begin(e: ReactPointerEvent, next: Drag) {
+  function begin(e: ReactPointerEvent, target: DragTarget) {
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
-    dragRef.current = next;
+    // Not armed yet: a press is a click until it travels far enough to be a drag.
+    dragRef.current = { ...target, originX: e.clientX, originY: e.clientY, armed: false };
   }
 
   function onPointerMove(e: ReactPointerEvent) {
     const drag = dragRef.current;
     if (!drag) return;
+
+    if (!drag.armed) {
+      if (Math.hypot(e.clientX - drag.originX, e.clientY - drag.originY) < DRAG_THRESHOLD_PX) return;
+      // Crossing the dead zone arms the drag. A shape's `lastPoint` still holds the
+      // ORIGINAL press position, so this first move applies the whole travel at once and
+      // the grab point lands back under the cursor rather than lagging by the threshold.
+      drag.armed = true;
+    }
+
     const now = toLatLng(e);
     if (!now) return;
     if (drag.kind === "point") {
@@ -145,8 +172,18 @@ export function MarkupCanvas({
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
     >
+      {/* draggable={false} stops the browser's own HTML5 image drag. Left on, clicking and
+          moving even slightly dragged a translucent ghost of the satellite image around,
+          which read as the map itself sliding. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={imageDataUrl} alt={alt} onClick={handleImageClick} className={cn("block w-full", pickMode ? "cursor-copy" : "cursor-crosshair")} />
+      <img
+        src={imageDataUrl}
+        alt={alt}
+        draggable={false}
+        onDragStart={(e) => e.preventDefault()}
+        onClick={handleImageClick}
+        className={cn("block w-full select-none", pickMode ? "cursor-copy" : "cursor-crosshair")}
+      />
 
       {/* The instruction belongs where the click has to happen, not in the sidebar the
           operator has already looked away from. Only exists while armed, so it costs

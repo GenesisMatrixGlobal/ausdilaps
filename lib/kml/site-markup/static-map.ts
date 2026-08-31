@@ -58,6 +58,17 @@ export interface BuildStaticMapUrlOptions {
   polygons?: StaticMapPolygon[];
   /** Numbered pins (e.g. one per neighbour lot, matching a checklist) rendered on top. */
   markers?: StaticMapMarker[];
+  /** Pins the frame instead of fitting it to the geometry. `zoomAdjust` still applies on
+   *  top of `fitZoom`, so the operator's Zoom control keeps working — but nothing they do
+   *  to the geometry (unticking a lot, drawing a shape near the edge, adding a lot) can
+   *  move the photo underneath them. Standard Mark Up captures this from the first
+   *  Generate and sends it back on every re-render. */
+  frame?: { center: LatLng; fitZoom: number };
+  /** Points that shape the frame's bounds but are never drawn. Lets a caller keep the
+   *  frame anchored on geometry it has chosen to hide — Standard Mark Up passes the
+   *  subject ring here always, so unticking the project site removes the red boundary
+   *  without the photo re-framing under the operator mid-edit. */
+  boundsAnchor?: LatLng[];
   /** Raw Static Maps `style` rule strings, e.g. `"feature:poi|visibility:off"` — one
    *  per array entry, each becomes its own `style` query param. */
   styles?: string[];
@@ -131,6 +142,11 @@ export interface BuildStaticMapUrlResult {
   url: string;
   center: LatLng;
   zoom: number;
+  /** The frame's zoom BEFORE `zoomAdjust` — this is what a caller captures to pin the
+   *  frame later. Returned explicitly rather than left to be derived from `zoom`, because
+   *  subtracting the adjust back off is exactly the sort of off-by-one that drifts
+   *  silently. */
+  fitZoom: number;
 }
 
 export function buildStaticMapUrl(opts: BuildStaticMapUrlOptions): BuildStaticMapUrlResult {
@@ -143,13 +159,30 @@ export function buildStaticMapUrl(opts: BuildStaticMapUrlOptions): BuildStaticMa
 
   const visibleWays = opts.ways.filter((w) => w.length >= 2);
   const polygons = (opts.polygons ?? []).filter((p) => p.ring.length >= 3);
-  if (visibleWays.length === 0 && polygons.length === 0) {
-    throw new Error("No road geometry to render.");
-  }
+  const boundsAnchor = opts.boundsAnchor ?? [];
 
-  const bounds = bufferedBounds([...visibleWays.flat(), ...polygons.flatMap((p) => p.ring)]);
-  const center = { lat: (bounds.minLat + bounds.maxLat) / 2, lng: (bounds.minLng + bounds.maxLng) / 2 };
-  const zoom = Math.max(1, Math.min(zoomToFit(bounds, IMAGE_SIZE) + (opts.zoomAdjust ?? 0), MAX_ZOOM));
+  // A pinned frame needs no geometry at all — it already knows where to look. Fitting is
+  // the fallback path (a caller that hasn't captured a frame yet, or the first render of
+  // all), and there an anchor alone is still enough: a frame with nothing drawn on it is
+  // a legitimate result, and it's the blank aerial you want to trace onto.
+  let center: LatLng;
+  let fitZoom: number;
+  if (opts.frame) {
+    center = opts.frame.center;
+    fitZoom = opts.frame.fitZoom;
+  } else {
+    if (visibleWays.length === 0 && polygons.length === 0 && boundsAnchor.length === 0) {
+      throw new Error("No geometry to render.");
+    }
+    const bounds = bufferedBounds([
+      ...visibleWays.flat(),
+      ...polygons.flatMap((p) => p.ring),
+      ...boundsAnchor,
+    ]);
+    center = { lat: (bounds.minLat + bounds.maxLat) / 2, lng: (bounds.minLng + bounds.maxLng) / 2 };
+    fitZoom = zoomToFit(bounds, IMAGE_SIZE);
+  }
+  const zoom = Math.max(1, Math.min(fitZoom + (opts.zoomAdjust ?? 0), MAX_ZOOM));
 
   const url = new URL(STATIC_MAP_URL);
   url.searchParams.set("size", `${IMAGE_SIZE}x${IMAGE_SIZE}`);
@@ -188,5 +221,5 @@ export function buildStaticMapUrl(opts: BuildStaticMapUrlOptions): BuildStaticMa
   }
 
   url.searchParams.set("key", key);
-  return { url: url.toString(), center, zoom };
+  return { url: url.toString(), center, zoom, fitZoom };
 }

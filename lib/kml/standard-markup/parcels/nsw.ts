@@ -51,7 +51,17 @@ export async function fetchParcelsNsw(addr: {
   if (!geo) return null;
   const { x, y, matchedAddress, matchScore } = geo;
 
-  const env = envelopeAroundPoint(x, y, ENVELOPE_HALF_WIDTH_M);
+  return { point: { lat: y, lng: x }, matchedAddress, matchScore, candidates: await fetchParcelsNearPointNsw(x, y) };
+}
+
+/** The envelope query on its own, with no geocoding — shared by the address pipeline
+ *  above and by the click-a-lot lookup in ../parcel-at-point.ts. */
+export async function fetchParcelsNearPointNsw(
+  lng: number,
+  lat: number,
+  halfWidthM: number = ENVELOPE_HALF_WIDTH_M
+): Promise<ParcelFeature[]> {
+  const env = envelopeAroundPoint(lng, lat, halfWidthM);
   const parcelStart = Date.now();
   let c: CadastreResp;
   try {
@@ -64,7 +74,7 @@ export async function fetchParcelsNsw(addr: {
     throw new Error(`NSW parcel query ${describeFetchError(e, Date.now() - parcelStart)}`);
   }
 
-  const candidates: ParcelFeature[] = (c.features ?? [])
+  return (c.features ?? [])
     .map((f) => {
       const attrs = f.attributes;
       const area = attrs?.planlotarea ?? attrs?.shape_Area;
@@ -76,9 +86,10 @@ export async function fetchParcelsNsw(addr: {
         // one silently did the same to the other.
         idKey: String(attrs?.lotidstring || attrs?.planlabel || ""),
         areaSqm: typeof area === "number" ? Math.round(area) : null,
+        // Layer 15 is the Lot layer — it holds no road reserves to filter out. Checked
+        // against a Baulkham Hills block: 50 parcels, every one with a lot id.
+        kind: "lot" as const,
       };
     })
     .filter((f) => f.ring.length >= 3);
-
-  return { point: { lat: y, lng: x }, matchedAddress, matchScore, candidates };
 }

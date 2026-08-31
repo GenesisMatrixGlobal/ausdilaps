@@ -1,7 +1,7 @@
 // Converts between a pixel position on a rendered Static Maps image and a lat/lng.
 // Same Web Mercator formula family as static-map.ts's zoom-fit math. Client-safe (pure
 // math, no Node/DOM APIs) — imported directly into the standard-markup-tab.tsx client
-// component for council-asset point placement: `pixelToLatLng` turns a click into a
+// component for custom-shape point placement: `pixelToLatLng` turns a click into a
 // real coordinate, `latLngToPixel` turns a placed point back into an on-screen position
 // for the overlay dots (needed so dots stay correctly placed if zoom changes before the
 // user hits Regenerate — they're re-projected live from the stored lat/lng, not frozen

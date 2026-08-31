@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { SyncToSalesforce } from "@/components/tools/shared/sync-to-salesforce";
-import { latLngToPixel, pixelToLatLng } from "@/lib/kml/standard-markup/projection";
-
-const MAX_COUNCIL_POINTS = 10;
-const MAX_COUNCIL_ASSETS = 5;
-const DEFAULT_COUNCIL_WIDTH_M = 10;
-const MIN_COUNCIL_WIDTH_M = 5;
-const MAX_COUNCIL_WIDTH_M = 20;
-const COUNCIL_WIDTH_STEP_M = 1;
+import { AddressSearch, type ParsedAddress } from "./address-search";
+import { ShapePanel } from "./shape-panel";
+import { useShapes } from "./shapes";
+import { MarkupCanvas, type Projection } from "./markup-canvas";
+import { SITE_RED } from "@/lib/kml/standard-markup/style";
+import { markerLabel } from "@/lib/kml/standard-markup/labels";
+import { pointInRing } from "@/lib/kml/standard-markup/geometry";
 
 const STATES = [
   { key: "QLD", label: "QLD", disabled: false },
@@ -41,13 +40,6 @@ interface Neighbour {
   label: string;
 }
 
-interface Projection {
-  center: LatLng;
-  zoom: number;
-  imageSizePx: number;
-  scale: number;
-}
-
 interface GenerateResponse {
   image: string;
   subjectRing: LatLng[];
@@ -58,17 +50,16 @@ interface GenerateResponse {
   flags: string[];
   center: LatLng;
   zoom: number;
+  fitZoom: number;
   imageSizePx: number;
   scale: number;
 }
 
-interface CouncilAsset {
-  points: LatLng[];
-  widthMetres: number;
-}
-
-interface CouncilAssetDraft extends CouncilAsset {
-  id: string;
+/** The pinned frame. Captured once, by Generate, and sent on every later render so that
+ *  nothing the operator does to the geometry can shift the photo under them. */
+interface Frame {
+  center: LatLng;
+  fitZoom: number;
 }
 
 function slugify(value: string): string {
@@ -85,134 +76,6 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
   const array = new Uint8Array(bytes.length);
   for (let i = 0; i < bytes.length; i++) array[i] = bytes.charCodeAt(i);
   return new Blob([array], { type: mimeType });
-}
-
-interface PlaceSuggestion {
-  placeId: string;
-  text: string;
-}
-
-interface ParsedAddress {
-  street: string;
-  suburb: string;
-  postcode: string;
-  state: string;
-}
-
-/** Google-style type-ahead address search — proxies through our own server-side routes
- *  (which hold the Places API key) rather than loading the Maps JS library client-side,
- *  so no second, publicly-exposed key is needed. Reuses one session token per search
- *  (reset after a selection) so Google bills the whole autocomplete-to-details flow as
- *  one cheaper session instead of per-keystroke. */
-function AddressSearch({ onSelect }: { onSelect: (parsed: ParsedAddress) => void }) {
-  const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const sessionToken = useRef(crypto.randomUUID());
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const containerRef = useRef<HTMLDivElement>(null);
-  // Set right before select() calls setQuery() to display the chosen address — query is
-  // also the search effect's trigger, so without this a selection's own text update
-  // would re-fire the search 300ms later and pop the dropdown back open.
-  const suppressNextSearch = useRef(false);
-
-  // Closes on an actual outside click, rather than the input's own onBlur — blur fires
-  // before a click on the dropdown registers, which needs a fragile setTimeout race to
-  // work around and was closing the dropdown before the click landed.
-  useEffect(() => {
-    if (!open) return;
-    function handlePointerDown(e: PointerEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open]);
-
-  useEffect(() => {
-    if (suppressNextSearch.current) {
-      suppressNextSearch.current = false;
-      return;
-    }
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      if (query.trim().length < 3) {
-        setSuggestions([]);
-        return;
-      }
-      setLoading(true);
-      try {
-        const res = await fetch("/api/places/autocomplete", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ input: query, sessionToken: sessionToken.current }),
-        });
-        const json = (await res.json().catch(() => null)) as { ok: boolean; suggestions?: PlaceSuggestion[] } | null;
-        setSuggestions(json?.ok ? (json.suggestions ?? []) : []);
-        setOpen(true);
-      } catch {
-        setSuggestions([]);
-      } finally {
-        setLoading(false);
-      }
-    }, 300);
-    return () => clearTimeout(debounceRef.current);
-  }, [query]);
-
-  async function select(suggestion: PlaceSuggestion) {
-    suppressNextSearch.current = true;
-    setOpen(false);
-    setQuery(suggestion.text);
-    setError(null);
-    try {
-      const res = await fetch("/api/places/details", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ placeId: suggestion.placeId, sessionToken: sessionToken.current }),
-      });
-      const json = (await res.json().catch(() => null)) as (ParsedAddress & { ok: boolean; error?: string }) | null;
-      sessionToken.current = crypto.randomUUID();
-      if (!json?.ok) {
-        setError(json?.error ?? "Couldn't read that address — try entering it manually.");
-        return;
-      }
-      onSelect({ street: json.street, suburb: json.suburb, postcode: json.postcode, state: json.state });
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-
-  return (
-    <div ref={containerRef} className="relative">
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onFocus={() => suggestions.length > 0 && setOpen(true)}
-        placeholder="Start typing an address…"
-        className="mt-1 w-full rounded-lg border border-ad-border p-2 text-sm text-ad-ink outline-none focus:border-ad-steel"
-      />
-      {loading && <p className="mt-1 text-xs text-ad-muted">Searching…</p>}
-      {error && <p className="mt-1 text-xs text-ad-orange">{error}</p>}
-      {open && suggestions.length > 0 && (
-        <ul className="absolute z-10 mt-1 w-full rounded-lg border border-ad-border bg-white py-1 shadow-lg">
-          {suggestions.map((s) => (
-            <li key={s.placeId}>
-              <button
-                type="button"
-                onClick={() => select(s)}
-                className="block w-full px-3 py-2 text-left text-sm text-ad-ink hover:bg-ad-surface"
-              >
-                {s.text}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
 }
 
 export function ResidentialMarkupTab() {
@@ -232,64 +95,15 @@ export function ResidentialMarkupTab() {
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
+  // Matches the excludedIds convention: state records what's been REMOVED, so a fresh
+  // snapshot starts with everything the lookup found.
+  const [hideSubject, setHideSubject] = useState(false);
   const [projection, setProjection] = useState<Projection | null>(null);
-  const [councilAssets, setCouncilAssets] = useState<CouncilAssetDraft[]>([]);
-  const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
-
-  // Clicking the image always does something sensible — no separate "start placing"
-  // toggle. No asset currently active -> this click starts a brand-new one. One's
-  // already active -> the click extends it. "Finish this asset" (below) clears the
-  // active id so the next click starts another independent one — this is what lets a
-  // property have two disconnected council assets (e.g. front road + rear laneway).
-  function handleImageClick(e: MouseEvent<HTMLImageElement>) {
-    if (!projection) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const pixel = {
-      x: ((e.clientX - rect.left) / rect.width) * projection.imageSizePx,
-      y: ((e.clientY - rect.top) / rect.height) * projection.imageSizePx,
-    };
-    const point = pixelToLatLng(projection, pixel);
-
-    if (activeAssetId) {
-      setCouncilAssets((prev) =>
-        prev.map((a) =>
-          a.id === activeAssetId && a.points.length < MAX_COUNCIL_POINTS ? { ...a, points: [...a.points, point] } : a
-        )
-      );
-      return;
-    }
-
-    if (councilAssets.length >= MAX_COUNCIL_ASSETS) return;
-    const id = crypto.randomUUID();
-    setCouncilAssets((prev) => [...prev, { id, points: [point], widthMetres: DEFAULT_COUNCIL_WIDTH_M }]);
-    setActiveAssetId(id);
-  }
-
-  function finishActiveAsset() {
-    setActiveAssetId(null);
-  }
-
-  function removeAsset(id: string) {
-    setCouncilAssets((prev) => prev.filter((a) => a.id !== id));
-    setActiveAssetId((current) => (current === id ? null : current));
-  }
-
-  function undoActivePoint() {
-    if (!activeAssetId) return;
-    setCouncilAssets((prev) => prev.map((a) => (a.id === activeAssetId ? { ...a, points: a.points.slice(0, -1) } : a)));
-  }
-
-  function clearActivePoints() {
-    if (!activeAssetId) return;
-    setCouncilAssets((prev) => prev.map((a) => (a.id === activeAssetId ? { ...a, points: [] } : a)));
-  }
-
-  function setActiveWidth(widthMetres: number) {
-    if (!activeAssetId) return;
-    setCouncilAssets((prev) => prev.map((a) => (a.id === activeAssetId ? { ...a, widthMetres } : a)));
-  }
-
-  const activeAsset = councilAssets.find((a) => a.id === activeAssetId) ?? null;
+  const [frame, setFrame] = useState<Frame | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [pickBusy, setPickBusy] = useState(false);
+  const [pickMessage, setPickMessage] = useState<string | null>(null);
+  const shapes = useShapes();
 
   function handleAddressSelect(parsed: ParsedAddress) {
     setStreet(parsed.street);
@@ -328,11 +142,15 @@ export function ResidentialMarkupTab() {
       }
       setResult(json);
       setExcludedIds(new Set());
-      setCouncilAssets([]);
-      setActiveAssetId(null);
+      setHideSubject(false);
+      shapes.reset();
       setImageDataUrl(`data:image/png;base64,${json.image}`);
       setFlags(json.flags);
       setProjection({ center: json.center, zoom: json.zoom, imageSizePx: json.imageSizePx, scale: json.scale });
+      // The only place the frame is ever set. Every later render reuses it.
+      setFrame({ center: json.center, fitZoom: json.fitZoom });
+      setPicking(false);
+      setPickMessage(null);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -340,13 +158,10 @@ export function ResidentialMarkupTab() {
     }
   }
 
-  function councilAssetsPayload(): CouncilAsset[] {
-    return councilAssets
-      .filter((a) => a.points.length >= 2)
-      .map(({ points, widthMetres }) => ({ points, widthMetres }));
-  }
-
-  async function regenerate() {
+  /** `neighboursOverride` exists because a caller may need to render a list it has only
+   *  just built — appending a detected lot and regenerating in the same tick would
+   *  otherwise read the pre-append `result` from state and render without it. */
+  async function regenerate(neighboursOverride?: Neighbour[]) {
     if (!result) return;
     setError(null);
     setRegenerating(true);
@@ -356,11 +171,24 @@ export function ResidentialMarkupTab() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           subjectRing: result.subjectRing,
-          neighbours: result.neighbours,
+          neighbours: neighboursOverride ?? result.neighbours,
           mapType: result.mapType,
           zoomAdjust,
           excludeIds: Array.from(excludedIds),
-          councilAssets: councilAssetsPayload(),
+          hideSubject,
+          frame,
+          // The overlay draws the lot bubbles — see MarkupCanvas `lots`.
+          hideMarkers: true,
+          // Deliberately NOT sending shapes. The preview shows exactly one copy of each
+          // shape, and the live overlay is the one that draws it — it uses the same
+          // geometry, colours and opacities as the renderer (lib/kml/standard-markup/
+          // style.ts), so it is not an approximation.
+          //
+          // Baking them here as well drew every shape twice: once into this PNG and once
+          // by the overlay on top of it. Two 50% fills composite to 75% with a doubled
+          // outline, which read as a duplicated shape — and removing one then left the
+          // baked copy behind until the next regenerate. The export path below still
+          // bakes them, because a downloaded file has no overlay.
         }),
       });
       const json = (await res.json().catch(() => null)) as
@@ -379,6 +207,82 @@ export function ResidentialMarkupTab() {
       setError((e as Error).message);
     } finally {
       setRegenerating(false);
+    }
+  }
+
+  /** Ids key the exclude-set and the checkboxes, so a duplicate would make two lots
+   *  toggle as one — the same rule resolve.ts applies server-side, applied here against
+   *  the list as it currently stands. */
+  function uniqueLotId(idKey: string, existing: Neighbour[]): string {
+    const base = idKey || crypto.randomUUID();
+    const used = new Set(existing.map((n) => n.id));
+    let id = base;
+    for (let dup = 2; used.has(id); dup++) id = `${base}#${dup}`;
+    return id;
+  }
+
+  async function handlePick(point: LatLng) {
+    if (!result) return;
+    setPicking(false);
+    setPickMessage(null);
+
+    // Both of these are answered locally — no point paying for a cadastre round trip to
+    // be told about a lot we already have.
+    if (pointInRing(point, result.subjectRing)) {
+      setPickMessage("That's the project site — it's already on the map.");
+      return;
+    }
+    const existing = result.neighbours.find((n) => pointInRing(point, n.ring));
+    if (existing) {
+      setPickMessage(`Lot ${existing.label} is already in the list.`);
+      return;
+    }
+
+    setPickBusy(true);
+    try {
+      const res = await fetch("/api/kml/standard-markup/parcel", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lat: point.lat, lng: point.lng, state }),
+      });
+      const json = (await res.json().catch(() => null)) as
+        | {
+            ok: boolean;
+            parcel?: { idKey: string; ring: LatLng[]; areaSqm: number | null; kind: "lot" | "road" | "other" } | null;
+            error?: string;
+          }
+        | null;
+      if (!res.ok || !json?.ok) {
+        setPickMessage(json?.error ?? "Couldn't look that lot up — try again.");
+        return;
+      }
+      if (!json.parcel) {
+        setPickMessage("No titled parcel there — try clicking inside the lot.");
+        return;
+      }
+      if (json.parcel.kind !== "lot") {
+        setPickMessage(
+          json.parcel.kind === "road"
+            ? "That's a road reserve, not a lot — use a custom shape for road frontage."
+            : "That's an easement or interest, not a titled lot."
+        );
+        return;
+      }
+      const added: Neighbour = {
+        id: uniqueLotId(json.parcel.idKey, result.neighbours),
+        ring: json.parcel.ring,
+        areaSqm: json.parcel.areaSqm,
+        // Continues the existing numbering rather than renumbering — a lot's pin must
+        // never change number once the operator has seen it.
+        label: markerLabel(result.neighbours.length),
+      };
+      const next = [...result.neighbours, added];
+      setResult({ ...result, neighbours: next });
+      await regenerate(next);
+    } catch (e) {
+      setPickMessage((e as Error).message);
+    } finally {
+      setPickBusy(false);
     }
   }
 
@@ -409,7 +313,11 @@ export function ResidentialMarkupTab() {
         zoomAdjust,
         excludeIds: Array.from(excludedIds),
         hideMarkers: true,
-        councilAssets: councilAssetsPayload(),
+        hideSubject,
+        frame,
+        // The export DOES bake the shapes — unlike the on-screen preview above, a .png
+        // has no overlay to draw them.
+        shapes: shapes.payload(),
       }),
     });
     const json = (await res.json().catch(() => null)) as { ok: boolean; image?: string; error?: string } | null;
@@ -530,40 +438,6 @@ export function ResidentialMarkupTab() {
           </div>
         )}
 
-        {result && (
-          <div>
-            <p className="text-sm font-medium text-ad-ink">Zoom</p>
-            <div className="mt-1 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setZoomAdjust((z) => Math.max(-3, z - 1))}
-                disabled={zoomAdjust <= -3}
-                aria-label="Zoom out"
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-ad-border text-ad-ink hover:bg-ad-border/20 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                −
-              </button>
-              <input
-                type="range"
-                min={-3}
-                max={3}
-                step={1}
-                value={zoomAdjust}
-                onChange={(e) => setZoomAdjust(Number(e.target.value))}
-                className="w-full"
-              />
-              <button
-                type="button"
-                onClick={() => setZoomAdjust((z) => Math.min(3, z + 1))}
-                disabled={zoomAdjust >= 3}
-                aria-label="Zoom in"
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-ad-border text-ad-ink hover:bg-ad-border/20 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                +
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -602,177 +476,125 @@ export function ResidentialMarkupTab() {
 
       {imageDataUrl && result && (
         <div className="mt-6 flex flex-col gap-4 xl:flex-row xl:items-start">
-          <div className="relative max-w-4xl overflow-hidden rounded-xl border border-ad-border">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={imageDataUrl}
-              alt={`${street} standard markup`}
-              onClick={handleImageClick}
-              className="block w-full cursor-crosshair"
-            />
-            {projection &&
-              councilAssets.map((asset) =>
-                asset.points.map((p, i) => {
-                  const px = latLngToPixel(projection, p);
-                  const leftPct = (px.x / projection.imageSizePx) * 100;
-                  const topPct = (px.y / projection.imageSizePx) * 100;
-                  const isActive = asset.id === activeAssetId;
-                  return (
-                    <span
-                      key={`${asset.id}-${i}`}
-                      style={{ left: `${leftPct}%`, top: `${topPct}%` }}
-                      className={cn(
-                        "absolute flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white text-[10px] font-semibold text-white shadow",
-                        isActive ? "bg-ad-orange" : "bg-ad-orange/50"
-                      )}
-                    >
-                      {i + 1}
-                    </span>
-                  );
-                })
-              )}
-          </div>
+          <MarkupCanvas
+            imageDataUrl={imageDataUrl}
+            alt={`${street} standard markup`}
+            projection={projection}
+            shapes={shapes}
+            lots={result.neighbours.filter((n) => !excludedIds.has(n.id))}
+            pickMode={picking}
+            onPick={handlePick}
+            onCancelPick={() => setPicking(false)}
+          />
 
           <div className="w-full max-w-xs space-y-4">
-            {result.neighbours.length > 0 && (
-              <div className="rounded-xl border border-ad-border bg-white p-4">
-                <p className="text-sm font-medium text-ad-ink">Neighbouring lots</p>
-                <p className="mt-1 text-xs text-ad-muted">
-                  Uncheck any that shouldn&apos;t be included, then regenerate.
-                </p>
-                <ul className="mt-3 space-y-2">
-                  {result.neighbours.map((n) => (
-                    <li key={n.id} className="flex items-center gap-2 text-sm text-ad-ink">
-                      <input
-                        type="checkbox"
-                        checked={!excludedIds.has(n.id)}
-                        onChange={() => toggleNeighbour(n.id)}
-                        className="h-4 w-4 accent-ad-steel"
-                      />
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ad-orange text-xs font-semibold text-white">
-                        {n.label}
-                      </span>
-                      <span>Lot {n.label}{n.areaSqm ? ` — ${n.areaSqm} m²` : ""}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
+            {/* First in the column, and deliberately far from the Custom shapes Width
+                slider at the bottom — the two are the same "− slider +" control and were
+                easy to mix up when adjacent. Zoom is also a set-once thing, so it doesn't
+                belong among the controls being worked with repeatedly. */}
             <div className="rounded-xl border border-ad-border bg-white p-4">
-              <p className="text-sm font-medium text-ad-ink">Council assets</p>
-              <p className="mt-1 text-xs text-ad-muted">
-                Click points directly on the image to start one (up to {MAX_COUNCIL_POINTS} points). Finish it,
-                then click again elsewhere to start another independent one — up to {MAX_COUNCIL_ASSETS} per
-                property.
-              </p>
-
-              {activeAsset && (
-                <div className="mt-3 rounded-lg bg-ad-surface p-3">
-                  <p className="text-xs text-ad-muted">
-                    Placing asset {councilAssets.findIndex((a) => a.id === activeAsset.id) + 1} —{" "}
-                    {activeAsset.points.length}/{MAX_COUNCIL_POINTS} points
-                  </p>
-                  <div className="mt-2 flex gap-2">
-                    <button
-                      type="button"
-                      onClick={undoActivePoint}
-                      disabled={activeAsset.points.length === 0}
-                      className={cn(buttonVariants({ variant: "outline", size: "sm" }), "flex-1")}
-                    >
-                      Undo point
-                    </button>
-                    <button
-                      type="button"
-                      onClick={clearActivePoints}
-                      disabled={activeAsset.points.length === 0}
-                      className={cn(buttonVariants({ variant: "outline", size: "sm" }), "flex-1")}
-                    >
-                      Clear
-                    </button>
-                  </div>
-
-                  <p className="mt-3 text-sm font-medium text-ad-ink">Width ({activeAsset.widthMetres}m)</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setActiveWidth(Math.max(MIN_COUNCIL_WIDTH_M, activeAsset.widthMetres - COUNCIL_WIDTH_STEP_M))}
-                      disabled={activeAsset.widthMetres <= MIN_COUNCIL_WIDTH_M}
-                      aria-label="Decrease width"
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-ad-border text-ad-ink hover:bg-ad-border/20 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      −
-                    </button>
-                    <input
-                      type="range"
-                      min={MIN_COUNCIL_WIDTH_M}
-                      max={MAX_COUNCIL_WIDTH_M}
-                      step={COUNCIL_WIDTH_STEP_M}
-                      value={activeAsset.widthMetres}
-                      onChange={(e) => setActiveWidth(Number(e.target.value))}
-                      className="w-full"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setActiveWidth(Math.min(MAX_COUNCIL_WIDTH_M, activeAsset.widthMetres + COUNCIL_WIDTH_STEP_M))}
-                      disabled={activeAsset.widthMetres >= MAX_COUNCIL_WIDTH_M}
-                      aria-label="Increase width"
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-ad-border text-ad-ink hover:bg-ad-border/20 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      +
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={finishActiveAsset}
-                    className={cn(buttonVariants({ variant: "primary", size: "sm" }), "mt-3 w-full")}
-                  >
-                    Finish this asset
-                  </button>
-                </div>
-              )}
-
-              {councilAssets.length > 0 && (
-                <ul className="mt-3 space-y-2">
-                  {councilAssets.map((asset, i) => (
-                    <li key={asset.id} className="flex items-center justify-between gap-2 text-sm text-ad-ink">
-                      <span>
-                        Asset {i + 1} — {asset.points.length} pts, {asset.widthMetres}m
-                        {asset.id === activeAssetId && <span className="text-ad-muted"> (active)</span>}
-                      </span>
-                      <span className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setActiveAssetId(asset.id)}
-                          disabled={asset.id === activeAssetId}
-                          className="text-xs text-ad-steel underline underline-offset-2 hover:text-ad-ink disabled:cursor-not-allowed disabled:no-underline disabled:opacity-40"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeAsset(asset.id)}
-                          className="text-xs text-ad-orange underline underline-offset-2 hover:text-ad-ink"
-                        >
-                          Remove
-                        </button>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {!activeAsset && councilAssets.length >= MAX_COUNCIL_ASSETS && (
-                <p className="mt-3 text-xs text-ad-orange">
-                  Max {MAX_COUNCIL_ASSETS} council assets — remove one to add another.
-                </p>
-              )}
+              <p className="text-sm font-medium text-ad-ink">Zoom</p>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setZoomAdjust((z) => Math.max(-3, z - 1))}
+                  disabled={zoomAdjust <= -3}
+                  aria-label="Zoom out"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-ad-border text-ad-ink hover:bg-ad-border/20 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  −
+                </button>
+                <input
+                  type="range"
+                  min={-3}
+                  max={3}
+                  step={1}
+                  value={zoomAdjust}
+                  onChange={(e) => setZoomAdjust(Number(e.target.value))}
+                  aria-label="Zoom"
+                  className="w-full"
+                />
+                <button
+                  type="button"
+                  onClick={() => setZoomAdjust((z) => Math.min(3, z + 1))}
+                  disabled={zoomAdjust >= 3}
+                  aria-label="Zoom in"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-ad-border text-ad-ink hover:bg-ad-border/20 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  +
+                </button>
+              </div>
             </div>
 
+            {/* Always rendered, unlike before — the project site row lives here, and a
+                property with no detected neighbours still needs it. */}
+            <div className="rounded-xl border border-ad-border bg-white p-4">
+              <p className="text-sm font-medium text-ad-ink">Detected lots</p>
+              <p className="mt-1 text-xs text-ad-muted">
+                Uncheck anything that shouldn&apos;t be included, then regenerate.
+              </p>
+              <ul className="mt-3 space-y-2">
+                <li className="flex items-center gap-2 text-sm text-ad-ink">
+                  <input
+                    type="checkbox"
+                    checked={!hideSubject}
+                    onChange={() => setHideSubject((h) => !h)}
+                    className="h-4 w-4 accent-ad-steel"
+                  />
+                  <span
+                    className="h-4 w-4 shrink-0 rounded-sm border border-black/10"
+                    style={{ backgroundColor: `#${SITE_RED}` }}
+                  />
+                  <span>Project site</span>
+                </li>
+                {result.neighbours.map((n) => (
+                  <li key={n.id} className="flex items-center gap-2 text-sm text-ad-ink">
+                    <input
+                      type="checkbox"
+                      checked={!excludedIds.has(n.id)}
+                      onChange={() => toggleNeighbour(n.id)}
+                      className="h-4 w-4 accent-ad-steel"
+                    />
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ad-orange text-xs font-semibold text-white">
+                      {n.label}
+                    </span>
+                    <span>Lot {n.label}{n.areaSqm ? ` — ${n.areaSqm} m²` : ""}</span>
+                  </li>
+                ))}
+              </ul>
+              {/* Lives here because it adds a row to the list above — the same
+                  relationship "+ Add shape" has to the shape list. Outline, not primary:
+                  it only arms a map click, and a black button beside Regenerate read as
+                  though it did the work itself. */}
+              <button
+                type="button"
+                onClick={() => {
+                  setPickMessage(null);
+                  setPicking((p) => !p);
+                }}
+                disabled={pickBusy}
+                aria-pressed={picking}
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "sm" }),
+                  "mt-3 w-full",
+                  picking && "border-ad-steel bg-ad-steel/10 text-ad-ink",
+                  pickBusy && "opacity-60"
+                )}
+              >
+                {pickBusy ? "Looking up…" : picking ? "Cancel" : "+ Add lot from map"}
+              </button>
+
+              {pickMessage && !picking && !pickBusy && (
+                <p className="mt-2 text-xs text-ad-orange">{pickMessage}</p>
+              )}
+            </div>
+            <ShapePanel shapes={shapes} />
+
+            {/* The one action that commits everything edited in this column — excluded
+                lots, zoom and custom shapes — into a fresh render. */}
             <button
-              className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full", regenerating && "opacity-60")}
-              onClick={regenerate}
+              className={cn(buttonVariants({ variant: "primary", size: "md" }), "w-full", regenerating && "opacity-60")}
+              onClick={() => regenerate()}
               disabled={regenerating}
             >
               {regenerating ? "Regenerating…" : "Regenerate"}

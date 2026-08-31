@@ -38,12 +38,17 @@ export function filterTrueNeighbours(
 /** Splits an envelope query's candidates into "the subject parcel" (containing the
  *  geocoded point) and its true neighbours. Returns null if there were no candidates at all. */
 export function identifySubjectAndNeighbours(point: LatLng, candidates: ParcelFeature[]): SubjectAndNeighbours | null {
-  if (candidates.length === 0) return null;
+  // Titled lots only. An envelope query also returns road reserves and easements (see
+  // ParcelKind), which are neither a plausible subject nor a neighbouring property — left
+  // in, every job picked up numbered "lots" carrying no lot number and no area, spending
+  // pin letters on the street out front.
+  const lots = candidates.filter((f) => f.kind === "lot");
+  if (lots.length === 0) return null;
 
   const flags: string[] = [];
-  let subject = candidates.find((f) => pointInRing(point, f.ring));
+  let subject = lots.find((f) => pointInRing(point, f.ring));
   if (!subject) {
-    subject = candidates.reduce((closest, f) =>
+    subject = lots.reduce((closest, f) =>
       centroidDistance(point, f.ring) < centroidDistance(point, closest.ring) ? f : closest
     );
     flags.push("subject parcel identified by nearest-centroid fallback — verify boundaries on site");
@@ -51,7 +56,7 @@ export function identifySubjectAndNeighbours(point: LatLng, candidates: ParcelFe
 
   const neighbours = filterTrueNeighbours(
     subject,
-    candidates.filter((f) => f !== subject)
+    lots.filter((f) => f !== subject)
   );
   return { subject, neighbours, flags };
 }

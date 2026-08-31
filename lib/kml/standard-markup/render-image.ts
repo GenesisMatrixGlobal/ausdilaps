@@ -7,25 +7,38 @@
 import sharp from "sharp";
 import type { LatLng } from "@/lib/kml/types";
 import { buildStaticMapUrl, GoogleMapsConfigError, IMAGE_SIZE, SCALE } from "@/lib/kml/site-markup/static-map";
-import { COMPASS_N_PATH, LEGEND_LABEL_PATHS } from "./overlay-paths";
-import { bufferLineToPolygon, simplifyRing } from "./geometry";
+import { COMPASS_N_PATH, LEGEND_LABEL_PATHS, LEGEND_LABEL_WIDTHS } from "./overlay-paths";
+import {
+  FILL_OPACITY_PERCENT,
+  NEIGHBOUR_FILL,
+  OUTLINE_WEIGHT,
+  SHAPE_COLORS,
+  SITE_RED,
+  SITE_STROKE_OPACITY_PERCENT,
+  STROKE_OPACITY_PERCENT,
+} from "./style";
+import { bufferLineToPolygon, centroidOf, closeRing, simplifyRing } from "./geometry";
+import { markerLabel } from "./labels";
 import type { StandardMarkupNeighbour } from "./resolve";
 
 export { GoogleMapsConfigError };
+export { markerLabel } from "./labels";
 
-const NEIGHBOUR_FILL = "1d4ed8"; // blue
-const NEIGHBOUR_FILL_OPACITY = 50;
-const NEIGHBOUR_STROKE_OPACITY = 90;
-const MARKER_COLOR = "e8642a"; // safety orange — matches the Site Markup preset
-const COUNCIL_ASSET_FILL_OPACITY = 50;
-const COUNCIL_ASSET_STROKE_OPACITY = 90;
-const SITE_RED = "ff0000";
-const SITE_FILL_OPACITY = 50;
-const SITE_STROKE_WEIGHT = 5;
+/** Safety orange — the neighbour pins and the legend's orange row, same value the
+ *  orange shape colour uses. */
+const MARKER_COLOR = SHAPE_COLORS.orange;
 
-export interface CouncilAssetInput {
+
+export interface MarkupShapeInput {
   points: LatLng[];
+  /** Ignored when `mode` is "area". */
   widthMetres: number;
+  /** "line" buffers the points into a ribbon `widthMetres` wide (a frontage, a footpath);
+   *  "area" closes them into the shape they trace and infills it (a nature strip, a
+   *  reserve, a building footprint). Both end up as ordinary entries in the same Static
+   *  Maps polygon list. */
+  mode: "line" | "area";
+  color: keyof typeof SHAPE_COLORS;
 }
 
 // Google Static Maps caps request URLs around 8192 chars. DCDB geometry can carry
@@ -35,12 +48,6 @@ const URL_LENGTH_BUDGET = 7800;
 const SIMPLIFY_TOLERANCE_M = 0.4;
 const SIMPLIFY_TOLERANCE_M_AGGRESSIVE = 1.5;
 const MAX_NEIGHBOURS = 12;
-
-/** Google Static Maps marker labels must be a single character — numbers 1-9, then
- *  letters, for the rare block with more than 9 neighbours. */
-export function markerLabel(index: number): string {
-  return index < 9 ? String(index + 1) : String.fromCharCode(65 + (index - 9));
-}
 
 export interface NumberedNeighbour extends StandardMarkupNeighbour {
   label: string;
@@ -53,12 +60,6 @@ export function numberNeighbours(neighbours: StandardMarkupNeighbour[]): Numbere
   return neighbours.map((n, i) => ({ ...n, label: markerLabel(i) }));
 }
 
-function centroidOf(ring: LatLng[]): LatLng {
-  const lat = ring.reduce((s, p) => s + p.lat, 0) / ring.length;
-  const lng = ring.reduce((s, p) => s + p.lng, 0) / ring.length;
-  return { lat, lng };
-}
-
 export interface RenderMapInput {
   subjectRing: LatLng[];
   /** All neighbours to consider — already numbered; `excludeIds` is applied here, not by the caller. */
@@ -69,22 +70,31 @@ export interface RenderMapInput {
   /** Drops the numbered neighbour pins — used for the client-facing download, which
    *  doesn't need staff's internal checklist reference numbers. */
   hideMarkers?: boolean;
-  /** User-drawn council-asset lines (click-to-place points + a width each) — a list, not
-   *  one, since a property can need two disconnected assets (e.g. a front road frontage
-   *  and an unrelated rear laneway). */
-  councilAssets?: CouncilAssetInput[];
+  /** Drops the cadastre-derived red project-site boundary. The ring is still used to
+   *  anchor the frame, so hiding it never moves the photo. */
+  hideSubject?: boolean;
+  /** Pins the frame to one captured from an earlier render, so nothing the operator does
+   *  to the geometry re-frames the photo. Omit on the first render to fit to the geometry. */
+  frame?: { center: LatLng; fitZoom: number };
+  /** User-drawn shapes (click-to-place points, each a line or an area) — a list, not one,
+   *  since a property can need several unrelated ones (e.g. a front road frontage and an
+   *  adjacent building). */
+  shapes?: MarkupShapeInput[];
 }
 
 export interface RenderMapResult {
   imageBase64: string;
   flags: string[];
   /** Projection parameters for the image just rendered — the client needs these to
-   *  convert a click on the displayed image into a real lat/lng for council-asset
+   *  convert a click on the displayed image into a real lat/lng for custom-shape
    *  point placement. */
   center: LatLng;
   zoom: number;
   imageSizePx: number;
   scale: number;
+  /** The frame's zoom before `zoomAdjust` — the client captures this once and sends it
+   *  back to pin the frame on every later render. */
+  fitZoom: number;
 }
 
 function buildMap(
@@ -95,8 +105,10 @@ function buildMap(
   tolerance: number,
   neighbourCap: number,
   hideMarkers: boolean,
-  councilAssets: CouncilAssetInput[]
-): { url: string; center: LatLng; zoom: number; omittedNeighbours: number } {
+  hideSubject: boolean,
+  shapes: MarkupShapeInput[],
+  frame: { center: LatLng; fitZoom: number } | undefined
+): { url: string; center: LatLng; zoom: number; fitZoom: number; omittedNeighbours: number } {
   const subjectCentroid = centroidOf(subjectRing);
   const kept =
     neighbours.length > neighbourCap
@@ -109,51 +121,77 @@ function buildMap(
           .slice(0, neighbourCap)
       : neighbours;
 
-  const councilPolygons = councilAssets
-    .filter((a) => a.points.length >= 2)
-    .map((a) => bufferLineToPolygon(a.points, a.widthMetres));
+  // An area needs 3 points to enclose anything; a line needs 2 to have a direction to
+  // buffer perpendicular to. Anything short of that yields an empty ring and is dropped,
+  // so a half-drawn shape simply doesn't render rather than erroring the whole map.
+  const shapePolygons = shapes
+    .map((sh) => ({
+      ring:
+        sh.mode === "area"
+          ? sh.points.length >= 3
+            ? closeRing(sh.points)
+            : []
+          : bufferLineToPolygon(sh.points, sh.widthMetres),
+      color: SHAPE_COLORS[sh.color] ?? MARKER_COLOR,
+    }))
+    .filter((p) => p.ring.length >= 3);
 
-  const { url, center, zoom } = buildStaticMapUrl({
+  const { url, center, zoom, fitZoom } = buildStaticMapUrl({
     ways: [],
+    frame,
     color: NEIGHBOUR_FILL,
-    opacityPercent: NEIGHBOUR_FILL_OPACITY,
+    opacityPercent: FILL_OPACITY_PERCENT,
     mapType,
     zoomAdjust,
+    // Always the frame's anchor, drawn or not. The subject ring is what centres the map
+    // on the actual address and gives it something to fit when a property has no true
+    // neighbours — so it has to keep doing that even when the operator has unticked it to
+    // redraw the boundary by hand. Passing it here rather than relying on it being in
+    // `polygons` is what makes the frame identical either way.
+    boundsAnchor: subjectRing,
     polygons: [
       // The subject property — red-lined per the standard building-inspection site
-      // marking convention. Its ring also anchors the frame's bounds, both so the map
-      // is centred sensibly on the actual address and so there's still something to
-      // fit/render when a property genuinely has zero true neighbours.
-      {
-        ring: simplifyRing(subjectRing, tolerance),
-        fillColor: SITE_RED,
-        fillOpacityPercent: SITE_FILL_OPACITY,
-        strokeColor: SITE_RED,
-        strokeOpacityPercent: 100,
-        strokeWeight: SITE_STROKE_WEIGHT,
-      },
+      // marking convention.
+      ...(hideSubject
+        ? []
+        : [
+            {
+              ring: simplifyRing(subjectRing, tolerance),
+              fillColor: SITE_RED,
+              fillOpacityPercent: FILL_OPACITY_PERCENT,
+              strokeColor: SITE_RED,
+              strokeOpacityPercent: SITE_STROKE_OPACITY_PERCENT,
+              strokeWeight: OUTLINE_WEIGHT,
+            },
+          ]),
       ...kept.map((n) => ({
         ring: simplifyRing(n.ring, tolerance),
         fillColor: NEIGHBOUR_FILL,
-        fillOpacityPercent: NEIGHBOUR_FILL_OPACITY,
+        fillOpacityPercent: FILL_OPACITY_PERCENT,
         strokeColor: NEIGHBOUR_FILL,
-        strokeOpacityPercent: NEIGHBOUR_STROKE_OPACITY,
+        strokeOpacityPercent: STROKE_OPACITY_PERCENT,
+        strokeWeight: OUTLINE_WEIGHT,
       })),
-      ...councilPolygons.map((ring) => ({
+      ...shapePolygons.map(({ ring, color }) => ({
         ring,
-        fillColor: MARKER_COLOR,
-        fillOpacityPercent: COUNCIL_ASSET_FILL_OPACITY,
-        strokeColor: MARKER_COLOR,
-        strokeOpacityPercent: COUNCIL_ASSET_STROKE_OPACITY,
+        fillColor: color,
+        fillOpacityPercent: FILL_OPACITY_PERCENT,
+        strokeColor: color,
+        strokeOpacityPercent: STROKE_OPACITY_PERCENT,
+        strokeWeight: OUTLINE_WEIGHT,
       })),
     ],
+    // Both callers now pass hideMarkers: the client-facing export never wanted staff's
+    // reference numbers, and the on-screen preview draws its own bubbles in the overlay
+    // so they sit above the shapes instead of under them. Kept as the switch rather than
+    // deleted, so the server can still draw them if that's ever wanted again.
     markers: hideMarkers ? [] : kept.map((n) => ({ point: centroidOf(n.ring), label: n.label, color: MARKER_COLOR })),
     // Hides business/POI pins (cafes, shops, parks) — noise for a site markup. Roads,
     // street names, and address-number labels are a different feature class, unaffected.
     styles: ["feature:poi|visibility:off"],
   });
 
-  return { url, center, zoom, omittedNeighbours: neighbours.length - kept.length };
+  return { url, center, zoom, fitZoom, omittedNeighbours: neighbours.length - kept.length };
 }
 
 const COMPASS_BLUE = "46688a"; // ad-steel — the AusDilaps brand accent
@@ -164,17 +202,21 @@ const COMPASS_BLUE = "46688a"; // ad-steel — the AusDilaps brand accent
 function legendSvg(): string {
   const x = 20;
   const y = 20;
-  const width = 236;
   const height = 106;
   const rows: [string, string][] = [
     [SITE_RED, "Project Site"],
     [NEIGHBOUR_FILL, "Neighbouring Assets"],
-    [MARKER_COLOR, "Council Assets"],
+    [MARKER_COLOR, "Council / External Assets"],
   ];
+  // Sized from the generated glyph widths rather than a hardcoded number, so changing the
+  // legend copy can never silently clip it — 236px was already only 5px clear of
+  // "Council / External Assets".
+  const PAD = 16;
+  const width = PAD * 2 + Math.max(...rows.map(([, label]) => LEGEND_LABEL_WIDTHS[label] ?? 0));
   const lines = rows
     .map(
       ([color, label], i) =>
-        `<path transform="translate(${x + 16}, ${y + 34 + i * 30})" d="${LEGEND_LABEL_PATHS[label]}" fill="#${color}" />`
+        `<path transform="translate(${x + PAD}, ${y + 34 + i * 30})" d="${LEGEND_LABEL_PATHS[label]}" fill="#${color}" />`
     )
     .join("\n    ");
   return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="10" fill="white" fill-opacity="0.9" stroke="#cccccc" stroke-width="1.5" />
@@ -210,7 +252,8 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
   const visible = input.neighbours.filter((n) => !excluded.has(n.id));
 
   const hideMarkers = input.hideMarkers ?? false;
-  const councilAssets = input.councilAssets ?? [];
+  const hideSubject = input.hideSubject ?? false;
+  const shapes = input.shapes ?? [];
   const flags: string[] = [];
   let built = buildMap(
     input.subjectRing,
@@ -220,7 +263,9 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
     SIMPLIFY_TOLERANCE_M,
     MAX_NEIGHBOURS,
     hideMarkers,
-    councilAssets
+    hideSubject,
+    shapes,
+    input.frame
   );
   if (built.url.length > URL_LENGTH_BUDGET) {
     built = buildMap(
@@ -231,7 +276,9 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
       SIMPLIFY_TOLERANCE_M_AGGRESSIVE,
       Math.min(MAX_NEIGHBOURS, 8),
       hideMarkers,
-      councilAssets
+      hideSubject,
+      shapes,
+      input.frame
     );
   }
   if (built.omittedNeighbours > 0) {
@@ -255,5 +302,6 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
     zoom: built.zoom,
     imageSizePx: IMAGE_SIZE,
     scale: SCALE,
+    fitZoom: built.fitZoom,
   };
 }

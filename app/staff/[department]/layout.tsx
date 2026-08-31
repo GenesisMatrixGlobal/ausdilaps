@@ -41,12 +41,14 @@ export default async function DepartmentLayout({
   return (
     <>
       <div className="border-b border-ad-border bg-white">
-        <Container className="py-7">
+        {/* One row: the label and the pane toggle. The department blurb used to sit
+            between them, but by the time you're inside a department you already know
+            what it is — it still introduces each one on the /staff picker, which is
+            where choosing actually happens. flex-wrap so a narrow screen drops the
+            toggle below the title instead of crushing it. */}
+        <Container className="flex flex-wrap items-center justify-between gap-3 py-5">
           <h1 className="text-2xl font-semibold text-ad-ink sm:text-3xl">{dept.label}</h1>
-          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ad-muted">{dept.blurb}</p>
-          <div className="mt-5">
-            <DepartmentTabs department={department} />
-          </div>
+          <DepartmentTabs department={department} />
         </Container>
       </div>
 

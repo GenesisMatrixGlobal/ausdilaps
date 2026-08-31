@@ -12,7 +12,10 @@ const PARCEL_URL = "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest
 const ENVELOPE_HALF_WIDTH_M = 60;
 
 interface ParcelResp {
-  features?: { attributes?: { parcel_spi?: string; Shape__Area?: number }; geometry?: { rings?: number[][][] } }[];
+  features?: {
+    attributes?: { parcel_spi?: string; Shape__Area?: number; parcel_road?: string };
+    geometry?: { rings?: number[][][] };
+  }[];
 }
 
 // Same generous timeout as lib/property-sizing/vic.ts — VIC's ArcGIS Online hosted
@@ -53,7 +56,17 @@ export async function fetchParcelsVic(addr: {
   if (geo.status !== "ok") return null;
   const { x, y, matchedAddress } = geo;
 
-  const env = envelopeAroundPoint(x, y, ENVELOPE_HALF_WIDTH_M);
+  return { point: { lat: y, lng: x }, matchedAddress, matchScore: null, candidates: await fetchParcelsNearPointVic(x, y) };
+}
+
+/** The envelope query on its own, with no geocoding — shared by the address pipeline
+ *  above and by the click-a-lot lookup in ../parcel-at-point.ts. */
+export async function fetchParcelsNearPointVic(
+  lng: number,
+  lat: number,
+  halfWidthM: number = ENVELOPE_HALF_WIDTH_M
+): Promise<ParcelFeature[]> {
+  const env = envelopeAroundPoint(lng, lat, halfWidthM);
   const parcelStart = Date.now();
   let p: ParcelResp;
   try {
@@ -64,7 +77,7 @@ export async function fetchParcelsVic(addr: {
         geometryType: "esriGeometryEnvelope",
         inSR: "4326",
         spatialRel: "esriSpatialRelIntersects",
-        outFields: "parcel_spi,Shape__Area",
+        outFields: "parcel_spi,Shape__Area,parcel_road",
         returnGeometry: "true",
         outSR: "4326",
         f: "json",
@@ -74,13 +87,14 @@ export async function fetchParcelsVic(addr: {
     throw new Error(`VIC parcel query ${describeFetchError(e, Date.now() - parcelStart)}`);
   }
 
-  const candidates: ParcelFeature[] = (p.features ?? [])
+  return (p.features ?? [])
     .map((f) => ({
       ring: outerRingToLatLng(f.geometry?.rings),
       idKey: String(f.attributes?.parcel_spi?.replace(/\\/g, "/") ?? ""),
       areaSqm: typeof f.attributes?.Shape__Area === "number" ? Math.round(f.attributes.Shape__Area) : null,
+      // Vicmap's own road flag. VIC has no easement/"other" equivalent to QLD's unlinked
+      // parcels, so everything not flagged as road is a lot.
+      kind: f.attributes?.parcel_road === "Y" ? ("road" as const) : ("lot" as const),
     }))
     .filter((f) => f.ring.length >= 3);
-
-  return { point: { lat: y, lng: x }, matchedAddress, matchScore: null, candidates };
 }

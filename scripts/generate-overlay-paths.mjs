@@ -23,7 +23,7 @@ const OUT_PATH = "lib/kml/standard-markup/overlay-paths.ts";
 const LEGEND_FONT_SIZE = 18;
 const COMPASS_FONT_SIZE = 20;
 
-const LEGEND_LABELS = ["Project Site", "Neighbouring Assets", "Council Assets"];
+const LEGEND_LABELS = ["Project Site", "Neighbouring Assets", "Council / External Assets"];
 const COMPASS_LABEL = "N";
 
 const font = opentype.parse(
@@ -49,6 +49,14 @@ const legendEntries = LEGEND_LABELS.map(
   (label) => `  ${JSON.stringify(label)}: ${JSON.stringify(baselinePath(label, LEGEND_FONT_SIZE))},`
 ).join("\n");
 
+// Emitted alongside the geometry so the legend panel can size itself to its longest
+// label. Without it the box width is a magic number that silently clips the next time
+// the copy changes — which is exactly what "Council Assets" -> "Council / External
+// Assets" would have done.
+const legendWidths = LEGEND_LABELS.map(
+  (label) => `  ${JSON.stringify(label)}: ${font.getAdvanceWidth(label, LEGEND_FONT_SIZE).toFixed(2)},`
+).join("\n");
+
 const out = `// GENERATED FILE — do not edit by hand.
 // Regenerate with: node scripts/generate-overlay-paths.mjs
 //
@@ -59,6 +67,11 @@ const out = `// GENERATED FILE — do not edit by hand.
 /** Legend labels, left-aligned with the baseline on the origin. */
 export const LEGEND_LABEL_PATHS: Record<string, string> = {
 ${legendEntries}
+};
+
+/** Rendered advance width of each label, in the same px units as the paths above. */
+export const LEGEND_LABEL_WIDTHS: Record<string, number> = {
+${legendWidths}
 };
 
 /** The compass "N", centred on the origin both axes. */

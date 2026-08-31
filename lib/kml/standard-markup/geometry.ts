@@ -53,6 +53,15 @@ export function closeRing(ring: LatLng[]): LatLng[] {
   return first.lat === last.lat && first.lng === last.lng ? ring : [...ring, first];
 }
 
+/** Average of a ring's vertices. Good enough to hang a map pin on for the convex-ish
+ *  parcels a cadastre returns — not a true area centroid. */
+export function centroidOf(ring: LatLng[]): LatLng {
+  return {
+    lat: ring.reduce((s, p) => s + p.lat, 0) / ring.length,
+    lng: ring.reduce((s, p) => s + p.lng, 0) / ring.length,
+  };
+}
+
 /** Ray-casting point-in-polygon (lat/lng treated as planar — fine at parcel scale). */
 export function pointInRing(point: LatLng, ring: LatLng[]): boolean {
   let inside = false;
@@ -111,14 +120,32 @@ function segmentNormal(a: LocalMetres, b: LocalMetres): LocalMetres {
   return { east: -dy / len, north: dx / len };
 }
 
+/** SVG's default `stroke-miterlimit`. Past this ratio a join bevels instead of mitring,
+ *  so a near-reversal can't throw a spike thousands of metres long. */
+const MITRE_LIMIT = 4;
+
 /**
- * Buffers a user-drawn polyline (2-10 points, e.g. a council-asset frontage) into a
- * ribbon polygon `widthMetres` wide. Each point is offset perpendicular to its
- * segment(s) — the two ends use their single segment's normal, interior points use the
- * average of their two adjacent segment normals (a simple mitre join). That average
- * isn't length-corrected for the joint angle, so a sharp bend renders very slightly
- * narrower right at the corner — an acceptable simplification for an indicative site
- * marking, not worth full mitre/bevel join geometry.
+ * Buffers a user-drawn polyline into a ribbon `widthMetres` wide, centred on the line —
+ * the clicked points run down the MIDDLE of the result, half the width to either side.
+ * (Area shapes are the opposite: there the clicked points are the boundary itself. See
+ * `closeRing`, which is all an area needs.)
+ *
+ * Each join offsets along the bisector `m = normalize(n1 + n2)` for a length of
+ * `halfWidth / (m · n1)` — that dot product is `cos(θ/2)`, so the offset is
+ * `halfWidth / cos(θ/2)`. The mitre point is where the two segments' offset lines
+ * actually meet, which is the ribbon's true boundary through a corner.
+ *
+ * The previous implementation normalised the bisector to unit length and offset by the
+ * plain half width — the same construction MISSING the `1 / cos(θ/2)` correction — so
+ * every corner was dragged back toward the centreline. Measured on a 20m ribbon: 72% of
+ * full width at a 90° turn, 52% at 120°, 29% at 150°. That was the reported inward pinch,
+ * not the "very slight" narrowing the old comment claimed. With the correction the
+ * ribbon holds its full width through any turn.
+ *
+ * Bevels (both offset points, each `halfWidth` off its own segment) are the fallback for
+ * the two cases where no usable mitre exists: an exact reversal, where there is no
+ * bisector at all, and a turn sharper than `MITRE_LIMIT`, where the mitre would throw a
+ * spike thousands of metres long.
  */
 export function bufferLineToPolygon(points: LatLng[], widthMetres: number): LatLng[] {
   if (points.length < 2) return [];
@@ -126,30 +153,56 @@ export function bufferLineToPolygon(points: LatLng[], widthMetres: number): LatL
   const local = points.map((p) => projectToLocalMetres(origin, p));
   const halfWidth = widthMetres / 2;
 
-  const segmentNormals: LocalMetres[] = [];
+  const normals: LocalMetres[] = [];
   for (let i = 0; i < local.length - 1; i++) {
-    segmentNormals.push(segmentNormal(local[i], local[i + 1]));
+    normals.push(segmentNormal(local[i], local[i + 1]));
   }
 
-  function pointNormal(i: number): LocalMetres {
-    if (i === 0) return segmentNormals[0];
-    if (i === local.length - 1) return segmentNormals[segmentNormals.length - 1];
-    const n1 = segmentNormals[i - 1];
-    const n2 = segmentNormals[i];
-    const avg = { east: n1.east + n2.east, north: n1.north + n2.north };
-    const len = Math.hypot(avg.east, avg.north) || 1;
-    return { east: avg.east / len, north: avg.north / len };
+  /** One side of the ribbon. `s` is +1 for the normal's side, -1 for the other. */
+  function edge(s: 1 | -1): LocalMetres[] {
+    const offsetBy = (p: LocalMetres, n: LocalMetres, distance: number): LocalMetres => ({
+      east: p.east + s * n.east * distance,
+      north: p.north + s * n.north * distance,
+    });
+
+    const out: LocalMetres[] = [];
+    for (let i = 0; i < local.length; i++) {
+      const p = local[i];
+      if (i === 0) {
+        out.push(offsetBy(p, normals[0], halfWidth));
+        continue;
+      }
+      if (i === local.length - 1) {
+        out.push(offsetBy(p, normals[normals.length - 1], halfWidth));
+        continue;
+      }
+
+      const n1 = normals[i - 1];
+      const n2 = normals[i];
+      const bevel = () => {
+        out.push(offsetBy(p, n1, halfWidth));
+        out.push(offsetBy(p, n2, halfWidth));
+      };
+
+      const sum = { east: n1.east + n2.east, north: n1.north + n2.north };
+      const sumLen = Math.hypot(sum.east, sum.north);
+      if (sumLen < 1e-9) {
+        bevel();
+        continue;
+      }
+
+      const m = { east: sum.east / sumLen, north: sum.north / sumLen };
+      const cosHalf = m.east * n1.east + m.north * n1.north;
+      if (cosHalf <= 0 || 1 / cosHalf > MITRE_LIMIT) {
+        bevel();
+        continue;
+      }
+      out.push(offsetBy(p, m, halfWidth / cosHalf));
+    }
+    return out;
   }
 
-  const left: LocalMetres[] = [];
-  const right: LocalMetres[] = [];
-  for (let i = 0; i < local.length; i++) {
-    const n = pointNormal(i);
-    left.push({ east: local[i].east + n.east * halfWidth, north: local[i].north + n.north * halfWidth });
-    right.push({ east: local[i].east - n.east * halfWidth, north: local[i].north - n.north * halfWidth });
-  }
-
-  const ring = [...left, ...right.reverse()].map((p) => unprojectFromLocalMetres(origin, p));
+  const ring = [...edge(1), ...edge(-1).reverse()].map((p) => unprojectFromLocalMetres(origin, p));
   return closeRing(ring);
 }
 

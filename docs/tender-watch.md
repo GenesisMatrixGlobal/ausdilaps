@@ -92,23 +92,30 @@ Five mornings of that comparison is worth more than any amount of design review,
 
 **Built.** `lib/tenders/sources/mailbox.ts`, with the routing table in `lib/tenders/senders.ts`.
 
-One mailbox, one source per portal. Graph's `$filter` cannot match a sender by domain
-suffix — portals send from `noreply@`, `alerts@`, and whatever else they pick — so senders
-are routed in our own code and the mailbox is fetched **once per run**, shared by every
-source. Each source still keeps its own run row, raw payload and gone-quiet counter, which
-is what keeps "buy.nsw has produced nothing for 5 runs" answerable.
+**Sources are discovered, not listed.** Every sender domain in the mailbox gets its own
+row in `tender_sources` the first night it emails — slug `email:<domain>`. No code change,
+no migration. `discoverMailboxSources()` runs *before* the source list is built, because a
+domain with no row would otherwise never be fetched at all.
 
-**`direct-invite` is the catch-all.** Anything from a sender no named source claims lands
-there rather than being dropped. That is what makes adding portals safe: a new one starts
-appearing the day it first emails, badged as a direct invite, and promoting it to its own
-source later is one entry in `MAILBOX_SOURCES`.
+Graph's `$filter` cannot match a sender by domain suffix — portals send from `noreply@`,
+`alerts@`, whatever they pick — so routing happens in our code and the mailbox is fetched
+**once per run**, shared by every source. Each source still keeps its own run row, raw
+payload and gone-quiet counter.
 
-Source rows are seeded from the code registry by `ensureSourceRows()` at the top of each
-scan, so adding a portal no longer needs a migration.
+Two defaults carry the design, and both are the opposite of the obvious choice:
 
-`npm run check:tenders` pins the digest parsers against synthetic messages. Add a real
-sample there when a portal changes format — it caught a dedupe-key collision that silently
-swallowed every buy.nsw tender sharing a year.
+| | Default | Why |
+|---|---|---|
+| `alert_on_quiet` | **false** | Every direct client invitation is also a source. `summary.ts` marks anything `critical` after 5 empty runs, so alarms-on would paint the dashboard red inside a month and bury the portal that actually stopped sending. Turn it on per source in the dashboard. **Failures are never opt-in.** |
+| `parse_mode` | **auto, leaning digest** | A 30-tender digest read as one email loses 29 silently. A single read as a digest makes a little junk the classifier rejects. The zero-link fallback in `parseDigest()` turns a misread single back into one item, which is what makes the bias safe — don't remove it. |
+
+Trust is per row too (`is_trusted`), seeded from `TENDER_TRUSTED_SENDER_DOMAINS` at
+discovery and toggled in the dashboard. New domains start unverified: badged in the UI, and
+out of the digest until `TENDER_FORWARD_UNTRUSTED` says otherwise.
+
+`npm run check:tenders` pins the parsers with no env or network. `npm run check:sources`
+checks the discovery and alarm behaviour against the real database. The first caught a
+dedupe-key collision that silently swallowed every buy.nsw tender sharing a year.
 
 Polling via Graph rather than auto-forwarding, because M365 blocks external auto-forwarding by default, the requirement is a daily scan (so a webhook's real-time advantage is moot), and polling means no email vendor and no public endpoint to secure.
 

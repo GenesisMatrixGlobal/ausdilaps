@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { STALLED_RUN_MS, forwardingEnabled } from "./config";
 import { SOURCES } from "./sources";
+import { mailboxConfigured } from "./sources/mailbox";
 
 /**
  * Everything the Tender Watch UI renders, in one query set.
@@ -60,6 +61,13 @@ type SourceView = {
   dailyAverage: number;
   health: "healthy" | "quiet" | "critical" | "failing";
   lastError: string | null;
+  /** Created by discovery from a sender domain, rather than listed in code. */
+  autoDiscovered: boolean;
+  /** Opt-in to the gone-quiet alarm. Off by default — see the note on `health` above. */
+  alertOnQuiet: boolean;
+  isTrusted: boolean;
+  parseMode: string;
+  senderDomain: string | null;
 };
 
 type ItemView = {
@@ -167,6 +175,8 @@ async function query(isAdmin: boolean) {
     const empty = (s.consecutive_empty as number) ?? 0;
     const failures = (s.consecutive_failures as number) ?? 0;
     const definition = SOURCES.find((d) => d.slug === slug);
+    const isEmail = (s.kind as string) === "email";
+    const alertOnQuiet = (s.alert_on_quiet as boolean) ?? false;
     const sourceRuns = recent.filter((r) => r.source_slug === slug);
     const avg = sourceRuns.length
       ? sourceRuns.reduce((n, r) => n + ((r.items_fetched as number) ?? 0), 0) / sourceRuns.length
@@ -179,18 +189,35 @@ async function query(isAdmin: boolean) {
       isEnabled: s.is_enabled as boolean,
       // An unconfigured source reads as "off", not "broken" — an important distinction on
       // a dashboard whose whole job is making real failure obvious.
-      configured: definition ? definition.configured() : false,
+      //
+      // Email sources are discovered, so they are not in the code registry at all. Falling
+      // through to `false` would have rendered every one of them permanently "not
+      // configured" — present, greyed out, and apparently doing nothing.
+      configured: isEmail ? mailboxConfigured() : definition ? definition.configured() : false,
       lastSuccessAt: (s.last_success_at as string | null) ?? null,
       lastItemAt: (s.last_item_at as string | null) ?? null,
       consecutiveEmpty: empty,
       consecutiveFailures: failures,
       itemsLastRun: (latestBySource.get(slug)?.items_fetched as number) ?? 0,
       dailyAverage: Math.round(avg * 10) / 10,
-      health: (failures > 0 ? "failing" : empty >= 5 ? "critical" : empty >= 3 ? "quiet" : "healthy") as
-        | "healthy"
-        | "quiet"
-        | "critical"
-        | "failing",
+      autoDiscovered: (s.auto_discovered as boolean) ?? false,
+      alertOnQuiet,
+      isTrusted: (s.is_trusted as boolean) ?? false,
+      parseMode: (s.parse_mode as string) ?? "auto",
+      senderDomain: (s.sender_domain as string | null) ?? null,
+      // A source only goes quiet/critical if someone asked to be told. Every direct client
+      // invitation is also a source now, and a client who emailed once in March is not a
+      // fault — without this the dashboard would be mostly red inside a month and the
+      // alarm that exists to catch buy.nsw dropping us would be the thing nobody reads.
+      //
+      // Failures are NOT opt-in: a source that errored is broken whoever owns it.
+      health: (failures > 0
+        ? "failing"
+        : alertOnQuiet && empty >= 5
+          ? "critical"
+          : alertOnQuiet && empty >= 3
+            ? "quiet"
+            : "healthy") as "healthy" | "quiet" | "critical" | "failing",
       lastError: isAdmin ? ((s.last_error as string | null) ?? null) : null,
     };
   });

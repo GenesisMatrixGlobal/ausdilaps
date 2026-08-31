@@ -1,11 +1,5 @@
 import { fetchFeed } from "./sources/feed";
-import { fetchMailboxSource, mailboxConfigured } from "./sources/mailbox";
-import { MAILBOX_SOURCES } from "./senders";
 import type { SourceDefinition } from "./types";
-
-// Re-exported so existing importers keep working after these moved to ./senders to break
-// an import cycle with ./sources/mailbox.
-export { trustedSenderDomains, isTrustedSender } from "./senders";
 
 /**
  * The source registry — mirrors the shape of lib/tools/registry.ts.
@@ -33,24 +27,17 @@ export const SOURCES: SourceDefinition[] = [
     fetch: async () =>
       fetchFeed(process.env.TENDER_AUSTENDER_FEED_URL as string, "austender-atm"),
   },
-
-  // One mailbox, one source per portal that writes to it. They share a single Graph fetch
-  // per run (see sources/mailbox.ts) but keep separate runs, raw payloads and gone-quiet
-  // counters — which is what makes "buy.nsw has produced nothing for 5 runs" answerable.
-  //
-  // All of them turn on together, because they are all the same mailbox: either Graph is
-  // configured or none of them can run.
-  ...MAILBOX_SOURCES.map(
-    (source): SourceDefinition => ({
-      slug: source.slug,
-      label: source.label,
-      kind: "email",
-      configured: mailboxConfigured,
-      fetch: (since: string) => fetchMailboxSource(source, since),
-    })
-  ),
 ];
 
+/**
+ * The code-owned sources. RSS only.
+ *
+ * Email sources are NOT here — they are discovered from sender domains and read from
+ * tender_sources at scan time (see sources/mailbox.ts). The SSRF argument above is why the
+ * two are treated differently: a feed URL from the database could redirect a server-side
+ * fetch at an internal host, whereas a discovered domain only filters mail we already
+ * hold. Nothing is fetched from it.
+ */
 export function enabledSources(): SourceDefinition[] {
   return SOURCES.filter((s) => s.configured());
 }

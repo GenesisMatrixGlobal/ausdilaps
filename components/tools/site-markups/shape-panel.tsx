@@ -13,6 +13,9 @@ import {
   type ShapeMode,
   type ShapeColor,
   type ShapesState,
+  measureShape,
+  formatArea,
+  formatLength,
 } from "./shapes";
 
 const MODES: { key: ShapeMode; label: string; hint: string }[] = [
@@ -31,7 +34,24 @@ const COLORS: { key: ShapeColor; label: string; swatch: string; hint: string }[]
 function summarise(shape: ShapeDraft): string {
   const form = shape.mode === "area" ? "Area" : `Line, ${shape.widthMetres}m`;
   const colour = shape.color[0].toUpperCase() + shape.color.slice(1);
-  return `${form} · ${colour} · ${shape.points.length} ${shape.points.length === 1 ? "point" : "points"}`;
+  const m = measureShape(shape);
+  const size = m.areaSqm > 0 ? ` · ${formatArea(m.areaSqm)}` : "";
+  return `${form} · ${colour} · ${shape.points.length} ${shape.points.length === 1 ? "point" : "points"}${size}`;
+}
+
+/** The measurement strip on an expanded row. Recomputed on every render, so it tracks a
+ *  drag live rather than waiting for a re-render of the map. */
+function Measurement({ shape }: { shape: ShapeDraft }) {
+  const m = measureShape(shape);
+  if (m.areaSqm <= 0) return null;
+  return (
+    <div className="mt-3 flex items-baseline gap-3 rounded-lg bg-ad-surface px-3 py-2">
+      <span className="text-sm font-semibold text-ad-ink">{formatArea(m.areaSqm)}</span>
+      {m.lengthMetres !== null && (
+        <span className="text-xs text-ad-muted">{formatLength(m.lengthMetres)} long</span>
+      )}
+    </div>
+  );
 }
 
 function StepperRow({
@@ -224,6 +244,8 @@ export function ShapePanel({ shapes }: { shapes: ShapesState }) {
                         </button>
                       </span>
                     </div>
+
+                    <Measurement shape={shape} />
 
                     {short && (
                       <p className="mt-2 text-xs text-ad-orange">

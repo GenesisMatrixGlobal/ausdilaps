@@ -98,6 +98,22 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
     setData(json as TenderSummary);
   }
 
+  /** Operator toggles on a discovered source. Admin-only server-side. */
+  async function updateSource(slug: string, changes: Record<string, unknown>) {
+    setError(null);
+    const res = await fetch("/api/tenders/sources", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ slug, ...changes }),
+    });
+    const json = (await res.json()) as { ok: boolean; error?: string } & Partial<TenderSummary>;
+    if (!res.ok || !json.ok) {
+      setError(json.error ?? "Couldn't update that source.");
+      return;
+    }
+    setData(json as TenderSummary);
+  }
+
   async function runScan() {
     setScanning(true);
     setError(null);
@@ -221,7 +237,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
         </p>
       )}
 
-      <SourceHealth sources={data.sources} now={now} />
+      <SourceHealth sources={data.sources} now={now} isAdmin={data.isAdmin} onUpdate={updateSource} />
 
       <section className="mt-8">
         <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-3">
@@ -270,15 +286,40 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
 }
 
 /** The panel that catches a portal quietly dropping us off its alert list. */
-function SourceHealth({ sources, now }: { sources: Source[]; now: number }) {
+function SourceHealth({
+  sources,
+  now,
+  isAdmin,
+  onUpdate,
+}: {
+  sources: Source[];
+  now: number;
+  isAdmin: boolean;
+  onUpdate: (slug: string, changes: Record<string, unknown>) => Promise<void>;
+}) {
+  // Sources are discovered per sender domain, so this list is a handful of real portals
+  // followed by a long tail of one-off client invitations. Sort by how much each actually
+  // sends, or the portals get buried under people who emailed once.
+  const ordered = [...sources].sort(
+    (a, b) =>
+      Number(b.alertOnQuiet) - Number(a.alertOnQuiet) ||
+      b.dailyAverage - a.dailyAverage ||
+      b.itemsLastRun - a.itemsLastRun ||
+      a.label.localeCompare(b.label)
+  );
+
   return (
     <section className="mt-8">
       <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-3">
         <h3 className="text-sm font-semibold text-ad-ink">Source health</h3>
-        <p className="text-xs text-ad-muted">A source can go quiet without ever erroring — that&rsquo;s what this catches.</p>
+        <p className="text-xs text-ad-muted">
+          {isAdmin
+            ? "Sources appear on their own the first time a domain emails. Alerts are opt-in."
+            : "A source can go quiet without ever erroring — that\u2019s what this catches."}
+        </p>
       </div>
       <div className="overflow-hidden rounded-xl border border-ad-border">
-        {sources.map((s) => (
+        {ordered.map((s) => (
           <div
             key={s.slug}
             className={cn(
@@ -306,11 +347,66 @@ function SourceHealth({ sources, now }: { sources: Source[]; now: number }) {
             ) : (
               <Pill tone="warn">{s.consecutiveEmpty} empty runs</Pill>
             )}
+            {isAdmin && s.kind === "email" && (
+              <div className="flex shrink-0 gap-1.5">
+                <Toggle
+                  on={s.alertOnQuiet}
+                  onClick={() => void onUpdate(s.slug, { alertOnQuiet: !s.alertOnQuiet })}
+                  title={
+                    s.alertOnQuiet
+                      ? "You'll be told if this source stops sending."
+                      : "No alert if this goes quiet — right for one-off senders, turn it on for a real portal."
+                  }
+                >
+                  Alert
+                </Toggle>
+                <Toggle
+                  on={s.isTrusted}
+                  onClick={() => void onUpdate(s.slug, { isTrusted: !s.isTrusted })}
+                  title={
+                    s.isTrusted
+                      ? "Mail from this domain is treated as genuine."
+                      : "Unverified: items are badged, and stay out of the digest unless TENDER_FORWARD_UNTRUSTED is on."
+                  }
+                >
+                  Trusted
+                </Toggle>
+              </div>
+            )}
             {s.lastError && <p className="w-full text-xs text-ad-orange">{s.lastError}</p>}
           </div>
         ))}
       </div>
     </section>
+  );
+}
+
+function Toggle({
+  on,
+  onClick,
+  title,
+  children,
+}: {
+  on: boolean;
+  onClick: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-pressed={on}
+      className={cn(
+        "rounded border px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide transition-colors",
+        on
+          ? "border-ad-steel bg-ad-steel/10 text-ad-steel"
+          : "border-ad-border text-ad-muted hover:border-ad-steel/50 hover:text-ad-ink"
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

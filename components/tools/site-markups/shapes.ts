@@ -2,6 +2,12 @@
 
 import { useCallback, useRef, useState } from "react";
 import type { LatLng } from "@/lib/kml/types";
+import {
+  bufferLineToPolygon,
+  closeRing,
+  pathLengthMetres,
+  ringAreaSqm,
+} from "@/lib/kml/standard-markup/geometry";
 
 export const MAX_SHAPE_POINTS = 20;
 export const MAX_SHAPES = 5;
@@ -188,4 +194,34 @@ export function useShapes(): ShapesState {
       []
     ),
   };
+}
+
+export interface ShapeMeasurement {
+  /** Ground area the shape covers. For a line that's the ribbon, not the centreline. */
+  areaSqm: number;
+  /** Centreline length — lines only; an area has no meaningful single length. */
+  lengthMetres: number | null;
+}
+
+/** Measures a shape off the SAME ring the renderer draws, so the number always describes
+ *  the thing on screen — mitred corners and all — rather than an idealised width x length. */
+export function measureShape(shape: MarkupShape): ShapeMeasurement {
+  if (shape.points.length < MIN_POINTS[shape.mode]) return { areaSqm: 0, lengthMetres: null };
+  if (shape.mode === "area") {
+    return { areaSqm: ringAreaSqm(closeRing(shape.points)), lengthMetres: null };
+  }
+  return {
+    areaSqm: ringAreaSqm(bufferLineToPolygon(shape.points, shape.widthMetres)),
+    lengthMetres: pathLengthMetres(shape.points),
+  };
+}
+
+/** Hectares past a hectare — "12,400 m²" is harder to picture than "1.24 ha". */
+export function formatArea(areaSqm: number): string {
+  if (areaSqm >= 10000) return `${(areaSqm / 10000).toFixed(2)} ha`;
+  return `${Math.round(areaSqm).toLocaleString()} m²`;
+}
+
+export function formatLength(metres: number): string {
+  return metres >= 1000 ? `${(metres / 1000).toFixed(2)} km` : `${Math.round(metres)} m`;
 }

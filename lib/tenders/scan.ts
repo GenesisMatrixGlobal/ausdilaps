@@ -16,6 +16,7 @@ import { externalRefForMessage } from "./dedupe";
 import { sendDigest, type DigestAlert, type DigestItem } from "./notify";
 import { prefilter } from "./prefilter";
 import { enabledSources, SOURCES } from "./sources";
+import { discoverMailboxSources, loadEmailSources } from "./sources/mailbox";
 import type { RawItem, ScanSummary, SourceRunSummary } from "./types";
 
 /**
@@ -315,7 +316,16 @@ export async function runScan(opts: { triggeredBy?: "cron" | "manual" | "replay"
   await reapStalledRuns(db);
   await ensureSourceRows(db);
 
-  const sources = enabledSources();
+  // Discovery first, and it must be first: a sender domain with no row yet has no source,
+  // so nothing would ever fetch its mail. This creates the row; the load below picks it up
+  // in the same run, so a new portal's first email is classified the night it arrives
+  // rather than the night after.
+  //
+  // Both reuse the memoised mailbox fetch, so this costs no extra Graph call.
+  const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  await discoverMailboxSources(db, since);
+
+  const sources = [...enabledSources(), ...(await loadEmailSources(db))];
   const result: ScanSummary = {
     runGroupId,
     status: "succeeded",

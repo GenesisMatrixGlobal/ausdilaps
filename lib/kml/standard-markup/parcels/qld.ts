@@ -5,7 +5,7 @@
 
 import type { LatLng } from "@/lib/kml/types";
 import { geocodeQld } from "@/lib/property-sizing/qld";
-import { envelopeAroundPoint } from "../geometry";
+import { envelopeAroundPoint, ringAreaSqm } from "../geometry";
 import { describeFetchError } from "./describe-fetch-error";
 import type { ParcelFeature, ParcelKind, ParcelQueryResult } from "./types";
 
@@ -94,8 +94,12 @@ export async function fetchParcelsNearPointQld(
     .map((f) => ({
       ring: outerRingToLatLng(f.geometry?.rings),
       idKey: String(f.attributes?.lotplan ?? ""),
-      areaSqm: typeof f.attributes?.lot_area === "number" ? Math.round(f.attributes.lot_area) : null,
+      // Computed from the ring, not read from the cadastre. See ringAreaSqm — NSW and VIC
+      // publish areas in Web Mercator, inflated by 1/cos^2(latitude) (1.45x Sydney, 1.6x
+      // Melbourne). Computing it makes one rule that is right in every state.
+      areaSqm: null,
       kind: qldParcelKind(f.attributes?.parcel_typ),
     }))
-    .filter((f) => f.ring.length >= 3);
+    .filter((f) => f.ring.length >= 3)
+    .map((f) => ({ ...f, areaSqm: Math.round(ringAreaSqm(f.ring)) }));
 }

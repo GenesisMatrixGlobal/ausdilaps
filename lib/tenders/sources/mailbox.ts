@@ -1,8 +1,15 @@
 import { FETCH_TIMEOUT_MS } from "../config";
 import { canonicalUrl, contentHash, externalRefForEmailLink, externalRefForMessage } from "../dedupe";
 import { htmlToText } from "@/lib/html";
-import { isTrustedSender, routeSender, senderDomain, type MailboxSource } from "../senders";
-import type { FetchResult, RawItem } from "../types";
+import {
+  contentLinks,
+  isSeededTrusted,
+  resolveParseMode,
+  senderDomain,
+  slugForDomain,
+  type ParseMode,
+} from "../senders";
+import type { FetchResult, RawItem, SourceDefinition } from "../types";
 
 /**
  * Microsoft Graph mailbox adapter.
@@ -173,17 +180,26 @@ export async function fetchMailboxMessages(sinceIso: string): Promise<GraphMessa
   return promise;
 }
 
+/**
+ * A discovered email source, as stored in tender_sources.
+ *
+ * Everything the parser needs comes from the row now — no code table. An operator changing
+ * parse_mode or is_trusted in the dashboard changes behaviour on the next run without a
+ * deploy, which is the whole point of moving these off a hardcoded list.
+ */
+export type EmailSource = {
+  slug: string;
+  label: string;
+  senderDomain: string;
+  parseMode: ParseMode;
+  isTrusted: boolean;
+};
+
 /** Plain text of a message body, whichever format Graph returned it in. */
 function bodyText(message: GraphMessage): string {
   const raw = message.body?.content ?? message.bodyPreview ?? "";
   // htmlToText decodes entities BEFORE stripping tags — order matters, see lib/html.ts.
   return message.body?.contentType?.toLowerCase() === "html" ? htmlToText(raw, 12_000) : raw.slice(0, 12_000);
-}
-
-/** Every href in an HTML body, deduplicated, in document order. */
-function linksIn(html: string): string[] {
-  const hrefs = [...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1]);
-  return [...new Set(hrefs)];
 }
 
 /** The visible text of the anchor pointing at `href` — usually the tender's title. */
@@ -198,53 +214,62 @@ function fromAddress(message: GraphMessage): string | null {
   return message.from?.emailAddress?.address ?? null;
 }
 
+/** The HTML body, or "" when the message was plain text. */
+function htmlBody(message: GraphMessage): string {
+  return message.body?.contentType?.toLowerCase() === "html" ? (message.body.content ?? "") : "";
+}
+
 /**
  * A digest email → one item per tender link.
  *
- * Falls back to treating the whole email as a single item when no link matches the
- * source's pattern. That is not a silent failure: scan.ts's zero-item alarm only fires on
- * an empty result, so returning the whole digest as one item keeps the content visible
- * while `linkPattern` is still being tuned against real mail.
+ * Falls back to the whole email as one item when no content link is found. That fallback
+ * is what makes the digest-biased detection in senders.ts safe: a single invitation
+ * wrongly judged a digest lands here, finds nothing, and becomes the single item it always
+ * should have been. Nothing is lost by guessing wrong in that direction.
  */
-function parseDigest(message: GraphMessage, source: MailboxSource): RawItem[] {
-  const html = message.body?.contentType?.toLowerCase() === "html" ? (message.body.content ?? "") : "";
+function parseDigest(message: GraphMessage, source: EmailSource): RawItem[] {
+  const html = htmlBody(message);
   const text = bodyText(message);
   const from = fromAddress(message);
-  const trusted = isTrustedSender(from);
 
-  const hrefs = html ? linksIn(html).filter((h) => !source.linkPattern || source.linkPattern.test(h)) : [];
-
+  const hrefs = contentLinks(html, source.senderDomain);
   if (hrefs.length === 0) {
-    return [singleItem(message, source, { titlePrefix: "", note: "digest: no tender links matched" })];
+    return [singleItem(message, source, { note: "read as a digest, but no tender links were found" })];
   }
 
   return hrefs.map((href) => {
-    const title = anchorTextFor(html, href) ?? message.subject ?? "Untitled tender";
+    const title = htmlToText(anchorTextFor(html, href) ?? message.subject ?? "Untitled tender", 300);
     return {
       sourceSlug: source.slug,
       // Keyed on the LINK, never on position in the email — digests reorder between sends.
       externalRef: externalRefForEmailLink(source.slug, href),
-      title: htmlToText(title, 300),
+      title,
       url: canonicalUrl(href),
       agency: null, // the classifier pulls this out of the body far more reliably
       publishedAt: message.receivedDateTime ?? null,
       closesAt: null,
       excerpt: text,
-      contentHash: contentHash({ title: htmlToText(title, 300), agency: null, closesAt: null }),
+      contentHash: contentHash({ title, agency: null, closesAt: null }),
       emailMessageId: message.internetMessageId ?? message.id,
       emailFrom: from,
-      senderTrusted: trusted,
+      senderTrusted: source.isTrusted,
     };
   });
 }
 
+/**
+ * One email = one opportunity.
+ *
+ * Also the landing place for a digest that yielded no links, so the content is never
+ * dropped just because the layout defeated the link matcher.
+ */
 function singleItem(
   message: GraphMessage,
-  source: MailboxSource,
-  opts?: { titlePrefix?: string; note?: string; extraText?: string }
+  source: EmailSource,
+  opts?: { note?: string; extraText?: string }
 ): RawItem {
   const from = fromAddress(message);
-  const title = htmlToText(`${opts?.titlePrefix ?? ""}${message.subject ?? "(no subject)"}`, 300);
+  const title = htmlToText(message.subject ?? "(no subject)", 300);
   const parts = [bodyText(message), opts?.extraText, opts?.note ? `[${opts.note}]` : null].filter(Boolean);
 
   return {
@@ -252,28 +277,36 @@ function singleItem(
     externalRef: externalRefForMessage(message.internetMessageId ?? message.id),
     title,
     url: message.webLink ?? null,
-    agency: senderDomain(from),
+    agency: source.senderDomain,
     publishedAt: message.receivedDateTime ?? null,
     closesAt: null,
     excerpt: parts.join("\n\n").slice(0, 14_000),
-    contentHash: contentHash({ title, agency: senderDomain(from), closesAt: null }),
+    contentHash: contentHash({ title, agency: source.senderDomain, closesAt: null }),
     emailMessageId: message.internetMessageId ?? message.id,
     emailFrom: from,
-    senderTrusted: isTrustedSender(from),
+    senderTrusted: source.isTrusted,
   };
+}
+
+/** The messages in this mailbox that belong to one source. */
+function messagesFor(messages: GraphMessage[], source: EmailSource): GraphMessage[] {
+  return messages.filter((m) => senderDomain(fromAddress(m)) === source.senderDomain);
 }
 
 /**
  * Turns the messages this source owns into items.
  *
- * Exported separately from the fetch so it can be tested against saved .eml/JSON samples
- * without a tenant — which is how the digest parsers should be tuned.
+ * Parse mode is resolved PER MESSAGE, not per source. A portal that sends both a weekly
+ * digest and one-off amendment notices is normal, and pinning the whole source to one mode
+ * would mishandle half its mail. A stored 'digest'/'single' overrides detection, which is
+ * the escape hatch when a portal's layout defeats the heuristic.
+ *
+ * Exported so it can be tested against saved messages with no tenant and no database.
  */
-export function parseMessages(messages: GraphMessage[], source: MailboxSource): RawItem[] {
-  const mine = messages.filter((m) => routeSender(fromAddress(m)).slug === source.slug);
-
-  return mine.flatMap((message) => {
-    if (source.parse === "digest") return parseDigest(message, source);
+export function parseMessages(messages: GraphMessage[], source: EmailSource): RawItem[] {
+  return messagesFor(messages, source).flatMap((message) => {
+    const mode = resolveParseMode(source.parseMode, htmlBody(message), source.senderDomain);
+    if (mode === "digest") return parseDigest(message, source);
 
     // A direct invitation is very often "pricing request attached" with almost no body.
     // Classified on the body alone that reads as no_match and the tender is lost, so the
@@ -287,9 +320,9 @@ export function parseMessages(messages: GraphMessage[], source: MailboxSource): 
 }
 
 /** The SourceDefinition.fetch implementation for one mailbox source. */
-export async function fetchMailboxSource(source: MailboxSource, sinceIso: string): Promise<FetchResult> {
+export async function fetchMailboxSource(source: EmailSource, sinceIso: string): Promise<FetchResult> {
   const messages = await fetchMailboxMessages(sinceIso);
-  const mine = messages.filter((m) => routeSender(fromAddress(m)).slug === source.slug);
+  const mine = messagesFor(messages, source);
 
   return {
     // Stored before the parse is trusted, so a portal changing its digest format is
@@ -331,4 +364,118 @@ export async function assertMailboxScoped(otherMailbox: string): Promise<{ statu
     { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), cache: "no-store" }
   );
   return { status: res.status, scoped: res.status === 403 };
+}
+
+// ── Discovery ──────────────────────────────────────────────────────────────────
+
+type Db = ReturnType<typeof import("@/lib/supabase/admin").createAdminClient>;
+
+type SourceRow = {
+  slug: string;
+  label: string;
+  sender_domain: string | null;
+  parse_mode: ParseMode;
+  is_trusted: boolean;
+  is_enabled: boolean;
+};
+
+/**
+ * Create a source row for every sender domain in the mailbox that doesn't have one.
+ *
+ * This is what replaces the hardcoded portal list: a portal we signed up for last week
+ * starts being tracked the first night it emails, with no code change and no migration.
+ *
+ * Runs BEFORE the source list is built, which is the whole reason it exists separately —
+ * a brand-new domain has no row, so no source run would ever fetch its mail. It reuses the
+ * memoised mailbox fetch, so discovery and every per-source run share one Graph call.
+ *
+ * New rows are deliberately quiet: alert_on_quiet false, because a one-off client
+ * emailing once would otherwise read as 'critical' five nights later and drown the portals
+ * that matter. Trust is seeded from TENDER_TRUSTED_SENDER_DOMAINS so known-good portals
+ * don't need a manual toggle, and everything else starts unverified.
+ *
+ * Never throws: discovery failing must not stop the sources that already exist from
+ * running. Returns the domains it added, for the run log.
+ */
+export async function discoverMailboxSources(db: Db, sinceIso: string): Promise<string[]> {
+  if (!mailboxConfigured()) return [];
+
+  try {
+    const messages = await fetchMailboxMessages(sinceIso);
+    const domains = [...new Set(messages.map((m) => senderDomain(fromAddress(m))).filter((d): d is string => !!d))];
+    if (domains.length === 0) return [];
+
+    const { data: existing } = await db
+      .from("tender_sources")
+      .select("slug")
+      .in("slug", domains.map(slugForDomain));
+    const known = new Set((existing ?? []).map((r) => r.slug as string));
+
+    const fresh = domains.filter((d) => !known.has(slugForDomain(d)));
+    if (fresh.length === 0) return [];
+
+    const { error } = await db.from("tender_sources").upsert(
+      fresh.map((domain) => ({
+        slug: slugForDomain(domain),
+        label: domain,
+        kind: "email" as const,
+        sender_domain: domain,
+        auto_discovered: true,
+        parse_mode: "auto",
+        alert_on_quiet: false,
+        is_trusted: isSeededTrusted(domain),
+      })),
+      { onConflict: "slug", ignoreDuplicates: true }
+    );
+    if (error) throw new Error(error.message);
+
+    console.log(`[tenders] discovered ${fresh.length} new sender domain(s): ${fresh.join(", ")}`);
+    return fresh;
+  } catch (e) {
+    console.error("[tenders] source discovery failed:", (e as Error).message);
+    return [];
+  }
+}
+
+/**
+ * The email sources to run this scan, straight from the database.
+ *
+ * Unlike the RSS registry in sources.ts these are NOT code-owned, and that difference is
+ * deliberate rather than sloppy. The reason feed URLs live in code is SSRF: a database
+ * write must never be able to point a server-side fetch at an internal host. Nothing is
+ * fetched from a discovered domain — it is only a filter applied to mail we already hold —
+ * so the argument does not bind here.
+ */
+export async function loadEmailSources(db: Db): Promise<SourceDefinition[]> {
+  if (!mailboxConfigured()) return [];
+
+  const { data, error } = await db
+    .from("tender_sources")
+    .select("slug, label, sender_domain, parse_mode, is_trusted, is_enabled")
+    .eq("kind", "email")
+    .eq("is_enabled", true);
+
+  if (error) {
+    console.error("[tenders] couldn't load email sources:", error.message);
+    return [];
+  }
+
+  return (data ?? [])
+    .filter((r): r is SourceRow => !!(r as SourceRow).sender_domain)
+    .map((row) => {
+      const source: EmailSource = {
+        slug: row.slug,
+        label: row.label,
+        senderDomain: row.sender_domain!,
+        parseMode: row.parse_mode ?? "auto",
+        isTrusted: row.is_trusted ?? false,
+      };
+      return {
+        slug: source.slug,
+        label: source.label,
+        kind: "email" as const,
+        configured: mailboxConfigured,
+        fetch: (since: string) => fetchMailboxSource(source, since),
+      };
+    });
 }

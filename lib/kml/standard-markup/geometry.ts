@@ -53,6 +53,51 @@ export function closeRing(ring: LatLng[]): LatLng[] {
   return first.lat === last.lat && first.lng === last.lng ? ring : [...ring, first];
 }
 
+/** WGS84 mean radius, the same figure Google Maps' spherical geometry uses. */
+const EARTH_RADIUS_M = 6378137;
+
+function toRad(deg: number): number {
+  return (deg * Math.PI) / 180;
+}
+
+/**
+ * Area of a closed ring in square metres, by spherical excess — the identical algorithm
+ * behind `google.maps.geometry.spherical.computeArea`, so there's nothing to gain by
+ * loading the Maps JS library (and a public API key) to do it.
+ *
+ * Do NOT trust a cadastre's own area attribute instead of this. NSW's `shape_Area` and
+ * VIC's `Shape__Area` are computed in the layer's Web Mercator projection, which inflates
+ * area by 1/cos²(latitude) — measured at 1.447x in Baulkham Hills and 1.605x in Glen
+ * Waverley, both matching that formula to three decimals. Only QLD publishes a real
+ * surveyed figure (`lot_area`), and this function agrees with it to 0.3%.
+ */
+export function ringAreaSqm(ring: LatLng[]): number {
+  if (ring.length < 3) return 0;
+  let total = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    total += toRad(b.lng - a.lng) * (2 + Math.sin(toRad(a.lat)) + Math.sin(toRad(b.lat)));
+  }
+  return Math.abs((total * EARTH_RADIUS_M * EARTH_RADIUS_M) / 2);
+}
+
+/** Length of an open path in metres, by haversine — matches `computeLength`. */
+export function pathLengthMetres(path: LatLng[]): number {
+  let total = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    const dLat = toRad(b.lat - a.lat);
+    const dLng = toRad(b.lng - a.lng);
+    const h =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    total += 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+  return total;
+}
+
 /** Average of a ring's vertices. Good enough to hang a map pin on for the convex-ish
  *  parcels a cadastre returns — not a true area centroid. */
 export function centroidOf(ring: LatLng[]): LatLng {

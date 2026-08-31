@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
   try {
     const [lastRun, sources, unforwarded, pending, stalled] = await Promise.all([
       db.from("tender_scan_runs").select("started_at, status").eq("status", "succeeded").order("started_at", { ascending: false }).limit(1),
-      db.from("tender_sources").select("slug, label, is_enabled, consecutive_empty, consecutive_failures, last_error"),
+      db.from("tender_sources").select("slug, label, is_enabled, consecutive_empty, consecutive_failures, last_error, alert_on_quiet"),
       db.from("tender_items").select("id", { count: "exact", head: true }).in("relevance", ["match", "maybe"]).is("forwarded_at", null),
       db.from("tender_items").select("id", { count: "exact", head: true }).eq("relevance", "pending"),
       db
@@ -62,19 +62,25 @@ export async function GET(req: NextRequest) {
       if (!s.is_enabled) continue;
       const empty = (s.consecutive_empty as number) ?? 0;
       const failures = (s.consecutive_failures as number) ?? 0;
+      // Quiet is only a problem for sources somebody opted into watching. Sources are
+      // discovered per sender domain now, so most of them are one-off client invitations
+      // that are silent by nature — alerting on those would bury the portal that actually
+      // stopped sending. A FAILING source is still reported whoever owns it.
+      const watched = (s.alert_on_quiet as boolean) ?? false;
+
       if (failures >= 1) {
         checks.push({
           level: "critical",
           title: `${s.label} is failing`,
           detail: `${failures} failed run(s) in a row. ${(s.last_error as string) ?? ""}`.trim(),
         });
-      } else if (empty >= 5) {
+      } else if (watched && empty >= 5) {
         checks.push({
           level: "critical",
           title: `${s.label} has produced nothing for ${empty} runs`,
           detail: "Either they dropped us from their alert list, or their format changed and the parser is finding nothing.",
         });
-      } else if (empty >= 3) {
+      } else if (watched && empty >= 3) {
         checks.push({
           level: "warning",
           title: `${s.label} has been quiet for ${empty} runs`,

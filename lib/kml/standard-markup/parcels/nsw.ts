@@ -4,7 +4,7 @@
 
 import type { LatLng } from "@/lib/kml/types";
 import { geocodeNsw } from "@/lib/property-sizing/nsw";
-import { envelopeAroundPoint } from "../geometry";
+import { envelopeAroundPoint, ringAreaSqm } from "../geometry";
 import { describeFetchError } from "./describe-fetch-error";
 import type { ParcelFeature, ParcelQueryResult } from "./types";
 
@@ -77,7 +77,6 @@ export async function fetchParcelsNearPointNsw(
   return (c.features ?? [])
     .map((f) => {
       const attrs = f.attributes;
-      const area = attrs?.planlotarea ?? attrs?.shape_Area;
       return {
         ring: outerRingToLatLng(f.geometry?.rings),
         // lotidstring ("1//DP29132") is per-lot; planlabel ("DP29132") is the plan, which
@@ -85,11 +84,15 @@ export async function fetchParcelsNearPointNsw(
         // lots identical ids, so the UI treated them as one parcel — ticking or excluding
         // one silently did the same to the other.
         idKey: String(attrs?.lotidstring || attrs?.planlabel || ""),
-        areaSqm: typeof area === "number" ? Math.round(area) : null,
+        // Computed from the ring, not read from the cadastre. See ringAreaSqm — NSW and VIC
+        // publish areas in Web Mercator, inflated by 1/cos^2(latitude) (1.45x Sydney, 1.6x
+        // Melbourne). Computing it makes one rule that is right in every state.
+        areaSqm: null,
         // Layer 15 is the Lot layer — it holds no road reserves to filter out. Checked
         // against a Baulkham Hills block: 50 parcels, every one with a lot id.
         kind: "lot" as const,
       };
     })
-    .filter((f) => f.ring.length >= 3);
+    .filter((f) => f.ring.length >= 3)
+    .map((f) => ({ ...f, areaSqm: Math.round(ringAreaSqm(f.ring)) }));
 }

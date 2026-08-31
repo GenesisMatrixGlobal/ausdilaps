@@ -4,7 +4,7 @@
 
 import type { LatLng } from "@/lib/kml/types";
 import { geocodeVic, splitStreet } from "@/lib/property-sizing/vic";
-import { envelopeAroundPoint } from "../geometry";
+import { envelopeAroundPoint, ringAreaSqm } from "../geometry";
 import { describeFetchError } from "./describe-fetch-error";
 import type { ParcelFeature, ParcelQueryResult } from "./types";
 
@@ -91,10 +91,14 @@ export async function fetchParcelsNearPointVic(
     .map((f) => ({
       ring: outerRingToLatLng(f.geometry?.rings),
       idKey: String(f.attributes?.parcel_spi?.replace(/\\/g, "/") ?? ""),
-      areaSqm: typeof f.attributes?.Shape__Area === "number" ? Math.round(f.attributes.Shape__Area) : null,
+      // Computed from the ring, not read from the cadastre. See ringAreaSqm — NSW and VIC
+      // publish areas in Web Mercator, inflated by 1/cos^2(latitude) (1.45x Sydney, 1.6x
+      // Melbourne). Computing it makes one rule that is right in every state.
+      areaSqm: null,
       // Vicmap's own road flag. VIC has no easement/"other" equivalent to QLD's unlinked
       // parcels, so everything not flagged as road is a lot.
       kind: f.attributes?.parcel_road === "Y" ? ("road" as const) : ("lot" as const),
     }))
-    .filter((f) => f.ring.length >= 3);
+    .filter((f) => f.ring.length >= 3)
+    .map((f) => ({ ...f, areaSqm: Math.round(ringAreaSqm(f.ring)) }));
 }

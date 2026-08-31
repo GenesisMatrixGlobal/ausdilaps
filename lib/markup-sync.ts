@@ -244,7 +244,12 @@ export async function resolveQuoteTarget(opts: {
 export interface UploadResult {
   fileId: string;
   fileName: string;
+  /** The DIRECT link — what gets written to Salesforce, because that is what the
+   *  document-merge step has to be able to fetch as bytes. */
   sharedLink: string | null;
+  /** The Box preview page. Only for the "Open in Box" link an operator clicks: a person
+   *  wants Box's viewer, a merge tool wants the file. */
+  previewLink?: string | null;
   linkedToQuote: boolean;
   /** Set when the file uploaded but writing the link to Salesforce failed. */
   linkError?: string;
@@ -280,7 +285,23 @@ export async function uploadMarkup(opts: {
 
   try {
     // Enterprise-only, not public: this is a job document, unlike the marketing samples.
-    const sharedLink = await ensureSharedLink(file.id, token, "company");
+    const link = await ensureSharedLink(file.id, token, "company");
+
+    // The DIRECT link, not the preview page. Salesforce's document-merge step fetches
+    // whatever is in this field expecting image bytes; the preview URL (app.box.com/s/...)
+    // returns an HTML viewer page, so merges came out with no markup in them. The direct
+    // link (app.box.com/shared/static/....png) serves the file itself.
+    //
+    // Note it inherits the "company" access above, so it resolves for signed-in
+    // enterprise users only. If the merge tool turns out to fetch anonymously this will
+    // still fail, and the fix is access: "open" — which makes the file readable by anyone
+    // holding the URL, so that is a decision to take deliberately, not a silent default.
+    const sharedLink = link.downloadUrl;
+    if (!sharedLink) {
+      throw new MarkupSyncError(
+        "Box didn't return a direct download link for that file — check that downloads are allowed on shared links for this folder. The file is uploaded either way."
+      );
+    }
 
     // Re-read the slots at write time rather than trusting the resolve step — someone else
     // may have filled one in between, and overwriting a colleague's markup is unrecoverable.
@@ -306,6 +327,7 @@ export async function uploadMarkup(opts: {
       fileId: file.id,
       fileName: file.name,
       sharedLink,
+      previewLink: link.url,
       linkedToQuote: true,
       markupSlot: free + 1,
     };

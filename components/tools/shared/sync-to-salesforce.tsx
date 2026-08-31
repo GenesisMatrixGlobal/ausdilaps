@@ -32,6 +32,7 @@ interface UploadResult {
   fileId: string;
   fileName: string;
   sharedLink: string | null;
+  previewLink?: string | null;
   linkedToQuote: boolean;
   linkError?: string;
   markupSlot?: number;
@@ -262,9 +263,11 @@ export function SyncToSalesforce({ getImageBase64, fallbackName, disabled }: Syn
               Uploaded, but linking it to the Quote failed: {result.linkError}
             </p>
           ) : null}
-          {result.sharedLink && (
+          {(result.previewLink ?? result.sharedLink) && (
             <a
-              href={result.sharedLink}
+              // Preview page for the human. The direct link goes to Salesforce, where the
+              // merge step needs bytes rather than Box's viewer.
+              href={result.previewLink ?? result.sharedLink ?? undefined}
               target="_blank"
               rel="noreferrer"
               className="mt-1 inline-block text-ad-steel underline"

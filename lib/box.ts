@@ -76,21 +76,38 @@ export async function getAccessToken(): Promise<string> {
  * Note this overwrites any existing link's access level, which is intentional — the caller
  * knows what the file is for better than whatever it was last set to.
  */
+export interface BoxSharedLink {
+  /** The preview page — `app.box.com/s/{name}`. Opens Box's viewer in a browser, which is
+   *  what a person wants when they click through from a record. */
+  url: string;
+  /** What Box's own UI labels "Direct Link" — `app.box.com/shared/static/{name}.{ext}`.
+   *  Serves the file bytes, so it's the one any document-merge or fetch-the-image
+   *  consumer needs; `url` hands them an HTML page instead.
+   *
+   *  Null when Box withholds it (downloads disabled on the link, or a folder rather than
+   *  a file). Callers that need bytes should treat null as a failure worth reporting
+   *  rather than quietly falling back to the preview page, which is the very bug this
+   *  distinction exists to prevent. */
+  downloadUrl: string | null;
+}
+
 export async function ensureSharedLink(
   fileId: string,
   token: string,
   access: "open" | "company" = "open"
-): Promise<string> {
-  const res = await fetch(`https://api.box.com/2.0/files/${fileId}`, {
+): Promise<BoxSharedLink> {
+  const res = await fetch(`https://api.box.com/2.0/files/${fileId}?fields=shared_link`, {
     method: "PUT",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ shared_link: { access } }),
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`Box create shared link failed for ${fileId}: ${res.status}`);
-  const data = (await res.json()) as { shared_link?: { url: string } };
+  const data = (await res.json()) as {
+    shared_link?: { url: string; download_url?: string | null };
+  };
   if (!data.shared_link?.url) throw new Error(`Box returned no shared_link for ${fileId}`);
-  return data.shared_link.url;
+  return { url: data.shared_link.url, downloadUrl: data.shared_link.download_url ?? null };
 }
 
 export async function listFolderItems(folderId: string, token: string): Promise<BoxFileItem[]> {
@@ -107,7 +124,8 @@ async function resolveSamples(files: BoxFileItem[], token: string): Promise<BoxS
   const samples = await Promise.all(
     files.map(async (f) => ({
       name: f.name,
-      url: f.shared_link?.url ?? (await ensureSharedLink(f.id, token)),
+      // Preview page on purpose: these are sample reports a visitor opens and reads.
+      url: f.shared_link?.url ?? (await ensureSharedLink(f.id, token)).url,
     }))
   );
   return samples.sort((a, b) => a.name.localeCompare(b.name));

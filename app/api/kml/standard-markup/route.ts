@@ -54,9 +54,6 @@ export async function POST(req: NextRequest) {
       neighbours,
       mapType,
       zoomAdjust,
-      // The client draws the numbered lot bubbles in its overlay so they layer above
-      // any custom shape. Baking them here as well would draw each one twice.
-      hideMarkers: true,
     });
     return NextResponse.json({
       ok: true,

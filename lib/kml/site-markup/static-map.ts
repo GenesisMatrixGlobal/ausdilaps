@@ -46,10 +46,13 @@ export interface StaticMapMarker {
 }
 
 export interface BuildStaticMapUrlOptions {
-  ways: LatLng[][];
+  /** Road/route centerlines drawn as thick translucent lines. Omit for a map made only of
+   *  polygons (Standard Mark Up) — `color`/`opacityPercent` style these and nothing else,
+   *  so they're only needed alongside `ways`. */
+  ways?: LatLng[][];
   /** 6-digit hex, no '#'. */
-  color: string;
-  opacityPercent: number;
+  color?: string;
+  opacityPercent?: number;
   mapType: "satellite" | "hybrid" | "roadmap";
   weight?: number;
   /** Shifts the auto-computed tight-fit zoom — negative zooms out for more context, positive zooms in tighter. */
@@ -157,7 +160,7 @@ export function buildStaticMapUrl(opts: BuildStaticMapUrlOptions): BuildStaticMa
     );
   }
 
-  const visibleWays = opts.ways.filter((w) => w.length >= 2);
+  const visibleWays = (opts.ways ?? []).filter((w) => w.length >= 2);
   const polygons = (opts.polygons ?? []).filter((p) => p.ring.length >= 3);
   const boundsAnchor = opts.boundsAnchor ?? [];
 
@@ -192,7 +195,7 @@ export function buildStaticMapUrl(opts: BuildStaticMapUrlOptions): BuildStaticMa
   url.searchParams.set("center", `${center.lat},${center.lng}`);
   url.searchParams.set("zoom", String(zoom));
 
-  const color = pathColor(opts.color, opts.opacityPercent);
+  const color = pathColor(opts.color ?? "000000", opts.opacityPercent ?? 100);
   const weight = opts.weight ?? DEFAULT_WEIGHT;
   for (const way of visibleWays) {
     url.searchParams.append("path", `color:${color}|weight:${weight}|enc:${encodePolyline(way)}`);

@@ -24,11 +24,6 @@ import type { StandardMarkupNeighbour } from "./resolve";
 export { GoogleMapsConfigError };
 export { markerLabel } from "./labels";
 
-/** Safety orange — the neighbour pins and the legend's orange row, same value the
- *  orange shape colour uses. */
-const MARKER_COLOR = SHAPE_COLORS.orange;
-
-
 export interface MarkupShapeInput {
   points: LatLng[];
   /** Ignored when `mode` is "area". */
@@ -55,7 +50,12 @@ export interface NumberedNeighbour extends StandardMarkupNeighbour {
 
 /** Assigns each neighbour a stable display number, in the order given — call this once,
  *  right after resolving, and keep the labels attached for every later re-render so a
- *  lot's number never changes as others get excluded. */
+ *  lot's number never changes as others get excluded.
+ *
+ *  The label is drawn by the CLIENT, as an SVG bubble in the markup overlay, not baked
+ *  into the PNG here. That's deliberate: the overlay sits above the map image, so a bubble
+ *  drawn there stays on top of any custom shape, and unticking a lot removes it with no
+ *  round trip. Don't reintroduce Static Maps `markers` for these — you'd get two sets. */
 export function numberNeighbours(neighbours: StandardMarkupNeighbour[]): NumberedNeighbour[] {
   return neighbours.map((n, i) => ({ ...n, label: markerLabel(i) }));
 }
@@ -67,9 +67,6 @@ export interface RenderMapInput {
   mapType: "satellite" | "hybrid" | "roadmap";
   zoomAdjust: number;
   excludeIds?: string[];
-  /** Drops the numbered neighbour pins — used for the client-facing download, which
-   *  doesn't need staff's internal checklist reference numbers. */
-  hideMarkers?: boolean;
   /** Drops the cadastre-derived red project-site boundary. The ring is still used to
    *  anchor the frame, so hiding it never moves the photo. */
   hideSubject?: boolean;
@@ -104,7 +101,6 @@ function buildMap(
   zoomAdjust: number,
   tolerance: number,
   neighbourCap: number,
-  hideMarkers: boolean,
   hideSubject: boolean,
   shapes: MarkupShapeInput[],
   frame: { center: LatLng; fitZoom: number } | undefined
@@ -132,15 +128,12 @@ function buildMap(
             ? closeRing(sh.points)
             : []
           : bufferLineToPolygon(sh.points, sh.widthMetres),
-      color: SHAPE_COLORS[sh.color] ?? MARKER_COLOR,
+      color: SHAPE_COLORS[sh.color] ?? SHAPE_COLORS.orange,
     }))
     .filter((p) => p.ring.length >= 3);
 
   const { url, center, zoom, fitZoom } = buildStaticMapUrl({
-    ways: [],
     frame,
-    color: NEIGHBOUR_FILL,
-    opacityPercent: FILL_OPACITY_PERCENT,
     mapType,
     zoomAdjust,
     // Always the frame's anchor, drawn or not. The subject ring is what centres the map
@@ -181,11 +174,6 @@ function buildMap(
         strokeWeight: OUTLINE_WEIGHT,
       })),
     ],
-    // Both callers now pass hideMarkers: the client-facing export never wanted staff's
-    // reference numbers, and the on-screen preview draws its own bubbles in the overlay
-    // so they sit above the shapes instead of under them. Kept as the switch rather than
-    // deleted, so the server can still draw them if that's ever wanted again.
-    markers: hideMarkers ? [] : kept.map((n) => ({ point: centroidOf(n.ring), label: n.label, color: MARKER_COLOR })),
     // Hides business/POI pins (cafes, shops, parks) — noise for a site markup. Roads,
     // street names, and address-number labels are a different feature class, unaffected.
     styles: ["feature:poi|visibility:off"],
@@ -206,7 +194,7 @@ function legendSvg(): string {
   const rows: [string, string][] = [
     [SITE_RED, "Project Site"],
     [NEIGHBOUR_FILL, "Neighbouring Assets"],
-    [MARKER_COLOR, "Council / External Assets"],
+    [SHAPE_COLORS.orange, "Council / External Assets"],
   ];
   // Sized from the generated glyph widths rather than a hardcoded number, so changing the
   // legend copy can never silently clip it — 236px was already only 5px clear of
@@ -251,7 +239,6 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
   const excluded = new Set(input.excludeIds ?? []);
   const visible = input.neighbours.filter((n) => !excluded.has(n.id));
 
-  const hideMarkers = input.hideMarkers ?? false;
   const hideSubject = input.hideSubject ?? false;
   const shapes = input.shapes ?? [];
   const flags: string[] = [];
@@ -262,7 +249,6 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
     input.zoomAdjust,
     SIMPLIFY_TOLERANCE_M,
     MAX_NEIGHBOURS,
-    hideMarkers,
     hideSubject,
     shapes,
     input.frame
@@ -275,7 +261,6 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
       input.zoomAdjust,
       SIMPLIFY_TOLERANCE_M_AGGRESSIVE,
       Math.min(MAX_NEIGHBOURS, 8),
-      hideMarkers,
       hideSubject,
       shapes,
       input.frame

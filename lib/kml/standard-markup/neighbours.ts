@@ -26,7 +26,7 @@ function centroidDistance(point: LatLng, ring: LatLng[]): number {
 
 /** Every candidate within `toleranceM` of `subject`'s boundary — i.e. genuinely
  *  touching it, not merely nearby (across the street, same block). */
-export function filterTrueNeighbours(
+function filterTrueNeighbours(
   subject: ParcelFeature,
   candidates: ParcelFeature[],
   toleranceM = ADJACENCY_TOLERANCE_M

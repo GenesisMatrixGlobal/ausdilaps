@@ -42,8 +42,6 @@ export const standardMarkupRenderRequestSchema = z.object({
   mapType: z.enum(["satellite", "hybrid", "roadmap"]).default("hybrid"),
   zoomAdjust: z.number().int().min(-3).max(3).default(0),
   excludeIds: z.array(z.string()).default([]),
-  /** Drops the numbered neighbour pins — used for the client-facing download. */
-  hideMarkers: z.boolean().default(false),
   /** The frame captured from the first Generate. Present on every re-render so the photo
    *  is pinned: unticking a lot, drawing a shape or adding a lot can no longer refit the
    *  bounds and shift the map under the operator. `zoomAdjust` still applies on top, so

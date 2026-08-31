@@ -180,7 +180,6 @@ export function ResidentialMarkupTab() {
           mapType: result.mapType,
           zoomAdjust,
           hideSubject: true,
-          hideMarkers: true,
           frame,
         }),
       });
@@ -322,7 +321,6 @@ export function ResidentialMarkupTab() {
         mapType: result.mapType,
         zoomAdjust,
         excludeIds: Array.from(excludedIds),
-        hideMarkers: true,
         hideSubject,
         frame,
         // The export DOES bake the shapes — unlike the on-screen preview above, a .png

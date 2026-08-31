@@ -31,12 +31,56 @@ const COLORS: { key: ShapeColor; label: string; swatch: string; hint: string }[]
   { key: "red", label: "Red", swatch: "#ff0000", hint: "Legend: Project Site — use this to redraw the site boundary" },
 ];
 
+const SWATCH: Record<ShapeColor, string> = { orange: "#e8642a", blue: "#1d4ed8", red: "#ff0000" };
+
+/**
+ * What the shape IS — colour and line-vs-area — drawn rather than spelled out.
+ *
+ * The map is colour-coded, so a row reading "Area · Blue" made you translate a word back
+ * into the thing on screen. The glyph mirrors how each mode actually renders: a line is a
+ * stroked band, an area is a filled polygon with a solid edge. That leaves the text to
+ * carry only what a 20px icon can't — width, point count, and the measurement.
+ */
+function ShapeGlyph({ shape }: { shape: ShapeDraft }) {
+  const color = SWATCH[shape.color];
+  const label = `${shape.color} ${shape.mode}`;
+  return (
+    <span className="shrink-0" title={label} aria-label={label} role="img">
+      <svg width="22" height="22" viewBox="0 0 22 22">
+        <rect x="0.5" y="0.5" width="21" height="21" rx="4" fill="#fff" stroke="#e4e6e8" />
+        {shape.mode === "area" ? (
+          <polygon
+            points="4.5,6 17.5,4.5 18,16 6,17.5"
+            fill={color}
+            fillOpacity={0.5}
+            stroke={color}
+            strokeWidth="1.75"
+            strokeLinejoin="round"
+          />
+        ) : (
+          <path
+            d="M4 15.5 L9.5 8 L18 6"
+            fill="none"
+            stroke={color}
+            strokeOpacity={0.9}
+            strokeWidth="4.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+      </svg>
+    </span>
+  );
+}
+
+/** Colour and mode now live in the glyph, so they're deliberately absent here. */
 function summarise(shape: ShapeDraft): string {
-  const form = shape.mode === "area" ? "Area" : `Line, ${shape.widthMetres}m`;
-  const colour = shape.color[0].toUpperCase() + shape.color.slice(1);
   const m = measureShape(shape);
-  const size = m.areaSqm > 0 ? ` · ${formatArea(m.areaSqm)}` : "";
-  return `${form} · ${colour} · ${shape.points.length} ${shape.points.length === 1 ? "point" : "points"}${size}`;
+  const parts = [
+    shape.mode === "line" ? `${shape.widthMetres}m wide` : null,
+    `${shape.points.length} ${shape.points.length === 1 ? "point" : "points"}`,
+  ].filter(Boolean) as string[];
+  return `${parts.join(" · ")}${m.areaSqm > 0 ? ` · ${formatArea(m.areaSqm)}` : ""}`;
 }
 
 /** The measurement strip on an expanded row. Recomputed on every render, so it tracks a
@@ -144,6 +188,7 @@ export function ShapePanel({ shapes }: { shapes: ShapesState }) {
                         isActive ? "bg-ad-steel" : "border border-ad-border bg-white"
                       )}
                     />
+                    <ShapeGlyph shape={shape} />
                     {/* Stacked, not inline: the panel is max-w-xs and an inline summary
                         truncates to "Line, 10m · 3 poi…" at that width. */}
                     <span className="min-w-0 flex-1">
@@ -171,13 +216,37 @@ export function ShapePanel({ shapes }: { shapes: ShapesState }) {
                           type="button"
                           onClick={() => shapes.setMode(shape.id, m.key)}
                           title={m.hint}
+                          aria-pressed={shape.mode === m.key}
                           className={cn(
-                            "flex-1 rounded-md px-3 py-1.5 text-sm",
+                            "flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm",
                             shape.mode === m.key
                               ? "bg-ad-steel text-white"
                               : "text-ad-muted hover:text-ad-ink"
                           )}
                         >
+                          {/* Same silhouettes the row glyph uses, so picking a mode shows
+                              you the shape you'll get rather than only naming it. */}
+                          <svg width="14" height="14" viewBox="0 0 22 22" aria-hidden>
+                            {m.key === "area" ? (
+                              <polygon
+                                points="3,5 19,3 19.5,17 5,19.5"
+                                fill="currentColor"
+                                fillOpacity={0.45}
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinejoin="round"
+                              />
+                            ) : (
+                              <path
+                                d="M3 17 L9.5 8 L19 5"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            )}
+                          </svg>
                           {m.label}
                         </button>
                       ))}
@@ -260,13 +329,24 @@ export function ShapePanel({ shapes }: { shapes: ShapesState }) {
         </ul>
       )}
 
+      {/* Steel, not outline. Drawing is the main thing done in this panel, and as a grey
+          outline it carried less weight than the Remove links beside it. Steel also keeps
+          a readable three-tier hierarchy in the column: charcoal Regenerate commits,
+          steel creates, outline is secondary. */}
       <button
         type="button"
         onClick={shapes.addShape}
         disabled={atMax}
-        className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-3 w-full")}
+        className={cn(
+          "mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-ad-steel px-3 py-2 text-sm font-medium text-white transition-colors",
+          "hover:bg-ad-steel/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ad-steel",
+          "disabled:cursor-not-allowed disabled:bg-ad-border disabled:text-ad-muted"
+        )}
       >
-        + Add shape
+        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
+          <path d="M7 2.5v9M2.5 7h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+        Add shape
       </button>
 
       {atMax && (

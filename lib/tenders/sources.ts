@@ -1,5 +1,11 @@
 import { fetchFeed } from "./sources/feed";
+import { fetchMailboxSource, mailboxConfigured } from "./sources/mailbox";
+import { MAILBOX_SOURCES } from "./senders";
 import type { SourceDefinition } from "./types";
+
+// Re-exported so existing importers keep working after these moved to ./senders to break
+// an import cycle with ./sources/mailbox.
+export { trustedSenderDomains, isTrustedSender } from "./senders";
 
 /**
  * The source registry — mirrors the shape of lib/tools/registry.ts.
@@ -27,6 +33,22 @@ export const SOURCES: SourceDefinition[] = [
     fetch: async () =>
       fetchFeed(process.env.TENDER_AUSTENDER_FEED_URL as string, "austender-atm"),
   },
+
+  // One mailbox, one source per portal that writes to it. They share a single Graph fetch
+  // per run (see sources/mailbox.ts) but keep separate runs, raw payloads and gone-quiet
+  // counters — which is what makes "buy.nsw has produced nothing for 5 runs" answerable.
+  //
+  // All of them turn on together, because they are all the same mailbox: either Graph is
+  // configured or none of them can run.
+  ...MAILBOX_SOURCES.map(
+    (source): SourceDefinition => ({
+      slug: source.slug,
+      label: source.label,
+      kind: "email",
+      configured: mailboxConfigured,
+      fetch: (since: string) => fetchMailboxSource(source, since),
+    })
+  ),
 ];
 
 export function enabledSources(): SourceDefinition[] {
@@ -35,26 +57,4 @@ export function enabledSources(): SourceDefinition[] {
 
 export function getSource(slug: string): SourceDefinition | undefined {
   return SOURCES.find((s) => s.slug === slug);
-}
-
-/**
- * Sender domains whose mail we treat as coming from the portal it claims to be.
- *
- * Trust is a signal, never a gate: an unverified sender is still stored and still
- * classified, it is just badged in the UI and — until TENDER_FORWARD_UNTRUSTED is turned
- * on — kept out of the digest. Anyone on the internet can email the monitored inbox, so
- * this distinction has to exist somewhere.
- */
-export function trustedSenderDomains(): string[] {
-  return (process.env.TENDER_TRUSTED_SENDER_DOMAINS ?? "")
-    .split(",")
-    .map((d) => d.trim().toLowerCase())
-    .filter(Boolean);
-}
-
-export function isTrustedSender(from: string | null | undefined): boolean {
-  if (!from) return false;
-  const domain = from.split("@").pop()?.replace(/>$/, "").trim().toLowerCase();
-  if (!domain) return false;
-  return trustedSenderDomains().some((d) => domain === d || domain.endsWith(`.${d}`));
 }

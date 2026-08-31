@@ -90,7 +90,25 @@ Five mornings of that comparison is worth more than any amount of design review,
 
 ### 5. Phase 2 — the mailbox (Microsoft Graph)
 
-Not built yet; the adapter slot is `lib/tenders/sources/mailbox.ts` plus one entry in `SOURCES`.
+**Built.** `lib/tenders/sources/mailbox.ts`, with the routing table in `lib/tenders/senders.ts`.
+
+One mailbox, one source per portal. Graph's `$filter` cannot match a sender by domain
+suffix — portals send from `noreply@`, `alerts@`, and whatever else they pick — so senders
+are routed in our own code and the mailbox is fetched **once per run**, shared by every
+source. Each source still keeps its own run row, raw payload and gone-quiet counter, which
+is what keeps "buy.nsw has produced nothing for 5 runs" answerable.
+
+**`direct-invite` is the catch-all.** Anything from a sender no named source claims lands
+there rather than being dropped. That is what makes adding portals safe: a new one starts
+appearing the day it first emails, badged as a direct invite, and promoting it to its own
+source later is one entry in `MAILBOX_SOURCES`.
+
+Source rows are seeded from the code registry by `ensureSourceRows()` at the top of each
+scan, so adding a portal no longer needs a migration.
+
+`npm run check:tenders` pins the digest parsers against synthetic messages. Add a real
+sample there when a portal changes format — it caught a dedupe-key collision that silently
+swallowed every buy.nsw tender sharing a year.
 
 Polling via Graph rather than auto-forwarding, because M365 blocks external auto-forwarding by default, the requirement is a daily scan (so a webhook's real-time advantage is moot), and polling means no email vendor and no public endpoint to secure.
 

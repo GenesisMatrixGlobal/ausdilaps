@@ -45,11 +45,22 @@ export function canonicalUrl(raw: string): string {
   }
 }
 
-/** AusTender ATM ids look like `PR10041882` / `ATM-1234`, in the path or a query param. */
+/**
+ * Portal reference ids, in a path or a query param: `PR10041882`, `ATM-1234`,
+ * `RFT-2026-001`, `RFQ-2026-4471-12`.
+ *
+ * The trailing `(?:[-_]\d+)*` is load-bearing, not tidiness. Without it the pattern
+ * stopped at the first number group, so buy.nsw's `RFT-2026-001` and `RFT-2026-002` both
+ * reduced to `RFT2026` — two unrelated tenders sharing one idempotency key, the second
+ * silently swallowed as a duplicate of the first. Exactly the "too loose" failure the note
+ * at the top of this file warns about, and the silent direction of it.
+ *
+ * AusTender's own ids carry no inner separator, so they are unaffected either way.
+ */
 function atmId(...candidates: (string | null | undefined)[]): string | null {
   for (const candidate of candidates) {
     if (!candidate) continue;
-    const match = candidate.match(/\b((?:PR|ATM|RFT|RFQ|EOI)[-_]?\d{4,})\b/i);
+    const match = candidate.match(/\b((?:PR|ATM|RFT|RFQ|EOI)[-_]?\d{4,}(?:[-_]\d+)*)\b/i);
     if (match) return match[1].toUpperCase().replace(/[-_]/g, "");
   }
   return null;

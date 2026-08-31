@@ -15,7 +15,7 @@ import {
 import { externalRefForMessage } from "./dedupe";
 import { sendDigest, type DigestAlert, type DigestItem } from "./notify";
 import { prefilter } from "./prefilter";
-import { enabledSources } from "./sources";
+import { enabledSources, SOURCES } from "./sources";
 import type { RawItem, ScanSummary, SourceRunSummary } from "./types";
 
 /**
@@ -280,6 +280,32 @@ async function scanSource(
   return summary;
 }
 
+/**
+ * Make sure every registered source has a row in tender_sources.
+ *
+ * tender_scan_runs.source_slug has a foreign key to it, so a source added to
+ * lib/tenders/sources.ts without a matching row fails on its first run with an FK
+ * violation — which reads as "the portal is broken", not "somebody forgot a migration".
+ *
+ * Seeding from the code registry is the right way round: 0006's design note says code owns
+ * WHAT a source is and the table only remembers how it has been BEHAVING. This keeps that
+ * true as portals get added, and it matters because more are expected — requiring a
+ * migration per portal is exactly the friction that gets skipped.
+ *
+ * `do nothing` on conflict, deliberately: never overwrite is_enabled or the health
+ * counters an operator has been watching.
+ */
+async function ensureSourceRows(db: Db): Promise<void> {
+  const rows = SOURCES.map((s) => ({ slug: s.slug, label: s.label, kind: s.kind }));
+  const { error } = await db.from("tender_sources").upsert(rows, {
+    onConflict: "slug",
+    ignoreDuplicates: true,
+  });
+  // Not fatal: an existing source can still run. Only a brand-new one would fail, and it
+  // will fail loudly on its own run row.
+  if (error) console.error("[tenders] ensureSourceRows failed:", error.message);
+}
+
 export async function runScan(opts: { triggeredBy?: "cron" | "manual" | "replay" } = {}): Promise<ScanSummary> {
   const triggeredBy = opts.triggeredBy ?? "cron";
   const runGroupId = randomUUID();
@@ -287,6 +313,7 @@ export async function runScan(opts: { triggeredBy?: "cron" | "manual" | "replay"
   const deadline = Date.now() + CLASSIFY_DEADLINE_MS;
 
   await reapStalledRuns(db);
+  await ensureSourceRows(db);
 
   const sources = enabledSources();
   const result: ScanSummary = {

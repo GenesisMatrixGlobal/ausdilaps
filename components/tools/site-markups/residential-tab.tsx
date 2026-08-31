@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { SyncToSalesforce } from "@/components/tools/shared/sync-to-salesforce";
@@ -146,6 +146,7 @@ export function ResidentialMarkupTab() {
       shapes.reset();
       setImageDataUrl(`data:image/png;base64,${json.image}`);
       setFlags(json.flags);
+      zoomSettled.current = zoomAdjust;
       setProjection({ center: json.center, zoom: json.zoom, imageSizePx: json.imageSizePx, scale: json.scale });
       // The only place the frame is ever set. Every later render reuses it.
       setFrame({ center: json.center, fitZoom: json.fitZoom });
@@ -158,10 +159,9 @@ export function ResidentialMarkupTab() {
     }
   }
 
-  /** `neighboursOverride` exists because a caller may need to render a list it has only
-   *  just built — appending a detected lot and regenerating in the same tick would
-   *  otherwise read the pre-append `result` from state and render without it. */
-  async function regenerate(neighboursOverride?: Neighbour[]) {
+  /** Refetches the aerial tile. Zoom is the only thing that needs this — every other
+   *  control changes what the overlay draws, which costs nothing. */
+  async function refreshBasemap() {
     if (!result) return;
     setError(null);
     setRegenerating(true);
@@ -170,38 +170,32 @@ export function ResidentialMarkupTab() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          // Every vector — site, lots, bubbles, shapes — is drawn by the overlay now, so
+          // this request fetches only the basemap (plus the composited legend and north
+          // arrow). That is what makes a checkbox instant: unticking a lot changes what
+          // the overlay renders, with no round trip at all. The subject ring is still
+          // sent because it anchors the frame; `hideSubject` stops it being drawn.
           subjectRing: result.subjectRing,
-          neighbours: neighboursOverride ?? result.neighbours,
+          neighbours: [],
           mapType: result.mapType,
           zoomAdjust,
-          excludeIds: Array.from(excludedIds),
-          hideSubject,
-          frame,
-          // The overlay draws the lot bubbles — see MarkupCanvas `lots`.
+          hideSubject: true,
           hideMarkers: true,
-          // Deliberately NOT sending shapes. The preview shows exactly one copy of each
-          // shape, and the live overlay is the one that draws it — it uses the same
-          // geometry, colours and opacities as the renderer (lib/kml/standard-markup/
-          // style.ts), so it is not an approximation.
-          //
-          // Baking them here as well drew every shape twice: once into this PNG and once
-          // by the overlay on top of it. Two 50% fills composite to 75% with a doubled
-          // outline, which read as a duplicated shape — and removing one then left the
-          // baked copy behind until the next regenerate. The export path below still
-          // bakes them, because a downloaded file has no overlay.
+          frame,
         }),
       });
       const json = (await res.json().catch(() => null)) as
         | { ok: boolean; image?: string; flags?: string[]; error?: string; center?: LatLng; zoom?: number; imageSizePx?: number; scale?: number }
         | null;
       if (!res.ok || !json?.image) {
-        setError(json?.error ?? "Something went wrong regenerating the snapshot.");
+        setError(json?.error ?? "Something went wrong refreshing the map.");
         return;
       }
       setImageDataUrl(`data:image/png;base64,${json.image}`);
       setFlags(json.flags ?? []);
       if (json.center && json.zoom !== undefined && json.imageSizePx !== undefined && json.scale !== undefined) {
-        setProjection({ center: json.center, zoom: json.zoom, imageSizePx: json.imageSizePx, scale: json.scale });
+        zoomSettled.current = zoomAdjust;
+      setProjection({ center: json.center, zoom: json.zoom, imageSizePx: json.imageSizePx, scale: json.scale });
       }
     } catch (e) {
       setError((e as Error).message);
@@ -276,15 +270,31 @@ export function ResidentialMarkupTab() {
         // never change number once the operator has seen it.
         label: markerLabel(result.neighbours.length),
       };
-      const next = [...result.neighbours, added];
-      setResult({ ...result, neighbours: next });
-      await regenerate(next);
+      // No render needed — the overlay draws the new lot and its bubble straight away.
+      setResult({ ...result, neighbours: [...result.neighbours, added] });
     } catch (e) {
       setPickMessage((e as Error).message);
     } finally {
       setPickBusy(false);
     }
   }
+
+  // Zoom is the one control that still needs the server: a different zoom means a
+  // different basemap tile. Debounced so dragging the slider across its range costs one
+  // Static Maps call at the end rather than one per step. Skips the first run so
+  // generating a snapshot doesn't immediately refetch what it just fetched.
+  const zoomSettled = useRef(zoomAdjust);
+  useEffect(() => {
+    if (!result || zoomSettled.current === zoomAdjust) return;
+    const t = setTimeout(() => {
+      zoomSettled.current = zoomAdjust;
+      void refreshBasemap();
+    }, 400);
+    return () => clearTimeout(t);
+    // refreshBasemap closes over current state each render; re-running on zoomAdjust and
+    // result is exactly the intent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoomAdjust, result]);
 
   function toggleNeighbour(id: string) {
     setExcludedIds((prev) => {
@@ -482,6 +492,8 @@ export function ResidentialMarkupTab() {
             projection={projection}
             shapes={shapes}
             lots={result.neighbours.filter((n) => !excludedIds.has(n.id))}
+            subjectRing={result.subjectRing}
+            hideSubject={hideSubject}
             pickMode={picking}
             onPick={handlePick}
             onCancelPick={() => setPicking(false)}
@@ -493,7 +505,12 @@ export function ResidentialMarkupTab() {
                 easy to mix up when adjacent. Zoom is also a set-once thing, so it doesn't
                 belong among the controls being worked with repeatedly. */}
             <div className="rounded-xl border border-ad-border bg-white p-4">
-              <p className="text-sm font-medium text-ad-ink">Zoom</p>
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-sm font-medium text-ad-ink">Zoom</p>
+                {/* The only server round trip left in the tool, so it's the only place
+                    that needs a wait indicator. */}
+                {regenerating && <span className="text-xs text-ad-muted">Refreshing…</span>}
+              </div>
               <div className="mt-2 flex items-center gap-2">
                 <button
                   type="button"
@@ -531,7 +548,7 @@ export function ResidentialMarkupTab() {
             <div className="rounded-xl border border-ad-border bg-white p-4">
               <p className="text-sm font-medium text-ad-ink">Detected lots</p>
               <p className="mt-1 text-xs text-ad-muted">
-                Uncheck anything that shouldn&apos;t be included, then regenerate.
+                Uncheck anything that shouldn&apos;t be included.
               </p>
               <ul className="mt-3 space-y-2">
                 <li className="flex items-center gap-2 text-sm text-ad-ink">
@@ -564,7 +581,7 @@ export function ResidentialMarkupTab() {
               </ul>
               {/* Lives here because it adds a row to the list above — the same
                   relationship "+ Add shape" has to the shape list. Outline, not primary:
-                  it only arms a map click, and a black button beside Regenerate read as
+                  it only arms a map click, and a solid button beside the others read as
                   though it did the work itself. */}
               <button
                 type="button"
@@ -590,15 +607,8 @@ export function ResidentialMarkupTab() {
             </div>
             <ShapePanel shapes={shapes} />
 
-            {/* The one action that commits everything edited in this column — excluded
-                lots, zoom and custom shapes — into a fresh render. */}
-            <button
-              className={cn(buttonVariants({ variant: "primary", size: "md" }), "w-full", regenerating && "opacity-60")}
-              onClick={() => regenerate()}
-              disabled={regenerating}
-            >
-              {regenerating ? "Regenerating…" : "Regenerate"}
-            </button>
+            {/* No Regenerate button: every edit in this column is live now. Zoom is the
+                only thing that still needs the server, and it refetches itself. */}
           </div>
         </div>
       )}

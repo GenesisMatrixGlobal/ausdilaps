@@ -7,8 +7,10 @@ import { bufferLineToPolygon, centroidOf, closeRing } from "@/lib/kml/standard-m
 import { latLngToPixel, pixelToLatLng } from "@/lib/kml/standard-markup/projection";
 import {
   FILL_OPACITY_PERCENT,
+  NEIGHBOUR_FILL,
   OUTLINE_WEIGHT,
   SHAPE_COLORS,
+  SITE_RED,
   STROKE_OPACITY_PERCENT,
 } from "@/lib/kml/standard-markup/style";
 import type { ShapeDraft, ShapesState } from "./shapes";
@@ -19,6 +21,17 @@ import { MIN_POINTS } from "./shapes";
 // 0-1. Colours are stored without a '#', which Static Maps wants and SVG doesn't.
 const FILL_OPACITY = FILL_OPACITY_PERCENT / 100;
 const STROKE_OPACITY = STROKE_OPACITY_PERCENT / 100;
+
+/** A ring in lat/lng -> the `points` attribute of an SVG polygon in the overlay's
+ *  coordinate space. */
+function toSvgPoints(ring: LatLng[], projection: Projection): string {
+  return ring
+    .map((p) => {
+      const px = latLngToPixel(projection, p);
+      return `${px.x},${px.y}`;
+    })
+    .join(" ");
+}
 
 export interface Projection {
   center: LatLng;
@@ -64,6 +77,8 @@ export function MarkupCanvas({
   onPick,
   onCancelPick,
   lots = [],
+  subjectRing,
+  hideSubject = false,
 }: {
   imageDataUrl: string;
   alt: string;
@@ -80,6 +95,10 @@ export function MarkupCanvas({
    *  this overlay always sits on top of the image. Drawing them here also makes them
    *  live: a lot added by clicking gets its bubble without waiting for a re-render. */
   lots?: { id: string; ring: LatLng[]; label: string }[];
+  /** The cadastre's project-site boundary. Drawn here rather than baked into the map
+   *  image so unticking it takes effect immediately instead of on the next render. */
+  subjectRing?: LatLng[];
+  hideSubject?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // A ref, not state: nothing in the render output reads it (the cursor styling keys off
@@ -213,6 +232,32 @@ export function MarkupCanvas({
             className="pointer-events-none absolute inset-0 h-full w-full"
             aria-hidden
           >
+            {/* Draw order matches the server renderer: site underneath, lots over it,
+                custom shapes on top. Everything vector now lives in this overlay, which
+                is what lets a checkbox take effect without a round trip. */}
+            {!hideSubject && subjectRing && subjectRing.length >= 3 && (
+              <polygon
+                points={toSvgPoints(subjectRing, projection)}
+                fill={`#${SITE_RED}`}
+                fillOpacity={FILL_OPACITY}
+                stroke={`#${SITE_RED}`}
+                strokeOpacity={1}
+                strokeWidth={OUTLINE_WEIGHT}
+              />
+            )}
+
+            {lots.map((lot) => (
+              <polygon
+                key={lot.id}
+                points={toSvgPoints(lot.ring, projection)}
+                fill={`#${NEIGHBOUR_FILL}`}
+                fillOpacity={FILL_OPACITY}
+                stroke={`#${NEIGHBOUR_FILL}`}
+                strokeOpacity={STROKE_OPACITY}
+                strokeWidth={OUTLINE_WEIGHT}
+              />
+            ))}
+
             {shapes.shapes.map((shape) => {
               const ring = ringFor(shape);
               if (ring.length < 3) return null;

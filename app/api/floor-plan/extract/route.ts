@@ -9,10 +9,15 @@ export const runtime = "nodejs";
 // cut it off well before it returns.
 export const maxDuration = 290;
 
-// The real sketches run 6.2-6.5MB straight off a phone, so 8MB was one better camera away
-// from rejecting ordinary input. Do not solve this by downscaling before upload — the compass
-// is a small scribble in a page corner and is the first thing to become unreadable.
-const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+// Vercel rejects any serverless request body over 4.5MB and does it BEFORE this route runs,
+// returning plain text rather than JSON. So this ceiling can never be the binding one — it
+// exists to give a clean error for anything that squeaks under the platform limit, and raising
+// it accomplishes nothing (12MB was tried; the platform still bounced every upload).
+//
+// The client keeps payloads well under this by re-encoding at full resolution, quality 0.6.
+// That is deliberate: compass legibility depends on RESOLUTION, so shrink the file, not the
+// pixels — at 1568px north is misread and doors drop by half.
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
 const bodySchema = z.object({
   image: z.string().min(1),

@@ -41,7 +41,7 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
   return new Blob([array], { type: mimeType });
 }
 
-function readAsBase64(file: File): Promise<string> {
+function readAsBase64(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -51,6 +51,69 @@ function readAsBase64(file: File): Promise<string> {
     reader.onerror = () => reject(new Error("Could not read that file."));
     reader.readAsDataURL(file);
   });
+}
+
+/**
+ * Vercel rejects any serverless request body over 4.5MB, before the route runs. A phone photo
+ * of a sketch is ~6MB, which is ~8MB once base64-encoded, so every upload was being bounced by
+ * the platform with a plain-text 413 that never reached this code.
+ *
+ * Budget the encoded payload, not the file: base64 inflates by 4/3.
+ */
+const MAX_UPLOAD_BASE64 = 3.5 * 1024 * 1024;
+const rawToBase64Bytes = (bytes: number) => Math.ceil((bytes * 4) / 3);
+
+/** Long edge below which the compass stops being legible — measured, not guessed. */
+const MIN_LONG_EDGE = 2400;
+
+function loadImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("That image could not be opened."));
+    };
+    img.src = url;
+  });
+}
+
+function encode(img: HTMLImageElement, scale: number, quality: number): Promise<Blob | null> {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(img.naturalWidth * scale);
+  canvas.height = Math.round(img.naturalHeight * scale);
+  canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+}
+
+/**
+ * Shrink an oversized photo to fit the upload budget.
+ *
+ * Quality first, pixels last. Compass legibility depends on RESOLUTION, not file size — at full
+ * 3000x4000 and quality 0.6 a 6.2MB photo becomes 1.8MB and still reads north correctly, where
+ * halving the long edge to 1568px broke it. Only when re-encoding alone is not enough does the
+ * long edge come down, and never below MIN_LONG_EDGE.
+ */
+async function fitForUpload(file: File): Promise<Blob> {
+  if (rawToBase64Bytes(file.size) <= MAX_UPLOAD_BASE64) return file;
+
+  const img = await loadImage(file);
+  const longEdge = Math.max(img.naturalWidth, img.naturalHeight);
+
+  for (const { scale, quality } of [
+    { scale: 1, quality: 0.6 },
+    { scale: 1, quality: 0.45 },
+    { scale: Math.min(1, MIN_LONG_EDGE / longEdge), quality: 0.6 },
+  ]) {
+    const blob = await encode(img, scale, quality);
+    if (blob && rawToBase64Bytes(blob.size) <= MAX_UPLOAD_BASE64) return blob;
+  }
+
+  throw new Error("That photo is too large to upload. Crop it to just the drawing and retry.");
 }
 
 const COMPASS = [
@@ -187,17 +250,35 @@ export function FloorPlanTool() {
     const ticker = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
 
     try {
-      const image = await readAsBase64(file);
+      // Always show the original, whatever gets uploaded — this is what north is checked against.
       setSketchUrl(URL.createObjectURL(file));
+      const upload = await fitForUpload(file);
+      const image = await readAsBase64(upload);
+
       const res = await fetch("/api/floor-plan/extract", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ image, mediaType: file.type }),
+        body: JSON.stringify({ image, mediaType: "image/jpeg" }),
       });
+
+      // A non-JSON body means something upstream rejected this before the route ran — Vercel
+      // returns plain text for an oversized payload or a function timeout. Collapsing that into
+      // the generic message is what disguised a 413 as a reading failure for an entire round of
+      // debugging, so name the status instead of swallowing it.
       const json = (await res.json().catch(() => null)) as
         | { ok: boolean; plan?: FloorPlan; error?: string }
         | null;
-      if (!json?.ok || !json.plan) throw new Error(json?.error ?? "Could not read that sketch.");
+      if (!json) {
+        if (res.status === 413) {
+          throw new Error("That photo was too large to upload. Crop it to just the drawing and retry.");
+        }
+        if (res.status === 504) {
+          throw new Error("Reading the sketch took too long and the server gave up. Try a tighter crop.");
+        }
+        throw new Error(`The server returned an unexpected response (HTTP ${res.status}).`);
+      }
+      if (!json.ok || !json.plan) throw new Error(json.error ?? "Could not read that sketch.");
+
       setPlan(json.plan);
       setHistory([]);
       setLevelIndex(0);

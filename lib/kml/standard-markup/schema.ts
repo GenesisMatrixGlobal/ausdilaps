@@ -50,6 +50,9 @@ export const standardMarkupRenderRequestSchema = z.object({
   frame: z
     .object({ center: latLngSchema, fitZoom: z.number().int().min(1).max(20) })
     .optional(),
+  /** Drops the blue neighbouring-lot fills while keeping them as frame anchors — the
+   *  on-screen preview, whose overlay draws them itself. */
+  hideNeighbours: z.boolean().default(false),
   /** Drops the cadastre-derived red project-site boundary, for when it's wrong and the
    *  operator is redrawing it as a red shape instead. The subject ring is still sent and
    *  still anchors the frame — see boundsAnchor in static-map.ts. */

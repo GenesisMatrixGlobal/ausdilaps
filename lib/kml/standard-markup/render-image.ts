@@ -70,6 +70,12 @@ export interface RenderMapInput {
   /** Drops the cadastre-derived red project-site boundary. The ring is still used to
    *  anchor the frame, so hiding it never moves the photo. */
   hideSubject?: boolean;
+  /** Drops the blue neighbouring-lot fills, keeping them as frame anchors. The first
+   *  Generate uses this: the client's overlay draws every vector, so baking them here as
+   *  well painted each lot twice — two 50% fills compound to 75%. They must still shape
+   *  the bounds, or the frame fits the subject lot alone and crops the very lots the
+   *  overlay is about to paint. */
+  hideNeighbours?: boolean;
   /** Pins the frame to one captured from an earlier render, so nothing the operator does
    *  to the geometry re-frames the photo. Omit on the first render to fit to the geometry. */
   frame?: { center: LatLng; fitZoom: number };
@@ -102,6 +108,7 @@ function buildMap(
   tolerance: number,
   neighbourCap: number,
   hideSubject: boolean,
+  hideNeighbours: boolean,
   shapes: MarkupShapeInput[],
   frame: { center: LatLng; fitZoom: number } | undefined
 ): { url: string; center: LatLng; zoom: number; fitZoom: number; omittedNeighbours: number } {
@@ -136,12 +143,15 @@ function buildMap(
     frame,
     mapType,
     zoomAdjust,
-    // Always the frame's anchor, drawn or not. The subject ring is what centres the map
-    // on the actual address and gives it something to fit when a property has no true
-    // neighbours — so it has to keep doing that even when the operator has unticked it to
-    // redraw the boundary by hand. Passing it here rather than relying on it being in
-    // `polygons` is what makes the frame identical either way.
-    boundsAnchor: subjectRing,
+    // Everything the frame should fit, drawn or not. The subject ring centres the map on
+    // the actual address and gives it something to fit when a property has no true
+    // neighbours, so it has to keep doing that even when the operator has unticked it to
+    // redraw the boundary by hand. The neighbour rings are here for the same reason: the
+    // first Generate draws no polygons at all (the client's overlay draws them), and
+    // without them the frame fits the subject lot alone and crops the neighbours the
+    // overlay is about to paint. Anchoring rather than relying on `polygons` is what
+    // makes the frame identical whether a ring is drawn or hidden.
+    boundsAnchor: [...subjectRing, ...kept.flatMap((n) => n.ring)],
     polygons: [
       // The subject property — red-lined per the standard building-inspection site
       // marking convention.
@@ -157,7 +167,7 @@ function buildMap(
               strokeWeight: OUTLINE_WEIGHT,
             },
           ]),
-      ...kept.map((n) => ({
+      ...(hideNeighbours ? [] : kept).map((n) => ({
         ring: simplifyRing(n.ring, tolerance),
         fillColor: NEIGHBOUR_FILL,
         fillOpacityPercent: FILL_OPACITY_PERCENT,
@@ -240,6 +250,7 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
   const visible = input.neighbours.filter((n) => !excluded.has(n.id));
 
   const hideSubject = input.hideSubject ?? false;
+  const hideNeighbours = input.hideNeighbours ?? false;
   const shapes = input.shapes ?? [];
   const flags: string[] = [];
   let built = buildMap(
@@ -250,6 +261,7 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
     SIMPLIFY_TOLERANCE_M,
     MAX_NEIGHBOURS,
     hideSubject,
+    hideNeighbours,
     shapes,
     input.frame
   );
@@ -262,6 +274,7 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
       SIMPLIFY_TOLERANCE_M_AGGRESSIVE,
       Math.min(MAX_NEIGHBOURS, 8),
       hideSubject,
+      hideNeighbours,
       shapes,
       input.frame
     );

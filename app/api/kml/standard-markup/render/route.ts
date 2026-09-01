@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { subjectRing, neighbours, mapType, zoomAdjust, excludeIds, hideSubject, frame } =
+  const { subjectRing, neighbours, mapType, zoomAdjust, excludeIds, hideSubject, hideNeighbours, frame } =
     parsed.data;
   // `councilAssets` is the pre-rename field name, read only as a fallback so a tab that
   // was open across the rename deploy keeps rendering instead of silently dropping the
@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
       zoomAdjust,
       excludeIds,
       hideSubject,
+      hideNeighbours,
       frame,
       shapes,
     });

@@ -54,6 +54,14 @@ export async function POST(req: NextRequest) {
       neighbours,
       mapType,
       zoomAdjust,
+      // Basemap only — the client's overlay draws every vector (site, lots, bubbles,
+      // shapes). Baking them here too painted each one twice: two 50% fills compound to
+      // 75%, so the first image came out visibly heavier than the export and than
+      // anything drawn afterwards, and unticking a lot left the baked copy behind. The
+      // ring is still passed because it anchors the frame; `hideSubject` stops it being
+      // drawn. Same request shape as the re-render path in residential-tab.tsx.
+      hideSubject: true,
+      hideNeighbours: true,
     });
     return NextResponse.json({
       ok: true,

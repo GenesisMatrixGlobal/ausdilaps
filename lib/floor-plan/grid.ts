@@ -43,9 +43,26 @@ export type WallSeg = {
   pos: number;
   from: number;
   to: number;
-  /** True when one side is outside the building — drawn heavier. */
-  external: boolean;
+  /**
+   * "external" — building against open ground; drawn heavy.
+   * "internal" — partition between two rooms; drawn thin.
+   * "area"     — a boundary of an outdoor area (yard, driveway, carport); drawn dashed,
+   *              because it is not a wall at all and must not read as one.
+   */
+  kind: "external" | "internal" | "area";
 };
+
+/** Ids of rooms flagged kind: "outdoor". */
+export function outdoorIds(rooms: Room[]): Set<string> {
+  return new Set(rooms.filter((r) => r.kind === "outdoor").map((r) => r.id));
+}
+
+function wallKind(a: Owner, b: Owner, outdoor: Set<string>): WallSeg["kind"] {
+  // An outdoor area on either side wins: a carport's edge is not a wall, whether it abuts
+  // the building or open ground.
+  if ((a && outdoor.has(a)) || (b && outdoor.has(b))) return "area";
+  return a === null || b === null ? "external" : "internal";
+}
 
 /**
  * Every wall in the level, as merged runs.
@@ -54,7 +71,7 @@ export type WallSeg = {
  * neighbours matters for output quality as much as size: butt-jointed unit strokes show
  * seams when rasterised, one long stroke does not.
  */
-export function deriveWalls(owner: Owner[][], grid: Grid): WallSeg[] {
+export function deriveWalls(owner: Owner[][], grid: Grid, outdoor: Set<string> = new Set()): WallSeg[] {
   const segs: WallSeg[] = [];
 
   // Vertical: boundary on column line x sits between cell (x-1, y) and (x, y).
@@ -64,12 +81,12 @@ export function deriveWalls(owner: Owner[][], grid: Grid): WallSeg[] {
       const left = at(owner, grid, x - 1, y);
       const right = at(owner, grid, x, y);
       const isWall = left !== right;
-      const external = isWall && (left === null || right === null);
-      if (isWall && run && run.external === external && run.to === y) {
+      const kind = isWall ? wallKind(left, right, outdoor) : null;
+      if (isWall && run && run.kind === kind && run.to === y) {
         run.to = y + 1;
       } else {
         if (run) segs.push(run);
-        run = isWall ? { orient: "v", pos: x, from: y, to: y + 1, external } : null;
+        run = isWall ? { orient: "v", pos: x, from: y, to: y + 1, kind: kind! } : null;
       }
     }
     if (run) segs.push(run);
@@ -82,12 +99,12 @@ export function deriveWalls(owner: Owner[][], grid: Grid): WallSeg[] {
       const above = at(owner, grid, x, y - 1);
       const below = at(owner, grid, x, y);
       const isWall = above !== below;
-      const external = isWall && (above === null || below === null);
-      if (isWall && run && run.external === external && run.to === x) {
+      const kind = isWall ? wallKind(above, below, outdoor) : null;
+      if (isWall && run && run.kind === kind && run.to === x) {
         run.to = x + 1;
       } else {
         if (run) segs.push(run);
-        run = isWall ? { orient: "h", pos: y, from: x, to: x + 1, external } : null;
+        run = isWall ? { orient: "h", pos: y, from: x, to: x + 1, kind: kind! } : null;
       }
     }
     if (run) segs.push(run);

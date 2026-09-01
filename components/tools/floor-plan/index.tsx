@@ -648,6 +648,23 @@ export function FloorPlanTool() {
               {plan.northNote && (
                 <p className="mt-3 text-xs leading-relaxed text-ad-muted">{plan.northNote}</p>
               )}
+              {sketchUrl && (
+                <>
+                  {/* The sketch sits in this panel rather than lower down on purpose: north is
+                      the one field worth checking against the original every time, and it is
+                      measurably least reliable when the page was photographed sideways. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={sketchUrl}
+                    alt="The sketch this plan was read from"
+                    className="mt-3 w-full rounded-lg border border-ad-border"
+                  />
+                  <p className="mt-2 text-xs text-ad-muted">
+                    Compare against the compass on the sketch. Reading it is least reliable when
+                    the page was photographed sideways or upside down.
+                  </p>
+                </>
+              )}
             </div>
 
             {(issues.length > 0 || inferredDoors > 0) && (
@@ -697,14 +714,6 @@ export function FloorPlanTool() {
                 Keep the .json to reopen this plan later — for the POST survey, or a revision.
               </p>
             </div>
-
-            {sketchUrl && (
-              <div className="rounded-xl border border-ad-border bg-white p-5">
-                <h3 className="text-sm font-semibold text-ad-ink">Original sketch</h3>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={sketchUrl} alt="Uploaded sketch" className="mt-3 w-full rounded-lg" />
-              </div>
-            )}
 
             <button
               type="button"

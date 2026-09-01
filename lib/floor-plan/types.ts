@@ -25,6 +25,14 @@ export type Rect = z.infer<typeof rectSchema>;
 export const roomSchema = z.object({
   id: z.string().min(1),
   label: z.string(),
+  /**
+   * "outdoor" = yard, driveway, carport, canopy, parking — drawn on the sketch but not
+   * enclosed building. Rendered with a dashed boundary so the building envelope stays
+   * readable: a carport bounded by solid walls reads as a room on a dilapidation plan.
+   *
+   * Defaulted, so plans saved before this existed still parse.
+   */
+  kind: z.enum(["room", "outdoor"]).default("room"),
   rects: z.array(rectSchema).min(1),
 });
 export type Room = z.infer<typeof roomSchema>;

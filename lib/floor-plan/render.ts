@@ -14,6 +14,7 @@ import {
   labelAnchor,
   labelRect,
   levelBounds,
+  outdoorIds,
   placeDoors,
   subtractOpenings,
 } from "./grid";
@@ -214,18 +215,24 @@ function drawLevel(p: Placed, grid: { w: number; h: number }, scale: number, opt
     }
   }
 
-  const walls = deriveWalls(owner, grid);
+  const walls = deriveWalls(owner, grid, outdoorIds(level.rooms));
   const ext: string[] = [];
   const int: string[] = [];
+  const area: string[] = [];
   for (const seg of walls) {
     for (const piece of subtractOpenings(seg, doors)) {
       const d =
         seg.orient === "v"
           ? `M${r2(ox + seg.pos * scale)} ${r2(oy + piece.from * scale)}V${r2(oy + piece.to * scale)}`
           : `M${r2(ox + piece.from * scale)} ${r2(oy + seg.pos * scale)}H${r2(ox + piece.to * scale)}`;
-      (seg.external ? ext : int).push(d);
+      (seg.kind === "external" ? ext : seg.kind === "area" ? area : int).push(d);
     }
   }
+  // Areas first, under everything: a driveway edge should never sit on top of a real wall.
+  out.push(
+    `<path d="${area.join("")}" stroke="${HAIRLINE}" stroke-width="${r2(internal)}" fill="none" ` +
+      `stroke-dasharray="${r2(scale * 0.3)} ${r2(scale * 0.2)}"/>`
+  );
   out.push(
     `<path d="${int.join("")}" stroke="${INK}" stroke-width="${r2(internal)}" fill="none" stroke-linecap="butt"/>`
   );

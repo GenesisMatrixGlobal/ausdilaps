@@ -4,11 +4,15 @@ import { isStaff } from "@/lib/auth/is-staff";
 import { extractFloorPlan, visionConfigured } from "@/lib/floor-plan/extract";
 
 export const runtime = "nodejs";
-// Opus reading a whole layout runs ~50s on the reference sketch; the default ceiling would
+// Opus reading a whole layout runs ~50s on a small sketch and up to ~170s on a dense
+// commercial plan at effort "medium" (it was 270s at "high"). The default ceiling would
 // cut it off well before it returns.
 export const maxDuration = 290;
 
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+// The real sketches run 6.2-6.5MB straight off a phone, so 8MB was one better camera away
+// from rejecting ordinary input. Do not solve this by downscaling before upload — the compass
+// is a small scribble in a page corner and is the first thing to become unreadable.
+const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 
 const bodySchema = z.object({
   image: z.string().min(1),

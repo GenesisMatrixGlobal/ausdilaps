@@ -17,6 +17,7 @@ import {
   buildOwnerGrid,
   deriveWalls,
   labelAnchor,
+  outdoorIds,
   placeDoors,
   subtractOpenings,
 } from "@/lib/floor-plan/grid";
@@ -58,7 +59,7 @@ export function FloorPlanEditor({
   const level = preview ?? plan.levels[levelIndex];
   const grid = plan.grid;
   const owner = buildOwnerGrid(level.rooms, grid);
-  const walls = deriveWalls(owner, grid);
+  const walls = deriveWalls(owner, grid, outdoorIds(level.rooms));
   const { placed: doors } = placeDoors(owner, grid, level.doors);
 
   /** Pointer position in grid units. Uses the SVG's own transform, so it survives any scale. */
@@ -210,29 +211,23 @@ export function FloorPlanEditor({
         );
       })}
 
-      <g stroke={INK} fill="none" strokeLinecap="butt" pointerEvents="none">
+      {/* Must match the wall styling in lib/floor-plan/render.ts — this is the one thing the
+          editor draws itself rather than sharing, so the two have to be kept in step. */}
+      <g fill="none" strokeLinecap="butt" pointerEvents="none">
         {walls.flatMap((seg, i) =>
-          subtractOpenings(seg, doors).map((piece, j) =>
-            seg.orient === "v" ? (
-              <line
-                key={`${i}-${j}`}
-                x1={seg.pos}
-                y1={piece.from}
-                x2={seg.pos}
-                y2={piece.to}
-                strokeWidth={seg.external ? 0.16 : 0.09}
-              />
+          subtractOpenings(seg, doors).map((piece, j) => {
+            const isArea = seg.kind === "area";
+            const props = {
+              stroke: isArea ? "#9aa4ae" : INK,
+              strokeWidth: seg.kind === "external" ? 0.16 : 0.09,
+              strokeDasharray: isArea ? "0.3 0.2" : undefined,
+            };
+            return seg.orient === "v" ? (
+              <line key={`${i}-${j}`} x1={seg.pos} y1={piece.from} x2={seg.pos} y2={piece.to} {...props} />
             ) : (
-              <line
-                key={`${i}-${j}`}
-                x1={piece.from}
-                y1={seg.pos}
-                x2={piece.to}
-                y2={seg.pos}
-                strokeWidth={seg.external ? 0.16 : 0.09}
-              />
-            )
-          )
+              <line key={`${i}-${j}`} x1={piece.from} y1={seg.pos} x2={piece.to} y2={seg.pos} {...props} />
+            );
+          })
         )}
       </g>
 

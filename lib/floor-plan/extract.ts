@@ -4,9 +4,16 @@
 // in the editor instead of starting from a draft.
 //
 // Opus rather than the Haiku used by the other vision helpers in this repo: those read a
-// short code off a tight crop, this reasons about a whole spatial layout. Measured on the
-// reference sketch it runs ~50s for ~5.6k in / ~3.6k out, so roughly 12c a plan against the
-// ~13 minutes the same drawing takes by hand in EdrawMax.
+// short code off a tight crop, this reasons about a whole spatial layout.
+//
+// Measured: a 10-room house sketch ~50s / 3.6k out; a 29-room commercial fire-exit plan
+// ~166s / 13.7k out; a busy hand sketch ~169s / 12.6k out. So single-digit-to-~25c a plan,
+// against the ~13 minutes the same drawing takes by hand in EdrawMax.
+//
+// Do NOT downscale the image to save time. Halving the long edge to 1568px cut the run to
+// ~93s, but the compass — a small scribble in a page corner — stopped being legible and north
+// came back as 225 degrees instead of 180, with doors dropping 26 -> 12. Input tokens fell
+// 6.5k -> 4.1k on the same page, which shows the API was not already downscaling these.
 
 import { repairInteriorGaps } from "./grid";
 import { OUTSIDE, type Door, type FloorPlan, type Room } from "./types";
@@ -36,11 +43,14 @@ const SCHEMA = {
     suburb: { type: "string", description: "Suburb ONLY if written on the sketch. Empty string otherwise." },
     northDegrees: {
       type: "integer",
-      description: "Direction north points ON THE PAGE. 0 = up, 90 = right, 180 = down, 270 = left.",
+      enum: [0, 90, 180, 270],
+      description:
+        "Direction north points on the plan you are returning. 0 = toward the top of your grid, 90 = right, 180 = bottom, 270 = left.",
     },
     northNote: {
       type: "string",
-      description: "Which compass marks you saw and how you derived northDegrees, for a human to check.",
+      description:
+        "Which compass marks you saw and which way each pointed in the photo, for a human to check.",
     },
     grid: {
       type: "object",
@@ -58,8 +68,16 @@ const SCHEMA = {
             type: "array",
             items: {
               type: "object",
-              properties: { label: { type: "string" }, rects: { type: "array", items: rectProps } },
-              required: ["label", "rects"],
+              properties: {
+                label: { type: "string" },
+                kind: {
+                  type: "string",
+                  enum: ["room", "outdoor"],
+                  description: "\"outdoor\" for yard, driveway, carport, canopy, parking, assembly area.",
+                },
+                rects: { type: "array", items: rectProps },
+              },
+              required: ["label", "kind", "rects"],
               additionalProperties: false,
             },
           },
@@ -89,15 +107,23 @@ const SCHEMA = {
 // The "do not invent" rules are load-bearing, not boilerplate. On the reference sketch an
 // earlier version of this prompt returned suburb "Marleston" — reasoned from the street name
 // "Marleston Ave", written nowhere on the page. These drawings go into dilapidation reports.
-const PROMPT = `This is a photograph of a hand-drawn floor plan sketch, made on site by a building
-inspector. It is drawn in pen on ruled notebook paper.
+const PROMPT = `This is a photograph of a building floor plan, taken on site by a building
+inspector. It is one of:
 
-IGNORE the printed horizontal rules of the notebook paper — they are not walls. Only the
-hand-drawn pen lines are walls. Ignore any faint text showing through from the reverse of
-the page.
+- a hand-drawn sketch in pen, usually on ruled notebook paper; or
+- a printed plan — an architectural drawing, a fire-exit or evacuation plan, a tenancy plan —
+  often with the inspector's own notes added on top in pen.
 
-The sketch is a schematic layout: rooms are drawn as adjoining rectangles. There are no
-measurements on it and you must not invent any.
+The page may have been photographed at any angle: sideways, upside down, or skewed by the
+camera. Work out which way up the page is meant to be read, then read it in that orientation.
+
+IGNORE anything that is not part of the building: the printed horizontal rules of notebook
+paper, faint text showing through from the reverse of the page, the surface the page is
+resting on, and fingers holding it. On a printed plan, ignore the title block, the legend,
+the scale bar, and fire-safety symbols (exit arrows, fire reels, extinguishers, assembly
+points) — those are not rooms.
+
+Treat the plan as a schematic layout: rooms are adjoining rectangles.
 
 Return the layout on an integer grid:
 
@@ -111,25 +137,55 @@ Return the layout on an integer grid:
   to make north point up.
 
 Room labels: expand the inspector's shorthand to normal title case — "bed 2" becomes
-"Bedroom 2", "bath" becomes "Bathroom", "laundry" becomes "Laundry". Do not add rooms that
-are not on the sketch.
+"Bedroom 2", "bath" becomes "Bathroom", "laundry" becomes "Laundry". A label sitting outside
+the plan with an arrow pointing into a room belongs to the room it points at. Where a label
+has been crossed out and rewritten, use the replacement. Do not add rooms that are not drawn.
+
+Some plans write measurements inside each room, like "4.8 x 2.6" or "5.2x4.0". These are NOT
+part of the label — leave them out entirely. A room labelled "Office 4.8 x 2.6" is just
+"Office". If that leaves two rooms with the same name, number them: "Office 1", "Office 2".
+
+Set kind to "outdoor" for anything that is not enclosed building interior — front yard, back
+yard, driveway, carport, canopy, hard stand, parking, assembly area, courtyard, deck. Set it
+to "room" for everything else, including garages, sheds and warehouses, which are enclosed.
 
 Doors: list them as a pair of room labels that the doorway connects, or a room label and
 "outside" for an external door. Mark confidence "visible" ONLY where the sketch actually
 shows a gap, arc or door mark in a wall. Use "inferred" if you are filling in a doorway that
 must logically exist but is not drawn. Do not guess wildly — an empty list is fine.
 
-North: read the compass marks on the sketch carefully. The arrows may not follow the usual
-convention, so work out which way the N arrow actually points on the page and report that as
-northDegrees, and describe what you saw in northNote.
+North: work out which way up the page reads, place the rooms in that orientation, then report
+northDegrees against THAT SAME orientation — 0 = north points toward the top of your grid,
+90 = right, 180 = bottom, 270 = left. If you turned the page to read it, the compass turns
+with it by the same amount.
+
+Read the compass carefully first: the arrows often do NOT follow the usual convention, and the
+N arrow may point any way at all. If N is not drawn but S is, take the opposite of S.
+
+Two things make this harder than it looks, and both have produced wrong answers:
+
+- The compass is often sketched with the notebook turned, so its letters sit at an angle to
+  the plan and read sideways. Judge each direction from WHERE THE ARROWHEAD POINTS, never from
+  which way the letters read.
+- An arrow may be crossed out and redrawn. Use the surviving one and say so in northNote.
+
+Sanity-check before answering: the arrows should form a consistent compass — N opposite S,
+E opposite W, each pair at right angles. If yours does not, look again.
+
+In northNote, say which rotation you applied to the page and which way each compass arrow
+pointed, so a human can check the answer instead of trusting it.
 
 Address and suburb: transcribe ONLY what is actually written on the page. Do not infer a
 suburb from a street name, and do not expand or correct an address. If the suburb is not
 written, return an empty string for it.
 
-If the sketch shows more than one storey, return one entry in levels for each.`;
+Levels: a plan may show more than one storey. They are not always stacked down the page —
+a second storey is often drawn as a SEPARATE detached block beside the main one, with its own
+caption ("storage - upper level", "Level 2", "first floor"). A detached block with its own
+caption is a level, not a room. Return one entry in levels for each, using the caption as its
+name, and give each level its own grid coordinates starting from the top-left.`;
 
-type RawRoom = { label: string; rects: Array<{ x: number; y: number; w: number; h: number }> };
+type RawRoom = { label: string; kind: "room" | "outdoor"; rects: Array<{ x: number; y: number; w: number; h: number }> };
 type RawDoor = { betweenA: string; betweenB: string; confidence: "visible" | "inferred" };
 type RawLevel = { name: string; rooms: RawRoom[]; doors: RawDoor[] };
 type RawPlan = {
@@ -155,7 +211,7 @@ function toFloorPlan(raw: RawPlan): FloorPlan {
     const parsed: Room[] = level.rooms.map((room, ri) => {
       const id = `l${li}-${slug(room.label, `room-${ri}`)}-${ri}`;
       byLabel.set(room.label.trim().toLowerCase(), id);
-      return { id, label: room.label.trim(), rects: room.rects };
+      return { id, label: room.label.trim(), kind: room.kind ?? "room", rects: room.rects };
     });
 
     // Close seams between separately-placed rectangles before anything derives walls from
@@ -201,6 +257,11 @@ function toFloorPlan(raw: RawPlan): FloorPlan {
     };
   });
 
+  // Measured across the sketch corpus, asking for north relative to the returned grid beat
+  // decomposing it into (page rotation + arrow direction in the photo) and adding them here:
+  // 4/5 correct against 3/6. The model composes the rotation better than it reports the parts.
+  // It is still not reliable on a compass drawn askew, which is why the UI treats north as a
+  // thing to confirm rather than a thing to trust.
   const north = ((Math.round(raw.northDegrees) % 360) + 360) % 360;
 
   return {
@@ -229,9 +290,17 @@ export async function extractFloorPlan(imageBase64: string, mediaType: string): 
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 16000,
+      // Covers thinking AND output. At 16000 a dense plan spent the entire budget reasoning
+      // and emitted zero JSON — a 29-room commercial fire-exit plan returned stop_reason
+      // "max_tokens" with an empty text block, which surfaced to the user as "too complex"
+      // when nothing was too complex. Measured need: 13.7k for that plan, 21.7k for a busy
+      // hand sketch. Output tokens bill as produced, not as budgeted, so headroom is free.
+      max_tokens: 48000,
       thinking: { type: "adaptive" },
-      output_config: { effort: "high", format: { type: "json_schema", schema: SCHEMA } },
+      // "medium", not "high": on the same inputs it returns the same rooms, address and north
+      // in ~37% less wall-clock (169s vs 270s on the worst case), which is what keeps a big
+      // plan inside this route's maxDuration.
+      output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
       messages: [
         {
           role: "user",
@@ -257,7 +326,12 @@ export async function extractFloorPlan(imageBase64: string, mediaType: string): 
   // Structured outputs are not honoured on a refusal, and a max_tokens cut leaves invalid
   // JSON — both need to surface as a clear message rather than a parse error.
   if (data.stop_reason === "refusal") throw new Error("The model declined to read this image.");
-  if (data.stop_reason === "max_tokens") throw new Error("Sketch too complex — the response was cut short.");
+  // Not a hard ceiling on plan size — it means this one ran past a generous budget. Say so,
+  // because the old wording ("too complex") sent people looking for a simpler sketch when the
+  // real answer was to raise max_tokens.
+  if (data.stop_reason === "max_tokens") {
+    throw new Error("Ran out of room reading that plan. Try a tighter crop of just the drawing.");
+  }
 
   const text = (data.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
   let raw: RawPlan;

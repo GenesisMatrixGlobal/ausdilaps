@@ -202,13 +202,6 @@ function bodyText(message: GraphMessage): string {
   return message.body?.contentType?.toLowerCase() === "html" ? htmlToText(raw, 12_000) : raw.slice(0, 12_000);
 }
 
-/** The visible text of the anchor pointing at `href` — usually the tender's title. */
-function anchorTextFor(html: string, href: string): string | null {
-  const escaped = href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = html.match(new RegExp(`href\\s*=\\s*["']${escaped}["'][^>]*>([\\s\\S]{0,400}?)</a>`, "i"));
-  const text = match ? htmlToText(match[1], 300).trim() : "";
-  return text || null;
-}
 
 function fromAddress(message: GraphMessage): string | null {
   return message.from?.emailAddress?.address ?? null;
@@ -232,13 +225,16 @@ function parseDigest(message: GraphMessage, source: EmailSource): RawItem[] {
   const text = bodyText(message);
   const from = fromAddress(message);
 
-  const hrefs = contentLinks(html, source.senderDomain);
-  if (hrefs.length === 0) {
+  const links = contentLinks(html, source.senderDomain);
+  if (links.length === 0) {
     return [singleItem(message, source, { note: "read as a digest, but no tender links were found" })];
   }
 
-  return hrefs.map((href) => {
-    const title = htmlToText(anchorTextFor(html, href) ?? message.subject ?? "Untitled tender", 300);
+  return links.map(({ href, text }) => {
+    // The anchor text IS the tender title — contentLinks already had to read it to decide
+    // the link was a tender at all, so re-scanning the HTML here would be a second pass
+    // that could disagree with the first.
+    const title = htmlToText(text || message.subject || "Untitled tender", 300);
     return {
       sourceSlug: source.slug,
       // Keyed on the LINK, never on position in the email — digests reorder between sends.

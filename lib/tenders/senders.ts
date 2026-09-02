@@ -41,41 +41,81 @@ export function isSeededTrusted(domain: string): boolean {
   return seedTrustedDomains().some((d) => domain === d || domain.endsWith(`.${d}`));
 }
 
-/** Links that are never a tender, however the digest is laid out. */
-const NOISE = /(unsubscribe|preferences|privacy|twitter\.com|linkedin\.com|facebook\.com|x\.com|youtube\.com|\.(png|jpg|gif|svg|css|js)(\?|$))/i;
-
-/** Paths that look like a specific thing rather than a landing page. */
-const CONTENT_PATH = /\/(tender|opportunit|notice|rft|rfq|rfp|eoi|atm|display|view|show|detail|job|project|contract)/i;
+/** URLs that are never a tender, however the digest is laid out. */
+const NOISE_URL =
+  /(unsubscribe|preferences|mysearchresults|\/faqs?\b|\/browse\b|privacy|twitter\.com|linkedin\.com|facebook\.com|x\.com|youtube\.com|\.(png|jpg|gif|svg|css|js)(\?|$))/i;
 
 /**
- * Links in a digest that plausibly point at one tender each.
+ * Anchor text that means navigation, not a tender.
  *
- * Exported because parse-mode detection and digest parsing must agree on what counts —
- * detecting "digest" on links the parser then rejects would produce the zero-link
- * fallback every time, which looks like a broken portal rather than a bad heuristic.
+ * This is the load-bearing filter, not the URL one. Felix routes every link through
+ * `email.felix.net/f/a/<opaque>/<opaque>` — the tender and the help centre are
+ * indistinguishable by URL, and only the visible text separates them. tenders.vic.gov.au
+ * needs it too: "View more matching tenders" points at a real /tender/ path.
  */
-export function contentLinks(html: string, domain: string | null): string[] {
-  const hrefs = [...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1]);
+const NOISE_TEXT: RegExp[] = [
+  /^(un)?subscribe/i,
+  /manage.*(preference|subscription|alert)/i,
+  /^(help|support|contact|home|privacy|terms|faqs?)\b/i,
+  /help\s*cent(er|re)/i,
+  /^(log|sign)\s*(in|out|up)/i,
+  /^(click|read|learn|see|view)\s+(here|more|all)\b/i,
+  /\b(view|see)\b.*\bmore\b.*\btenders?\b/i,
+  /^\d+\+?\s*more\b/i,
+];
 
-  const kept = hrefs.filter((href) => {
-    if (!/^https?:\/\//i.test(href)) return false; // mailto:, tel:, anchors
-    if (NOISE.test(href)) return false;
+/**
+ * A tender title is longer than this. "Felix" (5) is a logo link; "DIT059252" (9) is a
+ * real tender reference, so the bar has to sit between them.
+ */
+const MIN_TITLE_CHARS = 8;
+
+export type DigestLink = { href: string; text: string };
+
+/** Crude tag strip — enough to judge anchor text, without pulling in the HTML sanitiser. */
+function anchorText(inner: string): string {
+  return inner.replace(/<[^>]*>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The links in a digest that each point at one tender.
+ *
+ * Filters on the anchor TEXT as well as the URL, because for at least one real portal the
+ * URL carries no signal at all. Returns the text too — it is the tender's title, which is
+ * what the parser wants anyway, so extracting it twice would be wasted work and a chance
+ * for the two passes to disagree.
+ */
+export function contentLinks(html: string, domain: string | null): DigestLink[] {
+  const anchors = [...html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
+
+  const kept: DigestLink[] = [];
+  const seen = new Set<string>();
+
+  for (const [, href, inner] of anchors) {
+    if (!/^https?:\/\//i.test(href)) continue; // mailto:, tel:, anchors
+    if (NOISE_URL.test(href)) continue;
+
+    const text = anchorText(inner);
+    if (text.length < MIN_TITLE_CHARS) continue;
+    if (NOISE_TEXT.some((r) => r.test(text))) continue;
+
     let url: URL;
     try {
       url = new URL(href);
     } catch {
-      return false;
+      continue;
     }
     const segments = url.pathname.split("/").filter(Boolean);
-    if (segments.length === 0) return false; // bare homepage — a signature, not a tender
+    if (segments.length === 0) continue; // bare homepage — a signature, not a tender
 
-    const sameDomain = domain ? url.hostname.toLowerCase().endsWith(domain) : false;
-    // Either it is on the portal's own domain with a real path, or it looks like a tender
-    // link wherever it is hosted — aggregators link straight out to the source portal.
-    return (sameDomain && segments.length >= 2) || CONTENT_PATH.test(url.pathname);
-  });
+    // Dedupe on the URL: a digest often links the same tender from both a title and a
+    // "read more", and two rows for one tender is exactly what external_ref prevents.
+    if (seen.has(href)) continue;
+    seen.add(href);
+    kept.push({ href, text });
+  }
 
-  return [...new Set(kept)];
+  return kept;
 }
 
 /**

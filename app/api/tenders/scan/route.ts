@@ -39,8 +39,14 @@ async function handle(req: NextRequest, triggeredBy: "cron" | "manual") {
     }
   }
 
+  // ?days=N widens the window for a one-off backfill. Costs nothing beyond the extra
+  // Graph pages: an item already stored is matched on its external_ref and never
+  // re-classified, so re-reading old mail re-reads judgements we have already paid for.
+  const requested = Number(req.nextUrl.searchParams.get("days"));
+  const lookbackDays = Number.isFinite(requested) && requested > 0 ? requested : undefined;
+
   try {
-    const summary = await runScan({ triggeredBy });
+    const summary = await runScan({ triggeredBy, lookbackDays });
     return NextResponse.json({ ok: true, summary });
   } catch (e) {
     const error = (e as Error).message;

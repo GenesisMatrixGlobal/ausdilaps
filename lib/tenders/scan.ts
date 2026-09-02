@@ -5,6 +5,8 @@ import { classifierConfigured, classifyTender } from "./classify";
 import {
   CLASSIFY_CONCURRENCY,
   CLASSIFY_DEADLINE_MS,
+  LOOKBACK_DAYS,
+  MAX_LOOKBACK_DAYS,
   DAILY_CLASSIFY_BUDGET,
   MAX_CLASSIFY_ATTEMPTS,
   MAX_CLASSIFY_PER_RUN,
@@ -179,7 +181,9 @@ async function scanSource(
   db: Db,
   source: ReturnType<typeof enabledSources>[number],
   runGroupId: string,
-  triggeredBy: "cron" | "manual" | "replay"
+  triggeredBy: "cron" | "manual" | "replay",
+  /** Shared with discovery so the memoised mailbox fetch is hit once, not twice. */
+  since: string
 ): Promise<SourceRunSummary> {
   const started = Date.now();
 
@@ -212,7 +216,6 @@ async function scanSource(
   };
 
   try {
-    const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
     const { raw, items } = await source.fetch(since);
 
     // Raw goes down FIRST, whether or not the parse produced anything. This is what makes
@@ -307,8 +310,14 @@ async function ensureSourceRows(db: Db): Promise<void> {
   if (error) console.error("[tenders] ensureSourceRows failed:", error.message);
 }
 
-export async function runScan(opts: { triggeredBy?: "cron" | "manual" | "replay" } = {}): Promise<ScanSummary> {
+export async function runScan(
+  opts: { triggeredBy?: "cron" | "manual" | "replay"; lookbackDays?: number } = {}
+): Promise<ScanSummary> {
   const triggeredBy = opts.triggeredBy ?? "cron";
+  // One window for the whole run. Discovery and every source must use the SAME value —
+  // fetchMailboxMessages memoises on it, so two different windows would mean two Graph
+  // fetches of the same mailbox and two chances to disagree about what is in it.
+  const lookbackDays = Math.min(Math.max(opts.lookbackDays ?? LOOKBACK_DAYS, 1), MAX_LOOKBACK_DAYS);
   const runGroupId = randomUUID();
   const db = createAdminClient();
   const deadline = Date.now() + CLASSIFY_DEADLINE_MS;
@@ -322,7 +331,7 @@ export async function runScan(opts: { triggeredBy?: "cron" | "manual" | "replay"
   // rather than the night after.
   //
   // Both reuse the memoised mailbox fetch, so this costs no extra Graph call.
-  const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const since = new Date(Date.now() - lookbackDays * 86_400_000).toISOString();
   await discoverMailboxSources(db, since);
 
   const sources = [...enabledSources(), ...(await loadEmailSources(db))];
@@ -344,7 +353,7 @@ export async function runScan(opts: { triggeredBy?: "cron" | "manual" | "replay"
 
   // ── Phase A — fetch + persist ────────────────────────────────────────
   for (const source of sources) {
-    const summary = await scanSource(db, source, runGroupId, triggeredBy);
+    const summary = await scanSource(db, source, runGroupId, triggeredBy, since);
     result.sources.push(summary);
   }
   if (result.sources.some((s) => s.status !== "succeeded")) result.status = "partial";

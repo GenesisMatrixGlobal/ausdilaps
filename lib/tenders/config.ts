@@ -32,6 +32,24 @@ export const CLASSIFY_DEADLINE_MS = 240_000;
 /** Bounded concurrency for classification. Polite to the API, and cheap to reason about. */
 export const CLASSIFY_CONCURRENCY = 3;
 
+/**
+ * How far back a scan looks.
+ *
+ * Three days, not one, and it costs nothing extra: an item already stored is recognised by
+ * its external_ref and never re-classified, so a wider window re-reads mail we have already
+ * judged without paying for it again. What it buys is that a missed night — a deploy, an
+ * outage, an expired secret — heals itself on the next run instead of leaving a silent hole
+ * in the record.
+ *
+ * Raise it with TENDER_LOOKBACK_DAYS, or pass lookbackDays to runScan() for a one-off
+ * backfill. Capped so a typo can't ask Graph for a decade of mail.
+ */
+export const LOOKBACK_DAYS = Math.min(
+  Math.max(Number(process.env.TENDER_LOOKBACK_DAYS ?? 3), 1),
+  60
+);
+export const MAX_LOOKBACK_DAYS = 60;
+
 /** Every outbound fetch gets this, so one hung feed cannot eat the whole time budget. */
 export const FETCH_TIMEOUT_MS = 20_000;
 

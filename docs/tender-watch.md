@@ -75,7 +75,7 @@ To switch it on, put this back in `vercel.json`:
 
 | Schedule (UTC) | Brisbane | Route |
 |---|---|---|
-| `0 19 * * *` | 8:00pm | `/api/tenders/scan` |
+| `0 19 * * *` | 5:00am | `/api/tenders/scan` |
 | `0 23 * * *` | 9:00am | `/api/tenders/health` |
 
 Queensland doesn't observe daylight saving, so a fixed UTC expression *is* 5am Brisbane year-round — no timezone code anywhere.

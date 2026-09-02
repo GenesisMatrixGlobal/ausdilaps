@@ -68,17 +68,17 @@ To switch it on, put this back in `vercel.json`:
 
 ```json
 "crons": [
-  { "path": "/api/tenders/scan",   "schedule": "0 10 * * *" },
+  { "path": "/api/tenders/scan",   "schedule": "0 19 * * *" },
   { "path": "/api/tenders/health", "schedule": "0 23 * * *" }
 ]
 ```
 
 | Schedule (UTC) | Brisbane | Route |
 |---|---|---|
-| `0 10 * * *` | 8:00pm | `/api/tenders/scan` |
+| `0 19 * * *` | 8:00pm | `/api/tenders/scan` |
 | `0 23 * * *` | 9:00am | `/api/tenders/health` |
 
-Queensland doesn't observe daylight saving, so a fixed UTC expression *is* 8pm Brisbane year-round — no timezone code anywhere.
+Queensland doesn't observe daylight saving, so a fixed UTC expression *is* 5am Brisbane year-round — no timezone code anywhere.
 
 Three Vercel caveats: crons only fire on **production** deployments, only after the next push to `main`, and count/duration are plan-limited (Hobby caps at 2 crons — these two use the whole allowance).
 

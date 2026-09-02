@@ -230,11 +230,15 @@ function parseDigest(message: GraphMessage, source: EmailSource): RawItem[] {
     return [singleItem(message, source, { note: "read as a digest, but no tender links were found" })];
   }
 
-  return links.map(({ href, text }) => {
+  // `linkText`, NOT `text` — destructuring `text` here shadowed the message body above,
+  // so every digest item's excerpt became its own title and the classifier judged tenders
+  // on a dozen characters with no closing date, agency or description. It looked like it
+  // was working. Keep the names distinct.
+  return links.map(({ href, text: linkText }) => {
     // The anchor text IS the tender title — contentLinks already had to read it to decide
     // the link was a tender at all, so re-scanning the HTML here would be a second pass
     // that could disagree with the first.
-    const title = htmlToText(text || message.subject || "Untitled tender", 300);
+    const title = htmlToText(linkText || message.subject || "Untitled tender", 300);
     return {
       sourceSlug: source.slug,
       // Keyed on the LINK, never on position in the email — digests reorder between sends.

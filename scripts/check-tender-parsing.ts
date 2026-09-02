@@ -83,6 +83,29 @@ const items2 = parseMessages([msg({ from: "alerts@buy.nsw.gov.au", subject: "Dai
 ok("keys are stable when the digest reorders",
    JSON.stringify(items.map((i) => i.externalRef).sort()) === JSON.stringify(items2.map((i) => i.externalRef).sort()));
 
+// ── The excerpt must be the EMAIL BODY, not the link's own text ────────────────
+// Regression: destructuring `text` from the link shadowed the message body one line
+// above, so every digest item's excerpt collapsed to its own title. The classifier then
+// judged tenders on a dozen characters — no closing date, no agency, no description — and
+// looked healthy doing it, because items were still produced with plausible titles.
+{
+  const marker = "Closing 21 Sept 2026. Buying agency Goulburn Valley Water.";
+  const withBody = parseMessages(
+    [msg({ from: "noreply@tenders.vic.gov.au", subject: "New Tender Notifications",
+      html:
+        `<p>${marker}</p>` +
+        `<a href="https://www.tenders.vic.gov.au/tender/view?id=1">Dilapidation Survey Services</a>` +
+        `<a href="https://www.tenders.vic.gov.au/tender/view?id=2">Structural Condition Report</a>` })],
+    source("tenders.vic.gov.au")
+  );
+  ok("digest items carry the email body as excerpt",
+     withBody.length === 2 && withBody.every((i) => i.excerpt.includes("Goulburn Valley Water")),
+     `${withBody.length} items, first excerpt ${withBody[0]?.excerpt.length} chars`);
+  ok("excerpt is not merely the title", withBody.every((i) => i.excerpt !== i.title));
+  ok("title still comes from the anchor text",
+     withBody[0]?.title === "Dilapidation Survey Services", String(withBody[0]?.title));
+}
+
 // ── Detection, both directions ─────────────────────────────────────────────────
 const inviteHtml = `<p>Hi team, can you price the attached dilapidation scope?</p>
   <p>Regards,<br>Sarah</p><a href="https://bigconstructionco.com.au">bigconstructionco.com.au</a>`;

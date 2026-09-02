@@ -121,18 +121,24 @@ export function contentLinks(html: string, domain: string | null): DigestLink[] 
 /**
  * Does this message carry many tenders, or one?
  *
- * DELIBERATELY BIASED TOWARD DIGEST. The two mistakes are not symmetrical:
+ * DIGEST BY DEFAULT. One qualifying link is enough — there is no "at least two" threshold,
+ * because the two mistakes are not symmetrical:
  *
- *   digest read as single  →  29 of 30 tenders silently lost, no error, no empty result
- *   single read as digest  →  a couple of junk items the classifier rejects
+ *   digest read as single  →  its tenders are never itemised, never deep-linked, and the
+ *                             loss is silent: no error, no empty result, just a row titled
+ *                             "New Tender Notifications" where five tenders should be.
+ *   single read as digest  →  one item titled by its link instead of its subject.
  *
- * Two content links is enough, and the miss is self-correcting: a single invitation
- * wrongly called a digest finds no content links at parse time and falls back to one
- * whole-message item (see parseDigest). So the only way to lose a tender here is to guess
- * "single" on something that wasn't, which is the case this threshold is set low to avoid.
+ * The first is unrecoverable without someone noticing; the second is cosmetic and visible.
+ * A real VIC notification carrying exactly one tender proved the point — under a
+ * two-link threshold it collapsed into an untitled summary.
+ *
+ * Zero qualifying links still falls back to one whole-message item (see parseDigest), so a
+ * genuine one-to-one invitation with no links is unaffected. Where the default is wrong for
+ * a particular sender, pin tender_sources.parse_mode to 'single' and it stops guessing.
  */
 export function detectParseMode(html: string, domain: string | null): Exclude<ParseMode, "auto"> {
-  return contentLinks(html, domain).length >= 2 ? "digest" : "single";
+  return contentLinks(html, domain).length >= 1 ? "digest" : "single";
 }
 
 /** Resolves a stored parse_mode, falling back to detection when it is 'auto'. */

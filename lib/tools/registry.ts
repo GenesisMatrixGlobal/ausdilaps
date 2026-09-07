@@ -26,7 +26,7 @@ import { canAccess, type StaffUser } from "@/lib/auth/session";
  *    site-markups          -> "Markup and Measure" (its Building Markup tab is still
  *                             `residential` / standard-markup in code, routes and components)
  *    property-sizing       -> "Bulk Property Sizing"
- *    road-survey-estimator -> "KMZ Analyzer" */
+ *    road-survey-estimator -> "KMZ Analyser" */
 export type ToolDefinition = {
   slug: string;
   /** Short reference code (SMK, PSZ, ...) so a tool can be named in a message
@@ -81,7 +81,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     slug: "road-survey-estimator",
     code: "RSE",
-    title: "KMZ Analyzer",
+    title: "KMZ Analyser",
     description:
       "Turn a client's road-network .kmz into a per-segment quoting sheet, and turn their edited sheet back into a map for Google Earth.",
     departments: ["estimators"],

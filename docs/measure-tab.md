@@ -38,7 +38,7 @@ Residential exported markup agree on the same outline.
 | Line width | 3–30 m in half-metre steps. It is metres **on the ground**, not a stroke width — it re-buffers the ribbon, which changes the area. |
 | Navigate | Type an address or suburb, or paste a Google Maps URL / a `-27.4698, 153.0251` pair. |
 | More screen | The map's own fullscreen button, top right. |
-| Export | **Download .png** — the frame you're looking at, every shape, a north arrow, and a legend of each area plus the total. |
+| Export | **Download .png** — the frame you're looking at, every shape, a north arrow, and a compact legend: each badge number, its area, and the total. |
 
 **Line vs area.** A line is a ribbon centred on the points, half the width either side — a
 frontage, kerb or footpath; its area is the ribbon, and it also reports centreline length.
@@ -171,6 +171,10 @@ Consequences worth knowing:
 - **The legend panel is sized from measured glyph widths**, never a constant. The Building
   Markup legend was once 5px from clipping its longest label, and a legend that silently
   crops a figure is worse than one that's slightly wide.
+- **The legend is badge number + area + total, and nothing else.** No title, no mode, no
+  width, no length — each of those widened the panel over the very map it describes, and a
+  "MEASUREMENTS" heading was on its own wider than every row. Width and length stay in the
+  tool's on-screen panel. Adding a column back costs map, so weigh it.
 - **`centroidOf` ignores a repeated closing vertex.** It used to average it in, which
   counted the first point twice and put a triangle's badge down by its bottom vertex.
 

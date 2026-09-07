@@ -14,7 +14,6 @@ import { centroidOf } from "@/lib/kml/standard-markup/geometry";
 import {
   MIN_POINTS,
   formatArea,
-  formatLength,
   measureShape,
   ringFor,
   type Measurable,
@@ -125,12 +124,15 @@ function widthWithSuper(text: string, fontSize: number): number {
 
 interface Row {
   index: number;
-  label: string;
   value: string;
 }
 
-/** One row per drawn shape plus a total. The number matches the badge on the shape, which
- *  is what makes the legend readable without repeating an area figure over the imagery. */
+/** One row per drawn shape — its badge number and its area, nothing else — plus a total.
+ *
+ *  Deliberately no mode/width/length column. The number ties the row to the badge on the
+ *  imagery, the area is what the drawing exists to communicate, and every extra column was
+ *  widening the panel over the very map it was describing. Width and length stay on screen
+ *  in the tool's own panel. */
 function rowsFor(measurements: (Measurable & { id: string })[]): { rows: Row[]; totalSqm: number } {
   const rows: Row[] = [];
   let totalSqm = 0;
@@ -138,22 +140,13 @@ function rowsFor(measurements: (Measurable & { id: string })[]): { rows: Row[]; 
     if (m.points.length < MIN_POINTS[m.mode]) return;
     const measured = measureShape(m);
     totalSqm += measured.areaSqm;
-    const width = Number.isInteger(m.widthMetres) ? `${m.widthMetres}` : m.widthMetres.toFixed(1);
-    rows.push({
-      index: i + 1,
-      label:
-        m.mode === "line"
-          ? `Line, ${width}m wide, ${formatLength(measured.lengthMetres ?? 0)} long`
-          : "Area",
-      value: formatArea(measured.areaSqm),
-    });
+    rows.push({ index: i + 1, value: formatArea(measured.areaSqm) });
   });
   return { rows, totalSqm };
 }
 
 const PANEL_PAD = 18;
 const ROW_HEIGHT = 30;
-const TITLE_SIZE = 17;
 const ROW_SIZE = 19;
 const BADGE_R = 15;
 const GAP = 26; // between the row label and its right-aligned value
@@ -161,49 +154,44 @@ const GAP = 26; // between the row label and its right-aligned value
 function legendSvg(rows: Row[], totalSqm: number, showTotal: boolean): string {
   const x = 20;
   const y = 20;
-  const title = "MEASUREMENTS";
-  const numberColumn = textWidth("99", ROW_SIZE) + 12;
-
-  const labelWidths = rows.map((r) => numberColumn + textWidth(r.label, ROW_SIZE));
-  const valueWidths = rows.map((r) => widthWithSuper(r.value, ROW_SIZE));
+  // Room for a two-digit badge number, so a 10th measurement doesn't shift the column.
+  const numberColumn = textWidth("99", ROW_SIZE) + 14;
   const totalLabel = "Total";
+
+  const valueWidths = rows.map((r) => widthWithSuper(r.value, ROW_SIZE));
   const totalValue = formatArea(totalSqm);
+  const leftWidths = rows.map(() => numberColumn);
   if (showTotal) {
-    labelWidths.push(numberColumn + textWidth(totalLabel, ROW_SIZE));
+    leftWidths.push(textWidth(totalLabel, ROW_SIZE) + 14);
     valueWidths.push(widthWithSuper(totalValue, ROW_SIZE));
   }
 
-  // Sized from measured glyph widths, never a constant — the Building Markup legend was
-  // once 5px from clipping its longest label, and a legend that silently crops a figure
-  // is worse than one that's a bit wide.
-  const contentWidth = Math.max(
-    textWidth(title, TITLE_SIZE),
-    ...labelWidths.map((w, i) => w + GAP + valueWidths[i])
-  );
+  // Sized from measured glyph widths, never a constant — a legend that silently crops a
+  // figure is worse than one that's slightly wide.
+  const contentWidth = Math.max(...leftWidths.map((w, i) => w + GAP + valueWidths[i]));
   const bodyRows = rows.length + (showTotal ? 1 : 0);
   const width = PANEL_PAD * 2 + contentWidth;
-  const height = PANEL_PAD * 2 + TITLE_SIZE + 14 + bodyRows * ROW_HEIGHT;
+  const height = PANEL_PAD * 2 + bodyRows * ROW_HEIGHT - (ROW_HEIGHT - ROW_SIZE);
   const right = x + width - PANEL_PAD;
 
   const lines: string[] = [
     `<rect x="${x}" y="${y}" width="${width.toFixed(1)}" height="${height.toFixed(1)}" rx="10" fill="white" fill-opacity="0.93" stroke="#cccccc" stroke-width="1.5" />`,
-    textToSvgPaths(title, { x: x + PANEL_PAD, y: y + PANEL_PAD + TITLE_SIZE, fontSize: TITLE_SIZE, fill: MUTED }),
   ];
 
-  let rowY = y + PANEL_PAD + TITLE_SIZE + 14 + ROW_SIZE;
+  let rowY = y + PANEL_PAD + ROW_SIZE;
   for (const row of rows) {
     lines.push(
       textToSvgPaths(String(row.index), { x: x + PANEL_PAD, y: rowY, fontSize: ROW_SIZE, fill: SHAPE_COLOR }),
-      textToSvgPaths(row.label, { x: x + PANEL_PAD + numberColumn, y: rowY, fontSize: ROW_SIZE, fill: INK }),
       textWithSuper(row.value, right - widthWithSuper(row.value, ROW_SIZE), rowY, ROW_SIZE, INK)
     );
     rowY += ROW_HEIGHT;
   }
 
   if (showTotal) {
+    const ruleY = (rowY - ROW_SIZE - 8).toFixed(1);
     lines.push(
-      `<line x1="${x + PANEL_PAD}" y1="${(rowY - ROW_SIZE - 8).toFixed(1)}" x2="${right}" y2="${(rowY - ROW_SIZE - 8).toFixed(1)}" stroke="#dddddd" stroke-width="1.5" />`,
-      textToSvgPaths(totalLabel, { x: x + PANEL_PAD + numberColumn, y: rowY, fontSize: ROW_SIZE, fill: MUTED }),
+      `<line x1="${x + PANEL_PAD}" y1="${ruleY}" x2="${right}" y2="${ruleY}" stroke="#dddddd" stroke-width="1.5" />`,
+      textToSvgPaths(totalLabel, { x: x + PANEL_PAD, y: rowY, fontSize: ROW_SIZE, fill: MUTED }),
       textWithSuper(totalValue, right - widthWithSuper(totalValue, ROW_SIZE), rowY, ROW_SIZE, STEEL)
     );
   }

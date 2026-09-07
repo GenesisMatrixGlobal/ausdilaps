@@ -2,12 +2,23 @@
 
 import { useCallback, useRef, useState } from "react";
 import type { LatLng } from "@/lib/kml/types";
-import {
-  bufferLineToPolygon,
-  closeRing,
-  pathLengthMetres,
-  ringAreaSqm,
-} from "@/lib/kml/standard-markup/geometry";
+import type { Measurable, ShapeMode } from "@/lib/kml/standard-markup/measure";
+// Imported as well as re-exported: `export ... from` re-exports without binding the name
+// locally, and payload() below reads MIN_POINTS.
+import { MIN_POINTS } from "@/lib/kml/standard-markup/measure";
+
+// The measurement maths moved to lib/kml/standard-markup/measure.ts so the Measure tab can
+// share it — two tools must never quote different square metres for the same outline.
+// Re-exported from here so every existing importer (shape-panel, markup-canvas,
+// residential-tab) is untouched.
+export {
+  MIN_POINTS,
+  measureShape,
+  ringFor,
+  formatArea,
+  formatLength,
+} from "@/lib/kml/standard-markup/measure";
+export type { ShapeMode, ShapeMeasurement, Measurable } from "@/lib/kml/standard-markup/measure";
 
 export const MAX_SHAPE_POINTS = 20;
 export const MAX_SHAPES = 5;
@@ -16,13 +27,6 @@ export const MIN_SHAPE_WIDTH_M = 5;
 export const MAX_SHAPE_WIDTH_M = 30;
 export const SHAPE_WIDTH_STEP_M = 1;
 
-/** A line needs two points to have a direction to buffer perpendicular to; an area needs
- *  three to enclose anything. Below that the shape renders as nothing, so it's dropped
- *  from the payload rather than sent for the server to discard. */
-export const MIN_POINTS: Record<ShapeMode, number> = { line: 2, area: 3 };
-
-export type ShapeMode = "line" | "area";
-
 /** Not a free colour choice — each value maps the shape onto one of the exported legend's
  *  existing rows: orange = Council / External Assets, blue = Neighbouring Assets, red =
  *  Project Site. That keeps the legend at three fixed rows however many shapes are drawn,
@@ -30,10 +34,7 @@ export type ShapeMode = "line" | "area";
 export type ShapeColor = "orange" | "blue" | "red";
 
 /** The wire shape — what /api/kml/standard-markup/render expects. */
-export interface MarkupShape {
-  points: LatLng[];
-  widthMetres: number;
-  mode: ShapeMode;
+export interface MarkupShape extends Measurable {
   color: ShapeColor;
 }
 
@@ -194,34 +195,4 @@ export function useShapes(): ShapesState {
       []
     ),
   };
-}
-
-export interface ShapeMeasurement {
-  /** Ground area the shape covers. For a line that's the ribbon, not the centreline. */
-  areaSqm: number;
-  /** Centreline length — lines only; an area has no meaningful single length. */
-  lengthMetres: number | null;
-}
-
-/** Measures a shape off the SAME ring the renderer draws, so the number always describes
- *  the thing on screen — mitred corners and all — rather than an idealised width x length. */
-export function measureShape(shape: MarkupShape): ShapeMeasurement {
-  if (shape.points.length < MIN_POINTS[shape.mode]) return { areaSqm: 0, lengthMetres: null };
-  if (shape.mode === "area") {
-    return { areaSqm: ringAreaSqm(closeRing(shape.points)), lengthMetres: null };
-  }
-  return {
-    areaSqm: ringAreaSqm(bufferLineToPolygon(shape.points, shape.widthMetres)),
-    lengthMetres: pathLengthMetres(shape.points),
-  };
-}
-
-/** Hectares past a hectare — "12,400 m²" is harder to picture than "1.24 ha". */
-export function formatArea(areaSqm: number): string {
-  if (areaSqm >= 10000) return `${(areaSqm / 10000).toFixed(2)} ha`;
-  return `${Math.round(areaSqm).toLocaleString()} m²`;
-}
-
-export function formatLength(metres: number): string {
-  return metres >= 1000 ? `${(metres / 1000).toFixed(2)} km` : `${Math.round(metres)} m`;
 }

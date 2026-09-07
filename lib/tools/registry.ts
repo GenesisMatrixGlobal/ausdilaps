@@ -36,9 +36,9 @@ export const TOOLS: ToolDefinition[] = [
   {
     slug: "site-markups",
     code: "SMK",
-    title: "Site Markups",
+    title: "Markup and Measure",
     description:
-      "Snapshot a road segment, or an address with its surrounding lots and frontage highlighted, for estimating and project scoping.",
+      "Snapshot a road segment or an address with its surrounding lots highlighted, or measure lengths and areas straight off a live aerial map.",
     departments: ["estimators", "projects"],
     Component: dynamic(() =>
       import("@/components/tools/site-markups").then((m) => m.SiteMarkupsTool)

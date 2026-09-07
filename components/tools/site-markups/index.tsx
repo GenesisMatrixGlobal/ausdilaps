@@ -5,26 +5,56 @@ import { TabBar } from "@/components/ui/tab-bar";
 import { ToolHeaderSlot } from "@/components/staff/tool-header-slot";
 import { RoadMarkupTab } from "./road-tab";
 import { ResidentialMarkupTab } from "./residential-tab";
+import { MeasureTab } from "./measure-tab";
 
 const TABS = [
   { key: "residential", label: "Residential Mark Up" },
   { key: "road", label: "Road Markup" },
+  { key: "measure", label: "Measure" },
 ] as const;
 
 type Tab = (typeof TABS)[number]["key"];
 
 export function SiteMarkupsTool() {
   const [tab, setTab] = useState<Tab>("residential");
+  // Mounted-once-visited, then kept mounted. Two reasons, pulling opposite ways:
+  //  - Unmounting on switch throws away whatever the tab was holding — a half-drawn set of
+  //    measurements, or a generated markup. Same reasoning as DepartmentPanes.
+  //  - But mounting all three up front would build the Measure tab's Google map on every
+  //    visit to this tool, and a map instantiation is a billed Dynamic Maps load.
+  // So: nothing is built until you open it, and nothing is thrown away after you do.
+  const [visited, setVisited] = useState<Set<Tab>>(new Set(["residential"]));
+
+  function show(next: Tab) {
+    setTab(next);
+    setVisited((prev) => (prev.has(next) ? prev : new Set(prev).add(next)));
+  }
 
   return (
     <div>
       {/* Rides up into the ToolFrame's title row — border-b-0 because that row already
           carries the rule the active tab underlines against. */}
       <ToolHeaderSlot>
-        <TabBar tabs={TABS} active={tab} onChange={setTab} className="border-b-0" />
+        <TabBar tabs={TABS} active={tab} onChange={show} className="border-b-0" />
       </ToolHeaderSlot>
-      {tab === "residential" && <ResidentialMarkupTab />}
-      {tab === "road" && <RoadMarkupTab />}
+      {/* `hidden`, not conditional rendering: see `visited` above. */}
+      {visited.has("residential") && (
+        <div hidden={tab !== "residential"}>
+          <ResidentialMarkupTab />
+        </div>
+      )}
+      {visited.has("road") && (
+        <div hidden={tab !== "road"}>
+          <RoadMarkupTab />
+        </div>
+      )}
+      {visited.has("measure") && (
+        <div hidden={tab !== "measure"}>
+          {/* The map needs to know it's back on screen — a Google map sized against a
+              display:none container returns grey until it re-measures. */}
+          <MeasureTab active={tab === "measure"} />
+        </div>
+      )}
     </div>
   );
 }

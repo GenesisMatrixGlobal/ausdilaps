@@ -102,9 +102,6 @@ interface RenderPlan {
   /** Centre of the whole frame. */
   center: LatLng;
   tiles: TileRect[];
-  /** Linear detail multiplier over a single request — 1 or 2. The overlay is scaled by it
-   *  so a badge and a legend row stay the same size relative to the map. */
-  ui: number;
 }
 
 /** Even splits, so every tile's size and centre land on whole logical pixels. An odd size
@@ -197,7 +194,7 @@ function planTiles(bounds: LatLngBox): RenderPlan {
         });
       }
     }
-    return { zoom, width, height, center, tiles, ui: 2 ** (zoom - base) };
+    return { zoom, width, height, center, tiles };
   };
 
   return (base < MAX_ZOOM ? plan(base + 1) : null) ?? plan(base)!;
@@ -409,9 +406,7 @@ function badgesSvg(
   zoom: number,
   /** LOGICAL size — the Static Maps `size`, before `scale`. */
   width: number,
-  height: number,
-  /** The overlay is authored at 1x and scaled as a group, so divide positions by this. */
-  ui: number
+  height: number
 ): string {
   const projection = { center, zoom, imageSizePx: width, imageHeightPx: height };
   // latLngToPixel works in the pre-`scale` pixel space Static Maps' own `size` describes,
@@ -420,10 +415,10 @@ function badgesSvg(
   // plausible-but-wrong position, not a bug.
   const toOutput = (p: LatLng) => {
     const logical = latLngToPixel(projection, p);
-    return { x: (logical.x * SCALE) / ui, y: (logical.y * SCALE) / ui };
+    return { x: logical.x * SCALE, y: logical.y * SCALE };
   };
-  const outWidth = (width * SCALE) / ui;
-  const outHeight = (height * SCALE) / ui;
+  const outWidth = width * SCALE;
+  const outHeight = height * SCALE;
 
   const parts: string[] = [];
   measurements.forEach((m, i) => {
@@ -592,15 +587,19 @@ export async function renderMeasureExport(input: MeasureExportInput): Promise<Me
 
   const { rows, totalSqm } = rowsFor(input.measurements);
 
-  // The overlay is authored at 1x and scaled as a group, so one factor keeps the legend,
-  // badges and compass the same size RELATIVE to the map however many tiles were stitched.
+  // The overlay is a FIXED pixel size, deliberately not scaled with the tile count.
+  //
+  // It was scaled at first, to keep a badge and a legend row the same size relative to the
+  // map. But "relative to the map" means relative to the ground, and a 2x-detail export
+  // covers the same ground in twice the pixels — so the legend came out at 38px text on a
+  // 2024px image, which just reads as oversized. A legend, a compass and a badge are chrome:
+  // they want to be legible on the final image, not proportional to metres. Google's own
+  // attribution is fixed for the same reason, and so is the shapes' OUTLINE_WEIGHT.
   const overlay = Buffer.from(
     `<svg width="${pxWidth}" height="${pxHeight}" xmlns="http://www.w3.org/2000/svg">
-    <g transform="scale(${plan.ui})">
-      ${badgesSvg(input.measurements, plan.center, plan.zoom, plan.width, plan.height, plan.ui)}
-      ${rows.length > 0 ? legendSvg(rows, totalSqm, rows.length > 1) : ""}
-      ${northArrowSvg(pxWidth / plan.ui)}
-    </g>
+    ${badgesSvg(input.measurements, plan.center, plan.zoom, plan.width, plan.height)}
+    ${rows.length > 0 ? legendSvg(rows, totalSqm, rows.length > 1) : ""}
+    ${northArrowSvg(pxWidth)}
   </svg>`
   );
 

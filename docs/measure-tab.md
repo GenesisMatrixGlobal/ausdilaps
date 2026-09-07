@@ -215,9 +215,13 @@ Consequences worth knowing:
   of ~200 vertices, which blows the ~8192-char URL limit even encoded, so `polygonsFor()`
   simplifies until it fits. The tolerance is chosen off the longest URL any tile would
   produce, because tiles simplifying differently would break a shape at a seam.
-- **The overlay is authored at 1x and scaled as a group** (`transform="scale(ui)"`), so the
-  legend, badges and compass stay the same size relative to the map however many tiles were
-  stitched.
+- ⚠️ **The overlay is a FIXED pixel size — do NOT scale it with the tile count.** It was
+  scaled at first, to keep a badge and a legend row the same size relative to the map. But
+  "relative to the map" means relative to the *ground*, and a 2x-detail export covers the same
+  ground in twice the pixels — so the legend came out at 38px text on a 2024px image, which
+  just reads as oversized. A legend, a compass and a badge are chrome: they want to be legible
+  on the final image, not proportional to metres. Google's own attribution is fixed for the
+  same reason, and so is the shapes' `OUTLINE_WEIGHT`.
 - **`mercatorSpan()` computes the box centre in world-pixel space, not by averaging
   latitudes.** Mercator is non-linear in latitude, so the mean of north and south is not the
   centre of the frame, and using it shifts the export vertically against the live map.

@@ -184,15 +184,18 @@ Consequences worth knowing:
   bar scales WITH `scale`, so no size/scale combination shrinks it relative to the map, and
   cropping or shrinking it is what the Maps Platform terms forbid. The centre is shifted
   south by half the pad so the space lands at the bottom rather than being split.
-- **`fitToBounds()` spends the WHOLE 640 budget** by widening the geographic frame at the
-  chosen zoom until the limiting axis hits the cap. Integer zoom levels otherwise waste up to
-  38% of the resolution: the zoom picked is the largest that fits, so the frame lands
-  somewhere between 320 and 640 px and the rest is thrown away — a real export came out
-  790x494 for want of this, and now comes out 1280x778.
-  ⚠️ Note precisely what that does. The image gets bigger (up to just under 2x linearly) and
-  Google's fixed-size attribution therefore covers proportionally less of it (7.1% of height
-  down to 4.5%). Ground DETAIL is unchanged — same zoom, same metres per pixel — so the
-  export is not *sharper*, it shows more surrounding context at the same crispness.
+- ⚠️ **Do NOT widen the frame to spend the rest of Google's 640px budget.** It is tempting —
+  integer zoom levels leave the frame between 320 and 640 px, so up to 38% of the resolution
+  goes unused and a real export came out 790x494. Scaling the frame up at the same zoom does
+  fill the budget (1280x778 in that case), but it fills it with **more ground**, because
+  metres-per-pixel is fixed by the zoom. The export then no longer shows what the operator
+  framed on screen, which is a worse fault than a small image: a drawing covering a different
+  area than the one you set up is simply wrong. Tried and reverted the same day, 2026-09-07.
+- **Matching the frame and raising the detail are mutually exclusive within one Static Maps
+  request.** The export always matches the live bounds (verified to ~0.3 m east-west); the
+  only deliberate difference is the attribution strip of extra ground at the bottom. Whatever
+  resolution the integer zoom yields for that frame is what you get. Both at once needs
+  tiling.
 - **1280x1280 is a hard per-request ceiling.** Verified: `size` is silently clamped to
   640/axis and **`scale=4` is silently clamped to 2** — no error, just a smaller image than
   asked for. Genuinely finer detail needs a deeper zoom, which exceeds the cap, so it would

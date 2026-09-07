@@ -60,4 +60,30 @@ export const REDIRECTS: Redirect[] = [
 
   // Short link for the inspector QR code sticker.
   { source: "/qr", destination: "/inspector-links", permanent: true },
+
+  // Legacy contact pages. The old WPForms /contact-us and /contact-us/consultation
+  // were consolidated into the single /quote lead form; /contact-us/capability was
+  // the gated capability-statement request, which /quote now captures.
+  { source: "/contact-us", destination: "/quote", permanent: true },
+  { source: "/contact-us/consultation", destination: "/quote", permanent: true },
+  { source: "/contact-us/capability", destination: "/quote", permanent: true },
+
+  // WordPress media. After cutover ausdilaps.com.au IS this site, so every
+  // /wp-content/uploads/* URL Google has indexed (and every external link to a
+  // sample PDF) would land on a 404. The capability statement is committed to
+  // /public so it redirects to the real file; everything else goes to the samples
+  // page, the closest live equivalent.
+  //
+  // ORDER MATTERS: the specific file must precede the wildcard, or the wildcard
+  // swallows it.
+  {
+    source: "/wp-content/uploads/2026/04/AusDilaps-Capability-Statement-FY25-26.pdf",
+    destination: "/AusDilaps-Capability-Statement-FY25-26.pdf",
+    permanent: true,
+  },
+  {
+    source: "/wp-content/uploads/:path*",
+    destination: "/dilapidation-reports/samples",
+    permanent: true,
+  },
 ];

@@ -12,6 +12,7 @@
     "migrate": "node scripts/migrate.mjs",
     "login-link": "node scripts/login-link.mjs",
     "index:training": "tsx scripts/index-training.ts",
+    "check:redirects": "tsx scripts/check-redirects.ts",
     "check:tenders": "tsx scripts/check-tender-parsing.ts",
     "check:sources": "tsx scripts/check-tender-sources.ts",
     "check:graph": "tsx scripts/check-graph-access.ts",

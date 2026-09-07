@@ -57,9 +57,11 @@ Stack: Next.js 16.2.4 (App Router, Turbopack) · React 19 · TS · Tailwind v4 �
 ## Outstanding / not done (pick up here)
 
 1. **Resend API key** → add to `.env.local` + Vercel; verify a test lead emails. (Blocked on the key.)
-2. **Sample-report PDFs** — `/dilapidation-reports/samples` links live WP URLs (`ausdilaps.com.au/wp-content/uploads/...`, ~164MB, too heavy to commit, no R2 in v1). **Must be re-hosted (Supabase Storage or compressed) before domain cutover** or they 404. See `seo/content-backlog.md`.
-3. **Legal pages NOT migrated:** old `/contact-us/privacy-policy/` and `/contact-us/terms-conditions/` have no equivalent. Add `/privacy-policy` + `/terms-conditions` pages and redirects.
-4. **`/contact-us/*` redirects:** only `/contact-us/faqs → /faq` is mapped. Add redirects for `/contact-us`, `/contact-us/consultation`, `/contact-us/capability`, `/contact-us/privacy-policy`, `/contact-us/terms-conditions` (in `data/redirects.ts`).
+2. ~~**Sample-report PDFs**~~ — **DONE.** The samples page renders from Box, and the
+   static WordPress fallback has been removed, so nothing on the site links the old
+   origin any more. `/wp-content/uploads/*` also now redirects (see below).
+3. **Legal pages NOT migrated:** old `/contact-us/privacy-policy/` and `/contact-us/terms-conditions/` have no equivalent. Add `/privacy-policy` + `/terms-conditions` pages and redirects. **Deliberately left unmapped** — pointing a privacy policy at the homepage reads as a soft 404 to Google and is worse than the 404. Needs real legal copy. Also a compliance gap: `/quote` collects personal data with no privacy policy to link.
+4. ~~**`/contact-us/* ` redirects**~~ — **DONE** for `/contact-us`, `/contact-us/consultation` and `/contact-us/capability` (all → `/quote`). The two legal URLs are item 3.
 5. **Insights backlog:** tunnel / Brisbane-2032 / natural-events articles need a **grounded research pass** before publishing (`seo/content-backlog.md`).
 6. **Admin backend (Phase 6):** not built — Supabase auth (`profiles.role`), `proxy.ts` guard, `/admin` leads table + news authoring. Separate effort.
 7. **Domain cutover (Phase 7 tail):** point `ausdilaps.com.au` at Vercel ONLY after redirects verified + sample PDFs re-hosted.

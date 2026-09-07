@@ -58,8 +58,11 @@ export async function getAccessToken(): Promise<string> {
       box_subject_type: "enterprise",
       box_subject_id: enterpriseId,
     }),
-    // Token calls are only made once per ISR regeneration — never cache across requests.
-    cache: "no-store",
+    // No cache directive on purpose. This is a POST, which Next never caches, so
+    // the token is still fetched once per regeneration. Setting `cache: "no-store"`
+    // here (as this used to) opts the WHOLE route out of static rendering — the
+    // samples page then rendered fully dynamic, every visit hit Box live, and the
+    // ISR safety net that makes a Box outage invisible silently did not exist.
   });
   if (!res.ok) throw new Error(`Box token request failed: ${res.status} ${await res.text()}`);
   const data = (await res.json()) as BoxTokenResponse;
@@ -100,7 +103,7 @@ export async function ensureSharedLink(
     method: "PUT",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ shared_link: { access } }),
-    cache: "no-store",
+    // See getAccessToken() — no directive, so this PUT doesn't force the route dynamic.
   });
   if (!res.ok) throw new Error(`Box create shared link failed for ${fileId}: ${res.status}`);
   const data = (await res.json()) as {
@@ -113,7 +116,10 @@ export async function ensureSharedLink(
 export async function listFolderItems(folderId: string, token: string): Promise<BoxFileItem[]> {
   const res = await fetch(
     `https://api.box.com/2.0/folders/${folderId}/items?fields=name,type,shared_link&limit=200&sort=name&direction=ASC`,
-    { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+    // Keep in sync with `export const revalidate` in
+    // app/(marketing)/dilapidation-reports/samples/page.tsx — this is what lets the
+    // page be ISR-cached rather than fully dynamic.
+    { headers: { Authorization: `Bearer ${token}` }, next: { revalidate: 1800 } }
   );
   if (!res.ok) throw new Error(`Box list folder failed: ${res.status} ${await res.text()}`);
   const data = (await res.json()) as { entries: BoxFileItem[] };
@@ -121,13 +127,21 @@ export async function listFolderItems(folderId: string, token: string): Promise<
 }
 
 async function resolveSamples(files: BoxFileItem[], token: string): Promise<BoxSample[]> {
-  const samples = await Promise.all(
+  // allSettled, not all: a single file whose shared-link PUT fails (typically the
+  // service account holding Viewer where it needs Editor) would otherwise reject
+  // the whole call and take the entire samples page down. Drop that row instead.
+  const settled = await Promise.allSettled(
     files.map(async (f) => ({
       name: f.name,
       // Preview page on purpose: these are sample reports a visitor opens and reads.
       url: f.shared_link?.url ?? (await ensureSharedLink(f.id, token)).url,
     }))
   );
+  const samples: BoxSample[] = [];
+  settled.forEach((r, i) => {
+    if (r.status === "fulfilled") samples.push(r.value);
+    else console.error(`[box] skipped file "${files[i].name}":`, r.reason);
+  });
   return samples.sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -145,13 +159,18 @@ export async function listBoxFolderCategories(folderId: string): Promise<BoxCate
   const subfolders = rootItems.filter((e) => e.type === "folder");
   const rootFiles = rootItems.filter((e) => e.type === "file");
 
-  const categories = await Promise.all(
+  const settledCategories = await Promise.allSettled(
     subfolders.map(async (folder) => {
       const items = await listFolderItems(folder.id, token);
       const files = items.filter((e) => e.type === "file");
       return { name: folder.name, samples: await resolveSamples(files, token) };
     })
   );
+  const categories: BoxCategory[] = [];
+  settledCategories.forEach((r, i) => {
+    if (r.status === "fulfilled") categories.push(r.value);
+    else console.error(`[box] skipped category "${subfolders[i].name}":`, r.reason);
+  });
 
   const nonEmpty = categories.filter((c) => c.samples.length > 0);
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { Container } from "@/components/marketing/container";
 import { Eyebrow } from "@/components/marketing/eyebrow";
 import { PageHero } from "@/components/marketing/page-hero";
@@ -24,58 +25,13 @@ export const metadata: Metadata = {
 
 // Live-synced from a Box folder every 30 min (see lib/box.ts + docs/box-samples-sync.md).
 // Drop a file into a category subfolder in Box and it shows up here on the next
-// revalidation — no redeploy needed. Falls back to this static list if Box is
-// unreachable or not yet configured, so the page never breaks or goes empty.
+// revalidation — no redeploy needed. Box is the ONLY source: there is deliberately
+// no static fallback, because the old one linked PDFs on the WordPress origin and
+// those 404 the moment ausdilaps.com.au points at Vercel. If Box can't be read the
+// page 404s instead of showing dead links, and ISR keeps serving the last good
+// render, so a transient Box outage never reaches a visitor.
 const BOX_SAMPLES_FOLDER_ID = process.env.BOX_SAMPLES_FOLDER_ID ?? "405950982690";
 export const revalidate = 1800;
-
-const LIVE = "https://ausdilaps.com.au/wp-content/uploads";
-const FALLBACK_CATEGORIES: BoxCategory[] = [
-  {
-    name: "General documents",
-    samples: [
-      { name: "Capability Statement", url: `${LIVE}/2026/04/AusDilaps-Capability-Statement-FY25-26.pdf` },
-      { name: "Methodology Statement", url: `${LIVE}/2025/09/AusDilaps-Methodology-FY25-26.pdf` },
-      { name: "Access Letter sample", url: `${LIVE}/2025/07/AusDilaps-Sample-Access-Letter-2025.pdf` },
-    ],
-  },
-  {
-    name: "Residential & commercial building reports",
-    samples: [
-      { name: "Commercial — Pre-construction", url: `${LIVE}/2025/04/AusDilaps-Sample-Commercial-Pre-Report.pdf` },
-      { name: "Commercial — Post-construction", url: `${LIVE}/2025/04/AusDilaps-Sample-Commercial-Post.pdf` },
-      { name: "Residential — Pre-construction", url: `${LIVE}/2025/04/AusDilaps-Sample-Residential-Pre.pdf` },
-      { name: "Residential — Post-construction", url: `${LIVE}/2023/10/AD-Residential-Sample-Report-POST-2020.pdf` },
-      { name: "Defect-marked Floor Plan", url: `${LIVE}/2025/04/AusDilaps-Sample-Defect-Floor-Plan.pdf` },
-    ],
-  },
-  {
-    name: "External & council-asset surveys",
-    samples: [
-      { name: "GPS — Commercial External", url: `${LIVE}/2025/04/AusDilaps-Sample-GPS-External.pdf` },
-      { name: "GPS — Council Assets", url: `${LIVE}/2024/11/Sample-Council-Assets.pdf` },
-      { name: "Roadways — Video Report", url: `${LIVE}/2026/04/AusDilaps-Sample-2026-Video-Report.pdf` },
-      { name: "Rail Corridor", url: `${LIVE}/2023/04/AD-Rail-Corridor-Sample-Report-2020.pdf` },
-    ],
-  },
-  {
-    name: "Specialised surveys",
-    samples: [
-      { name: "Tunnels", url: `${LIVE}/2025/04/AusDilaps-Sample-Tunnel.pdf` },
-      { name: "Train Station (GPS)", url: `${LIVE}/2026/04/AusDilaps-Sample-2026-Train-Station-GPS.pdf` },
-      { name: "Drone — Rural (with GPS)", url: `${LIVE}/2025/04/AusDilaps-Sample-Drone-Rural.pdf` },
-      { name: "Culvert & Pipe", url: `${LIVE}/2025/07/AusDilaps-Sample-Culvert-2025.pdf` },
-    ],
-  },
-  {
-    name: "Engineering reports",
-    samples: [
-      { name: "DOA — Defect Origin Assessment", url: `${LIVE}/2025/09/AusDilaps-Sample-DOA-2025.pdf` },
-      { name: "SIA — Structural Integrity Assessment", url: `${LIVE}/2026/04/AusDilaps-Sample-2026-SIA.pdf` },
-      { name: "DCA — Defect Comparison Assessment", url: `${LIVE}/2025/04/AusDilaps-Sample-Defect-Comparison-Assessment-DCA.pdf` },
-    ],
-  },
-];
 
 function titleFromFilename(name: string): string {
   return name
@@ -90,13 +46,24 @@ function slugify(name: string): string {
 }
 
 async function getCategories(): Promise<BoxCategory[]> {
+  let live: BoxCategory[];
   try {
-    const live = await listBoxFolderCategories(BOX_SAMPLES_FOLDER_ID);
-    return live.length > 0 ? live : FALLBACK_CATEGORIES;
+    live = await listBoxFolderCategories(BOX_SAMPLES_FOLDER_ID);
   } catch (e) {
-    console.error("[samples] Box fetch failed, using fallback list:", e);
-    return FALLBACK_CATEGORIES;
+    // Next signals its own control flow by throwing (dynamic-rendering bailouts,
+    // notFound(), redirect()) and tags those errors with `digest`. Swallowing one
+    // would silently turn a framework signal into a hard 404, so re-throw it and
+    // only treat a genuine Box failure as "no samples".
+    if (e && typeof e === "object" && "digest" in e) throw e;
+    console.error("[samples] Box fetch failed:", e);
+    notFound();
   }
+  // Reachable but empty — folder cleared, or every file failed to resolve a link.
+  if (live.length === 0) {
+    console.error("[samples] Box returned no categories");
+    notFound();
+  }
+  return live;
 }
 
 const SAMPLES_FAQ: FaqItem[] = [

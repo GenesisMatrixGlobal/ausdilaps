@@ -77,6 +77,27 @@ service-to-service Box Custom App, no user login involved.
    `Drone & Culvert`, `Engineering Reports`) and drop the sample PDFs into
    each. The page picks it up on the next revalidation — no redeploy.
 
-Until these env vars are set (or if Box is briefly unreachable), the page
-falls back to a static hardcoded list (`FALLBACK_CATEGORIES` in `page.tsx`)
-so it never breaks or ships empty.
+## Box is the only source — there is no fallback
+
+There used to be a static `FALLBACK_CATEGORIES` list in `page.tsx`. It was
+**removed at the domain cutover**: every URL in it pointed at
+`ausdilaps.com.au/wp-content/uploads/...`, and once that domain resolves to this
+site instead of WordPress, all 19 links 404. A fallback that serves dead links is
+worse than no page.
+
+So if Box can't be read, `/dilapidation-reports/samples` returns a **404** — both
+when `listBoxFolderCategories()` throws and when it comes back empty. Two things
+keep that from being a real risk:
+
+- **ISR.** `revalidate = 1800` means a failed background revalidation leaves the
+  last good render in place, so a transient Box outage never reaches a visitor.
+  Only a cold build with Box down would 404.
+- **Partial failures don't cascade.** `resolveSamples()` and the category fan-out
+  in `lib/box.ts` both use `Promise.allSettled`, so one file whose shared-link PUT
+  fails (typically the service account holding Viewer where it needs Editor), or
+  one unreadable subfolder, drops that row and logs it rather than taking down the
+  whole page.
+
+If the env vars are missing entirely, `getAccessToken()` throws `BoxConfigError`
+and the page 404s — deliberately loud, because a silently empty samples page on a
+ranking URL is worse than an obvious break.

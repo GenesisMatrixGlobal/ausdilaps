@@ -166,6 +166,19 @@ Consequences worth knowing:
   the zoom would move the frame by up to 40% of its area. `fitToBounds()` takes the largest
   integer zoom at which the box still fits inside Static Maps' 640-per-axis cap and requests
   exactly the size the box occupies there; `scale: 2` doubles the pixel output.
+- **The frame includes an `ATTRIBUTION_PAD_PX` strip of extra ground at the bottom.**
+  Google draws its "Google / Map data ©… Airbus, Maxar…" bar OVER the imagery, ~30 output px
+  tall at scale 2, so without the pad it occludes the bottom of the live view and swallows
+  any measurement near the bottom edge. Framing extra ground is the only fix available: the
+  bar scales WITH `scale`, so no size/scale combination shrinks it relative to the map, and
+  cropping or shrinking it is what the Maps Platform terms forbid. The centre is shifted
+  south by half the pad so the space lands at the bottom rather than being split.
+- **1280x1280 is a hard per-request ceiling and the export is already at it.** Verified:
+  `size` is silently clamped to 640/axis and **`scale=4` is silently clamped to 2** — no
+  error, just a smaller image than asked for. Higher resolution would need several requests
+  stitched together, which means cropping Google's attribution off the inner tiles. Within
+  one request the export is already at maximum resolution for its frame; a tighter frame on
+  screen is the only way to get more detail.
 - **`mercatorSpan()` computes the box centre in world-pixel space, not by averaging
   latitudes.** Mercator is non-linear in latitude, so the mean of north and south is not the
   centre of the frame, and using it shifts the export vertically against the live map.

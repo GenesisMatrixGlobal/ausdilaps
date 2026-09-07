@@ -18,7 +18,12 @@ import {
   ringFor,
   type Measurable,
 } from "@/lib/kml/standard-markup/measure";
-import { latLngToPixel, mercatorSpan, type LatLngBox } from "@/lib/kml/standard-markup/projection";
+import {
+  latLngToPixel,
+  mercatorSpan,
+  pixelToLatLng,
+  type LatLngBox,
+} from "@/lib/kml/standard-markup/projection";
 import {
   FILL_OPACITY_PERCENT,
   OUTLINE_WEIGHT,
@@ -34,6 +39,18 @@ export { GoogleMapsConfigError };
 const MAX_STATIC_DIMENSION = 640;
 /** Past this, AU aerial imagery is upsampled — the same ceiling the live map uses. */
 const MAX_ZOOM = 21;
+/**
+ * Extra ground framed along the bottom, in logical (pre-`scale`) pixels, for Google's
+ * attribution bar to sit on.
+ *
+ * Google draws "Google / Map data ©… Airbus, Maxar…" OVER the imagery, about 30 output px
+ * tall at scale 2, so without this it occludes the bottom of the live view — and a
+ * measurement drawn near the bottom edge disappears under it. Framing a strip of extra
+ * ground is the only fix available: the bar's size is fixed by Google (it scales WITH
+ * `scale`, so no scale/size combination shrinks it relative to the map), and cropping or
+ * shrinking it is exactly what the Maps Platform terms forbid.
+ */
+const ATTRIBUTION_PAD_PX = 18;
 
 /** One flat colour for every shape, unlike the live map's steel/orange selected split —
  *  an exported still has no notion of "selected", and orange is what reads over grass,
@@ -65,14 +82,33 @@ export interface MeasureExportInput {
  */
 function fitToBounds(bounds: LatLngBox) {
   const { spanX, spanY, center } = mercatorSpan(bounds);
-  const largest = Math.max(spanX, spanY);
-  const zoom = Math.max(
-    1,
-    Math.min(MAX_ZOOM, largest > 0 ? Math.floor(Math.log2(MAX_STATIC_DIMENSION / largest)) : MAX_ZOOM)
-  );
-  const at = 2 ** zoom;
   const clamp = (n: number) => Math.max(1, Math.min(MAX_STATIC_DIMENSION, Math.round(n)));
-  return { center, zoom, width: clamp(spanX * at), height: clamp(spanY * at) };
+
+  // The largest integer zoom at which the live view PLUS the attribution strip still fits
+  // inside Google's 640-per-axis cap. Stepping down rather than solving for it directly
+  // because the pad is a constant in pixels, not a fraction of the span.
+  let zoom = MAX_ZOOM;
+  while (
+    zoom > 1 &&
+    (spanX * 2 ** zoom > MAX_STATIC_DIMENSION ||
+      spanY * 2 ** zoom + ATTRIBUTION_PAD_PX > MAX_STATIC_DIMENSION)
+  ) {
+    zoom -= 1;
+  }
+
+  const at = 2 ** zoom;
+  const width = clamp(spanX * at);
+  const height = clamp(spanY * at + ATTRIBUTION_PAD_PX);
+
+  // Move the centre SOUTH by half the pad so all the extra ground lands at the BOTTOM,
+  // under the attribution, rather than being split evenly top and bottom. Done by
+  // re-projecting through pixelToLatLng so the Mercator maths stays in one place.
+  const center2 = pixelToLatLng(
+    { center, zoom, imageSizePx: width, imageHeightPx: height },
+    { x: width / 2, y: height / 2 + ATTRIBUTION_PAD_PX / 2 }
+  );
+
+  return { center: center2, zoom, width, height };
 }
 
 /**

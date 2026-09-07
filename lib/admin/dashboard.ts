@@ -93,7 +93,7 @@ export async function loadDashboard(origin: string) {
     const db = createAdminClient();
     const since90 = new Date(now - 90 * DAY).toISOString();
 
-    const [leadsRes, staffRes, sourcesRes, usage, speed] = await Promise.all([
+    const [leadsRes, staffRes, usage, speed] = await Promise.all([
       db
         .from("leads")
         // Only the columns still rendered — inquiry_type, source_page and salesforce_synced
@@ -102,7 +102,6 @@ export async function loadDashboard(origin: string) {
         .gte("created_at", since90)
         .order("created_at", { ascending: false }),
       db.from("profiles").select("is_active, last_seen_at"),
-      db.from("tender_sources").select("label, consecutive_empty, consecutive_failures, is_enabled"),
       loadToolUsage(),
       cachedPageSpeed(origin).catch(() => [] as PageSpeedScore[]),
     ]);
@@ -154,22 +153,18 @@ export async function loadDashboard(origin: string) {
       });
     }
 
-    for (const s of sourcesRes.data ?? []) {
-      if (!s.is_enabled) continue;
-      const empty = (s.consecutive_empty as number) ?? 0;
-      const failed = (s.consecutive_failures as number) ?? 0;
-      if (failed > 0 || empty >= 3) {
-        alerts.push({
-          tone: failed > 0 ? "critical" : "warn",
-          title: `Tender source "${s.label}" ${failed > 0 ? "is failing" : "has gone quiet"}`,
-          detail:
-            failed > 0
-              ? `${failed} failed run(s) in a row.`
-              : `${empty} runs with nothing returned. They may have dropped us from their alert list.`,
-          href: "/staff/accounts/tools/tender-watch",
-        });
-      }
-    }
+    // ⚠️ No tender-source alerts here, deliberately.
+    //
+    // There used to be one per quiet or failing source, and it was the loudest thing on the
+    // dashboard for two reasons. It fired on `consecutive_empty >= 3` while IGNORING
+    // `alert_on_quiet` — the per-source opt-in that exists precisely because every direct
+    // client invitation is also a source, and alarms-on-by-default paint the board red
+    // inside a month and bury the portal that actually stopped sending. lib/tenders/summary.ts
+    // honours that flag; this bypassed it. And it belongs in Tender Watch, which shows the
+    // same state per source with the context to act on it.
+    //
+    // If tender health ever wants a home here, read `alert_on_quiet` and surface ONE rolled
+    // up line, not one per source.
 
     // Most consequential first, then alphabetical so the order is stable between loads
     // rather than shifting with whichever check happened to push first.

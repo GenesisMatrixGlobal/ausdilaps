@@ -35,6 +35,16 @@ import { MAX_POINTS, type MeasureState } from "./measure-shapes";
 export interface MapCommands {
   undoPoint: (id: string) => void;
   clearPoints: (id: string) => void;
+  /** The live camera, for the PNG export — the server re-renders this exact frame through
+   *  the Static Maps API, because Maps JS tiles are cross-origin and the live map's canvas
+   *  can never be read back. Null before the map exists. */
+  getCamera: () => {
+    center: LatLng;
+    zoom: number;
+    mapType: "satellite" | "hybrid" | "roadmap";
+    viewportWidth: number;
+    viewportHeight: number;
+  } | null;
   /** Fly to a point, or fit a viewport. The only way the parent moves the camera. */
   goTo: (target: { lat: number; lng: number; zoom?: number | null }) => void;
   fit: (bounds: { south: number; west: number; north: number; east: number }) => void;
@@ -532,6 +542,26 @@ export function MeasureMap({
       },
       clearPoints: (id) => {
         handlesRef.current.get(id)?.editor.getPath().clear();
+      },
+      getCamera: () => {
+        if (!map) return null;
+        const centre = map.getCenter();
+        const zoom = map.getZoom();
+        if (!centre || zoom === undefined) return null;
+        const div = map.getDiv();
+        // Only the three the export can actually render. `terrain` isn't offered in the
+        // map-type control, but a URL or a future option could still set it.
+        const raw = map.getMapTypeId();
+        const mapType = raw === "satellite" || raw === "roadmap" ? raw : "hybrid";
+        return {
+          center: { lat: centre.lat(), lng: centre.lng() },
+          // The map is isFractionalZoomEnabled:false, so this is already an integer —
+          // rounded anyway because Static Maps only accepts integers.
+          zoom: Math.round(zoom),
+          mapType,
+          viewportWidth: div.clientWidth,
+          viewportHeight: div.clientHeight,
+        };
       },
       goTo: ({ lat, lng, zoom }) => {
         if (!map) return;

@@ -75,6 +75,11 @@ export interface BuildStaticMapUrlOptions {
   /** Raw Static Maps `style` rule strings, e.g. `"feature:poi|visibility:off"` — one
    *  per array entry, each becomes its own `style` query param. */
   styles?: string[];
+  /** Native output size in Static Maps "points", before `scale`. Defaults to a square
+   *  IMAGE_SIZE. Google caps each dimension at 640, so a caller wanting to match a wide
+   *  on-screen map drops a zoom level and halves these rather than asking for more.
+   *  Only the Measure tab's PNG export uses it — every other caller is square. */
+  size?: { width: number; height: number };
 }
 
 function pathColor(hexColor: string, opacityPercent: number): string {
@@ -160,6 +165,9 @@ export function buildStaticMapUrl(opts: BuildStaticMapUrlOptions): BuildStaticMa
     );
   }
 
+  const width = opts.size?.width ?? IMAGE_SIZE;
+  const height = opts.size?.height ?? IMAGE_SIZE;
+
   const visibleWays = (opts.ways ?? []).filter((w) => w.length >= 2);
   const polygons = (opts.polygons ?? []).filter((p) => p.ring.length >= 3);
   const boundsAnchor = opts.boundsAnchor ?? [];
@@ -183,12 +191,14 @@ export function buildStaticMapUrl(opts: BuildStaticMapUrlOptions): BuildStaticMa
       ...boundsAnchor,
     ]);
     center = { lat: (bounds.minLat + bounds.maxLat) / 2, lng: (bounds.minLng + bounds.maxLng) / 2 };
-    fitZoom = zoomToFit(bounds, IMAGE_SIZE);
+    // The smaller dimension, so a non-square frame fits on BOTH axes rather than
+    // cropping the narrow one.
+    fitZoom = zoomToFit(bounds, Math.min(width, height));
   }
   const zoom = Math.max(1, Math.min(fitZoom + (opts.zoomAdjust ?? 0), MAX_ZOOM));
 
   const url = new URL(STATIC_MAP_URL);
-  url.searchParams.set("size", `${IMAGE_SIZE}x${IMAGE_SIZE}`);
+  url.searchParams.set("size", `${width}x${height}`);
   url.searchParams.set("scale", String(SCALE));
   url.searchParams.set("maptype", opts.mapType);
   url.searchParams.set("format", "png");

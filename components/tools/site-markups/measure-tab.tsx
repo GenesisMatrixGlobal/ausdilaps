@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
+import { buttonVariants } from "@/components/ui/button";
+import { downloadBlob } from "@/components/tools/shared/download";
+import { MIN_POINTS } from "@/lib/kml/standard-markup/measure";
 import { parseGoogleMapsUrl } from "@/lib/maps/parse-google-maps-url";
 import type { GoogleMapsTarget } from "@/lib/maps/parse-google-maps-url";
 import { AddressSearch, type PlaceSelection } from "./address-search";
@@ -24,6 +28,60 @@ export function MeasureTab({ active }: { active: boolean }) {
   const state = useMeasurements();
   const commands = useRef<MapCommands | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  // Whatever was last searched, purely to name the downloaded file — a folder of
+  // "measure-export.png" is useless a week later.
+  const [placeLabel, setPlaceLabel] = useState<string | null>(null);
+
+  const drawn = state.list.filter((m) => m.points.length >= MIN_POINTS[m.mode]).length;
+
+  const download = useCallback(async () => {
+    const camera = commands.current?.getCamera();
+    if (!camera) {
+      setNote("The map isn't ready yet.");
+      return;
+    }
+    setExporting(true);
+    setNote(null);
+    try {
+      const res = await fetch("/api/maps/measure-export", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...camera,
+          measurements: state.listRef.current.map(({ id, points, mode, widthMetres }) => ({
+            id,
+            points,
+            mode,
+            widthMetres,
+          })),
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as
+        | { ok: boolean; imageBase64?: string; error?: string }
+        | null;
+      if (!json?.ok || !json.imageBase64) {
+        setNote(json?.error ?? "Couldn't render the PNG.");
+        return;
+      }
+      // base64 -> bytes by hand: fetch()ing a data: URL of a multi-megabyte PNG is
+      // measurably slower, and atob is exact.
+      const binary = atob(json.imageBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const slug =
+        (placeLabel ?? `${camera.center.lat.toFixed(5)}-${camera.center.lng.toFixed(5)}`)
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 60) || "measurements";
+      downloadBlob(bytes, `${slug}-measurements.png`, "image/png");
+    } catch (e) {
+      setNote((e as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  }, [placeLabel, state.listRef]);
 
   const goToTarget = useCallback((target: GoogleMapsTarget): boolean | string => {
     if (target.kind === "coords") {
@@ -75,6 +133,9 @@ export function MeasureTab({ active }: { active: boolean }) {
 
   const handleSelect = useCallback((place: PlaceSelection) => {
     setNote(null);
+    setPlaceLabel(
+      place.street && place.suburb ? `${place.street} ${place.suburb}` : place.formattedAddress
+    );
     if (place.viewport) {
       commands.current?.fit(place.viewport);
       return;
@@ -100,6 +161,21 @@ export function MeasureTab({ active }: { active: boolean }) {
             <span className="font-mono text-[0.7rem]">-27.4698, 153.0251</span> pair.
           </p>
           {note && <p className="mt-1 text-xs text-ad-orange">{note}</p>}
+        </div>
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={download}
+            disabled={exporting || drawn === 0}
+            title={drawn === 0 ? "Draw a measurement first" : "Download the map, shapes and areas as a PNG"}
+            className={cn(buttonVariants({ variant: "accent", size: "sm" }))}
+          >
+            {exporting ? "Rendering…" : "Download .png"}
+          </button>
+          <p className="max-w-[13rem] text-[0.7rem] leading-snug text-ad-muted">
+            Re-rendered server-side at the frame you&apos;re looking at, with a north arrow
+            and a legend of every area.
+          </p>
         </div>
         <div className="text-xs leading-relaxed text-ad-muted">
           <p className="font-medium text-ad-ink">How to draw</p>

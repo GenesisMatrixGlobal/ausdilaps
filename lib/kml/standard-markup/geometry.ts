@@ -99,11 +99,20 @@ export function pathLengthMetres(path: LatLng[]): number {
 }
 
 /** Average of a ring's vertices. Good enough to hang a map pin on for the convex-ish
- *  parcels a cadastre returns — not a true area centroid. */
+ *  parcels a cadastre returns — not a true area centroid.
+ *
+ *  Ignores a repeated closing vertex. Nearly every caller hands this a CLOSED ring
+ *  (closeRing, bufferLineToPolygon's output, an ArcGIS cadastre ring), and counting the
+ *  first point twice drags the result measurably toward it — enough to put a triangle's
+ *  number down by its bottom vertex instead of in the middle of it. */
 export function centroidOf(ring: LatLng[]): LatLng {
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  const points =
+    ring.length > 1 && first.lat === last.lat && first.lng === last.lng ? ring.slice(0, -1) : ring;
   return {
-    lat: ring.reduce((s, p) => s + p.lat, 0) / ring.length,
-    lng: ring.reduce((s, p) => s + p.lng, 0) / ring.length,
+    lat: points.reduce((s, p) => s + p.lat, 0) / points.length,
+    lng: points.reduce((s, p) => s + p.lng, 0) / points.length,
   };
 }
 

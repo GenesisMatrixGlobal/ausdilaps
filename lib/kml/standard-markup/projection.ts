@@ -33,8 +33,12 @@ function worldXToLng(worldX: number): number {
 export interface PixelProjection {
   center: LatLng;
   zoom: number;
-  /** Native output size in pixels (Static Maps `size` — before the `scale` multiplier). */
+  /** Native output size in pixels (Static Maps `size` — before the `scale` multiplier).
+   *  The WIDTH when `imageHeightPx` is given. */
   imageSizePx: number;
+  /** Height, for a non-square image. Defaults to `imageSizePx` — every caller but the
+   *  Measure tab's PNG export renders square. */
+  imageHeightPx?: number;
 }
 
 /** Maps a pixel position (in the same native, pre-`scale` pixel space Static Maps' own
@@ -44,7 +48,7 @@ export function pixelToLatLng(proj: PixelProjection, pixel: { x: number; y: numb
   const centerWorldX = lngToWorldX(proj.center.lng);
   const centerWorldY = latToWorldY(proj.center.lat);
   const worldX = centerWorldX + (pixel.x - proj.imageSizePx / 2) / scale;
-  const worldY = centerWorldY + (pixel.y - proj.imageSizePx / 2) / scale;
+  const worldY = centerWorldY + (pixel.y - (proj.imageHeightPx ?? proj.imageSizePx) / 2) / scale;
   return { lat: worldYToLat(worldY), lng: worldXToLng(worldX) };
 }
 
@@ -58,6 +62,6 @@ export function latLngToPixel(proj: PixelProjection, point: LatLng): { x: number
   const centerWorldY = latToWorldY(proj.center.lat);
   return {
     x: (worldX - centerWorldX) * scale + proj.imageSizePx / 2,
-    y: (worldY - centerWorldY) * scale + proj.imageSizePx / 2,
+    y: (worldY - centerWorldY) * scale + (proj.imageHeightPx ?? proj.imageSizePx) / 2,
   };
 }

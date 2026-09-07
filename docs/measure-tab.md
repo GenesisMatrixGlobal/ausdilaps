@@ -38,6 +38,7 @@ Residential exported markup agree on the same outline.
 | Line width | 3–30 m in half-metre steps. It is metres **on the ground**, not a stroke width — it re-buffers the ribbon, which changes the area. |
 | Navigate | Type an address or suburb, or paste a Google Maps URL / a `-27.4698, 153.0251` pair. |
 | More screen | The map's own fullscreen button, top right. |
+| Export | **Download .png** — the frame you're looking at, every shape, a north arrow, and a legend of each area plus the total. |
 
 **Line vs area.** A line is a ribbon centred on the points, half the width either side — a
 frontage, kerb or footpath; its area is the ribbon, and it also reports centreline length.
@@ -126,8 +127,52 @@ tab switch.
 | `components/tools/site-markups/measure-panel.tsx` | Total, rows, mode, width, undo/clear. |
 | `components/tools/site-markups/measure-label.ts` | The on-map label `OverlayView`. |
 | `app/api/maps/resolve-link/route.ts` | Resolves `maps.app.goo.gl` share links. |
+| `lib/maps/measure-export.ts` | The PNG render — Static Maps + sharp composite. |
+| `app/api/maps/measure-export/route.ts` | The export endpoint. |
 
 ---
+
+## The PNG export
+
+**Server-side out of necessity, not preference.** Maps JS serves its tiles cross-origin, so
+the live map's canvas is tainted and cannot be read back — there is no client-side
+screenshot of it to be had at any price. So the export is a second, independent render
+through the Maps **Static** API: `getCamera()` hands the server the live centre, zoom, map
+type and viewport size, and `renderMeasureExport()` rebuilds that frame, draws the shapes
+as polygons, and composites a north arrow, a numbered badge per shape and a legend with
+`sharp`.
+
+Consequences worth knowing:
+
+- **It is a re-render, not a screenshot.** Resolution is half the on-screen map's (see the
+  640 cap below), and POI pins *are* suppressed here — the Static API still honours
+  `style=feature:poi|visibility:off`, unlike Maps JS.
+- **Numbered badges are baked in.** The Building Markup tab deliberately strips its numbered
+  pins from the client download; here the numbers are the legend's key, so without them the
+  legend is a list of anonymous areas.
+- **Shapes export in one flat orange.** The live map's steel/orange split means
+  selected-vs-not, which a still has no notion of. Orange is also what reads over grass,
+  bitumen and a tin roof alike.
+
+### Traps specific to the export
+
+- **Static Maps caps `size` at 640 per axis; the live map is routinely 1100+ CSS px wide.**
+  Coverage at a zoom is a function of size in Static Maps "points", so `fitToViewport()`
+  drops a zoom level and halves the requested size until it fits — identical framing, half
+  the resolution — then `scale: 2` brings the pixel output back to roughly on-screen
+  dimensions.
+- **`latLngToPixel` works in LOGICAL pixels** — the pre-`scale` space Static Maps' own
+  `size` describes. Feed it the scaled size and every badge lands at exactly half the right
+  offset from centre, which looks like a plausible-but-wrong position rather than a bug.
+  Project with the logical size, then multiply by `SCALE`.
+- **The glyph atlas is printable ASCII only** (`lib/kml/overlay/glyph-atlas.ts`), so `²`,
+  `·` and `×` all render as `?`. `textWithSuper()` composes "m²" from a raised, smaller
+  real "2". Anything new in the legend has to stay inside ASCII or get the same treatment.
+- **The legend panel is sized from measured glyph widths**, never a constant. The Building
+  Markup legend was once 5px from clipping its longest label, and a legend that silently
+  crops a figure is worse than one that's slightly wide.
+- **`centroidOf` ignores a repeated closing vertex.** It used to average it in, which
+  counted the first point twice and put a triangle's badge down by its bottom vertex.
 
 ## Traps
 
@@ -175,8 +220,4 @@ tab switch.
 
 ## Not built, on purpose
 
-- **No export.** Google Maps JS tiles are cross-origin, so the canvas is tainted and the map
-  cannot be screenshotted client-side. A PNG would mean a server-side Static Maps re-render —
-  which is what the Residential tab already is. If a measurement needs to go in a document,
-  draw it there.
 - **No persistence.** Nothing is saved. Measurements survive a tab switch, not a reload.

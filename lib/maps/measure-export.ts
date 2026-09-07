@@ -10,7 +10,7 @@
 
 import sharp from "sharp";
 import type { LatLng } from "@/lib/kml/types";
-import { centroidOf } from "@/lib/kml/standard-markup/geometry";
+import { centroidOf, simplifyRing } from "@/lib/kml/standard-markup/geometry";
 import {
   MIN_POINTS,
   formatArea,
@@ -50,7 +50,20 @@ const MAX_ZOOM = 21;
  * `scale`, so no scale/size combination shrinks it relative to the map), and cropping or
  * shrinking it is exactly what the Maps Platform terms forbid.
  */
-const ATTRIBUTION_PAD_PX = 18;
+const ATTRIBUTION_PAD_PX = 20;
+
+/**
+ * How much of a tile's bottom edge Google's attribution bar occupies, in logical px.
+ *
+ * Measured at ~15; 22 is that plus headroom, since the bar's height is not contractual.
+ * Every tile EXCEPT the bottom-left one is requested this much taller and then cropped, so
+ * the bar doesn't end up burned across the middle of the stitched image.
+ */
+const TILE_BAND_CROP_PX = 22;
+
+/** Requests per export. Each is a billed Static Maps call, and at 8 a wide frame still gets
+ *  the full 2x detail while a pathological one falls back to a single request. */
+const MAX_TILES = 8;
 
 /** One flat colour for every shape, unlike the live map's steel/orange selected split —
  *  an exported still has no notion of "selected", and orange is what reads over grass,
@@ -71,58 +84,123 @@ export interface MeasureExportInput {
   measurements: (Measurable & { id: string })[];
 }
 
-/**
- * Picks the Static Maps centre, integer zoom and size that frame exactly the given bounds.
- *
- * Coverage at a zoom is a function of the image's size in Static Maps "points", and those
- * are capped at 640 per axis — while the live map is routinely 1100+ CSS px wide. So take
- * the largest integer zoom at which the box still fits inside 640, and request precisely
- * the size the box occupies at that zoom. `scale: 2` then doubles the pixel output, so the
- * file lands near on-screen dimensions at half the ground resolution.
- */
-function fitToBounds(bounds: LatLngBox) {
-  const { spanX, spanY, center } = mercatorSpan(bounds);
-  const clamp = (n: number) => Math.max(1, Math.min(MAX_STATIC_DIMENSION, Math.round(n)));
+interface TileRect {
+  /** Position within the whole frame, in logical px. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** True for the one tile whose Google attribution bar is KEPT. */
+  keepsAttribution: boolean;
+}
 
-  // The largest integer zoom at which the live view PLUS the attribution strip still fits
-  // inside Google's 640-per-axis cap. Stepping down rather than solving for it directly
-  // because the pad is a constant in pixels, not a fraction of the span.
-  let zoom = MAX_ZOOM;
+interface RenderPlan {
+  zoom: number;
+  /** Whole-frame logical size, including the attribution pad in the height. */
+  width: number;
+  height: number;
+  /** Centre of the whole frame. */
+  center: LatLng;
+  tiles: TileRect[];
+  /** Linear detail multiplier over a single request — 1 or 2. The overlay is scaled by it
+   *  so a badge and a legend row stay the same size relative to the map. */
+  ui: number;
+}
+
+/** Even splits, so every tile's size and centre land on whole logical pixels. An odd size
+ *  puts Static Maps' centre on a half pixel, which at scale 2 is a 1px seam. */
+function evenBoundaries(total: number, count: number): number[] {
+  const out = [0];
+  for (let i = 1; i < count; i++) out.push(2 * Math.round((total * i) / count / 2));
+  out.push(total);
+  return out;
+}
+
+/**
+ * Boundaries for the BOTTOM row, biased so the leftmost tile is as wide as Google allows.
+ *
+ * That tile is the one whose attribution bar is kept, and Google renders the provider list
+ * to fit the width it was asked for — at 506px it clipped to "data ©2026 Google Imagery…",
+ * losing the leading "Map". A full-width tile gives it room for the whole credit. The
+ * remainder splits evenly across the rest, and always fits: cols = ceil(width / 640)
+ * guarantees width <= 640 * cols.
+ */
+function attributionBiasedBoundaries(total: number, count: number): number[] {
+  if (count === 1 || total <= MAX_STATIC_DIMENSION) return evenBoundaries(total, count);
+  const first = MAX_STATIC_DIMENSION;
+  const rest = evenBoundaries(total - first, count - 1);
+  return [0, ...rest.map((x) => x + first)];
+}
+
+/**
+ * Plans the requests that cover exactly the given bounds, at the finest detail available.
+ *
+ * Google caps `size` at 640 per axis, so a frame wider than that at the zoom you want has to
+ * be fetched as several images and stitched. That is the ONLY way to get both the operator's
+ * exact frame and more detail than one request allows — widening the frame to fill the budget
+ * was tried and reverted, because it fills the extra pixels with more ground rather than more
+ * detail (see the note below).
+ *
+ * One zoom deeper than the single-request fit, so 2x the linear detail, whenever that costs
+ * MAX_TILES requests or fewer. Otherwise a single request, which is the same code path with a
+ * 1x1 grid.
+ */
+function planTiles(bounds: LatLngBox): RenderPlan {
+  const { spanX, spanY, center } = mercatorSpan(bounds);
+
+  // The largest integer zoom at which the whole frame fits one request.
+  let base = MAX_ZOOM;
   while (
-    zoom > 1 &&
-    (spanX * 2 ** zoom > MAX_STATIC_DIMENSION ||
-      spanY * 2 ** zoom + ATTRIBUTION_PAD_PX > MAX_STATIC_DIMENSION)
+    base > 1 &&
+    (spanX * 2 ** base > MAX_STATIC_DIMENSION ||
+      spanY * 2 ** base + ATTRIBUTION_PAD_PX > MAX_STATIC_DIMENSION)
   ) {
-    zoom -= 1;
+    base -= 1;
   }
 
-  const at = 2 ** zoom;
-  const width = clamp(spanX * at);
-  const height = clamp(spanY * at + ATTRIBUTION_PAD_PX);
+  // ⚠️ Do NOT widen the frame to spend the rest of the 640px budget at `base`. Integer zoom
+  // levels leave the frame between 320 and 640px, so up to 38% goes unused — but scaling the
+  // frame up at the same zoom fills that with MORE GROUND, because metres-per-pixel is fixed
+  // by the zoom. The export then stops showing what the operator framed, which is a worse
+  // fault than a small image. Tried and reverted on 2026-09-07. Tiling is the answer instead.
+  const plan = (zoom: number): RenderPlan | null => {
+    const at = 2 ** zoom;
+    // Even, so the boundary splits below stay on whole pixels.
+    const width = 2 * Math.ceil((spanX * at) / 2);
+    const height = 2 * Math.ceil((spanY * at + ATTRIBUTION_PAD_PX) / 2);
+    // Every tile but the bottom-left is fetched TILE_BAND_CROP_PX taller and cropped, so its
+    // usable height is capped below 640 by that much.
+    const cols = Math.ceil(width / MAX_STATIC_DIMENSION);
+    const rows = Math.ceil(height / (MAX_STATIC_DIMENSION - TILE_BAND_CROP_PX));
+    if (cols * rows > MAX_TILES) return null;
 
-  // ⚠️ Do NOT widen the frame to spend the rest of Google's 640px budget.
-  //
-  // It is tempting: integer zoom levels leave the frame somewhere between 320 and 640px, so
-  // up to 38% of the resolution goes unused and a real export came out 790x494. Scaling the
-  // frame up at the same zoom does fill the budget (1280x778 in that case) — but it fills it
-  // with MORE GROUND, because metres-per-pixel is fixed by the zoom. The export then no
-  // longer shows what the operator framed on screen, which is a worse fault than a small
-  // image: a drawing that covers a different area than the one you set up is simply wrong.
-  // Tried on 2026-09-07 and reverted the same day for exactly that reason.
-  //
-  // Matching the frame and raising the detail are mutually exclusive within ONE Static Maps
-  // request. The only way to have both is several requests at a deeper zoom, stitched — see
-  // the note in docs/measure-tab.md.
+    const xs = evenBoundaries(width, cols);
+    const bottomXs = attributionBiasedBoundaries(width, cols);
+    const ys = evenBoundaries(height, rows);
+    const tiles: TileRect[] = [];
+    for (let r = 0; r < rows; r++) {
+      const bottom = r === rows - 1;
+      const rowXs = bottom ? bottomXs : xs;
+      for (let c = 0; c < cols; c++) {
+        tiles.push({
+          x: rowXs[c],
+          y: ys[r],
+          width: rowXs[c + 1] - rowXs[c],
+          height: ys[r + 1] - ys[r],
+          // The bottom-left tile keeps Google's bar exactly where Google drew it, over the
+          // frame's own bottom-left — which the ATTRIBUTION_PAD_PX strip makes sure is
+          // spare ground rather than a measurement. Every other tile's bar is cropped, so
+          // the composite carries ONE unmodified Google attribution instead of one per tile.
+          // Nothing is redrawn: the provider list ("Airbus, CNES / Airbus, Landsat /
+          // Copernicus…") arrives as pixels, not data, so it cannot be reproduced by hand.
+          keepsAttribution: bottom && c === 0,
+        });
+      }
+    }
+    return { zoom, width, height, center, tiles, ui: 2 ** (zoom - base) };
+  };
 
-  // Move the centre SOUTH by half the pad so all the extra ground lands at the BOTTOM,
-  // under the attribution, rather than being split evenly top and bottom. Done by
-  // re-projecting through pixelToLatLng so the Mercator maths stays in one place.
-  const center2 = pixelToLatLng(
-    { center, zoom, imageSizePx: width, imageHeightPx: height },
-    { x: width / 2, y: height / 2 + ATTRIBUTION_PAD_PX / 2 }
-  );
-
-  return { center: center2, zoom, width, height };
+  return (base < MAX_ZOOM ? plan(base + 1) : null) ?? plan(base)!;
 }
 
 /**
@@ -270,9 +348,9 @@ function legendSvg(rows: Row[], totalSqm: number, showTotal: boolean): string {
 
 /** Top-right compass. Static Maps is always rendered north-up here — no `heading` is ever
  *  sent — so this is a fixed icon with no orientation maths. */
-function northArrowSvg(imageWidth: number): string {
+function northArrowSvg(canvasWidth: number): string {
   const r = 32;
-  const cx = imageWidth - 20 - r;
+  const cx = canvasWidth - 20 - r;
   const cy = 20 + r;
   const LABEL_SIZE = 20;
   return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="white" fill-opacity="0.95" stroke="#${STEEL}" stroke-width="2.5" />
@@ -294,7 +372,9 @@ function badgesSvg(
   zoom: number,
   /** LOGICAL size — the Static Maps `size`, before `scale`. */
   width: number,
-  height: number
+  height: number,
+  /** The overlay is authored at 1x and scaled as a group, so divide positions by this. */
+  ui: number
 ): string {
   const projection = { center, zoom, imageSizePx: width, imageHeightPx: height };
   // latLngToPixel works in the pre-`scale` pixel space Static Maps' own `size` describes,
@@ -303,10 +383,10 @@ function badgesSvg(
   // plausible-but-wrong position, not a bug.
   const toOutput = (p: LatLng) => {
     const logical = latLngToPixel(projection, p);
-    return { x: logical.x * SCALE, y: logical.y * SCALE };
+    return { x: (logical.x * SCALE) / ui, y: (logical.y * SCALE) / ui };
   };
-  const outWidth = width * SCALE;
-  const outHeight = height * SCALE;
+  const outWidth = (width * SCALE) / ui;
+  const outHeight = (height * SCALE) / ui;
 
   const parts: string[] = [];
   measurements.forEach((m, i) => {
@@ -370,49 +450,124 @@ export interface MeasureExportResult {
   heightPx: number;
 }
 
-export async function renderMeasureExport(input: MeasureExportInput): Promise<MeasureExportResult> {
-  const fitted = fitToBounds(input.bounds);
+/** Static Maps caps a request URL around 8192 chars. A dozen 100-point measurements buffer
+ *  into rings of ~200 vertices each, which blows that even encoded — so simplify until it
+ *  fits rather than let the fetch 414. Tolerances are in metres; 1.5m is invisible at any
+ *  zoom this export runs at. */
+const URL_LENGTH_BUDGET = 7600;
+const SIMPLIFY_TOLERANCES_M = [0, 0.3, 1.5, 5];
 
-  const drawable = input.measurements.filter((m) => m.points.length >= MIN_POINTS[m.mode]);
+function polygonsFor(measurements: (Measurable & { id: string })[], toleranceMetres: number) {
+  return measurements
+    .filter((m) => m.points.length >= MIN_POINTS[m.mode])
+    .map((m) => {
+      const ring = ringFor(m);
+      return {
+        ring: toleranceMetres > 0 ? simplifyRing(ring, toleranceMetres) : ring,
+        fillColor: SHAPE_COLOR,
+        fillOpacityPercent: FILL_OPACITY_PERCENT,
+        strokeColor: SHAPE_COLOR,
+        strokeOpacityPercent: STROKE_OPACITY_PERCENT,
+        strokeWeight: OUTLINE_WEIGHT,
+      };
+    })
+    .filter((p) => p.ring.length >= 3);
+}
+
+export async function renderMeasureExport(input: MeasureExportInput): Promise<MeasureExportResult> {
+  const plan = planTiles(input.bounds);
+  const frame = {
+    center: plan.center,
+    zoom: plan.zoom,
+    imageSizePx: plan.width,
+    imageHeightPx: plan.height,
+  };
+
+  const tileUrl = (tile: TileRect, tolerance: number) => {
+    // Every tile except the bottom-left is fetched taller than it needs and cropped, so its
+    // requested centre has to account for the extra band — otherwise the kept top portion
+    // shows ground half a band north of where it belongs.
+    const requestHeight = tile.height + (tile.keepsAttribution ? 0 : TILE_BAND_CROP_PX);
+    const centre = pixelToLatLng(frame, {
+      x: tile.x + tile.width / 2,
+      y: tile.y + requestHeight / 2,
+    });
+    return {
+      requestHeight,
+      url: buildStaticMapUrl({
+        mapType: input.mapType,
+        // A pinned frame with no adjust — every tile must land exactly where planned.
+        frame: { center: centre, fitZoom: plan.zoom },
+        zoomAdjust: 0,
+        size: { width: tile.width, height: requestHeight },
+        // The same shapes go to every tile; Google draws whatever falls inside each
+        // viewport, so a ribbon crossing a seam is continuous once stitched.
+        polygons: polygonsFor(input.measurements, tolerance),
+        styles: ["feature:poi|visibility:off"],
+      }).url,
+    };
+  };
+
+  // One tolerance for all tiles, chosen off the longest URL any of them would produce —
+  // different tiles simplifying differently would break a shape at a seam.
+  const tolerance =
+    SIMPLIFY_TOLERANCES_M.find((t) =>
+      plan.tiles.every((tile) => tileUrl(tile, t).url.length <= URL_LENGTH_BUDGET)
+    ) ?? SIMPLIFY_TOLERANCES_M[SIMPLIFY_TOLERANCES_M.length - 1];
+
+  const pxWidth = plan.width * SCALE;
+  const pxHeight = plan.height * SCALE;
+
+  const layers = await Promise.all(
+    plan.tiles.map(async (tile) => {
+      const { url, requestHeight } = tileUrl(tile, tolerance);
+      const res = await fetch(url);
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`Google Static Maps request failed (${res.status}). ${text.slice(0, 200)}`);
+      }
+      const raw = Buffer.from(await res.arrayBuffer());
+      // Crop Google's attribution bar off. Only the bottom-left tile keeps its own, so the
+      // stitched image carries exactly one — see planTiles.
+      const bytes =
+        requestHeight === tile.height
+          ? raw
+          : await sharp(raw)
+              .extract({ left: 0, top: 0, width: tile.width * SCALE, height: tile.height * SCALE })
+              .png()
+              .toBuffer();
+      return { input: bytes, left: tile.x * SCALE, top: tile.y * SCALE };
+    })
+  );
+
+  const stitched = await sharp({
+    create: {
+      width: pxWidth,
+      height: pxHeight,
+      channels: 3,
+      // Only ever visible if a tile fetch silently returned something short.
+      background: { r: 24, g: 26, b: 28 },
+    },
+  })
+    .composite(layers)
+    .png()
+    .toBuffer();
+
   const { rows, totalSqm } = rowsFor(input.measurements);
 
-  const { url } = buildStaticMapUrl({
-    mapType: input.mapType,
-    // A pinned frame with no adjust — the export must show what was on screen, not refit
-    // itself to the geometry.
-    frame: { center: fitted.center, fitZoom: fitted.zoom },
-    zoomAdjust: 0,
-    size: { width: fitted.width, height: fitted.height },
-    polygons: drawable.map((m) => ({
-      ring: ringFor(m),
-      fillColor: SHAPE_COLOR,
-      fillOpacityPercent: FILL_OPACITY_PERCENT,
-      strokeColor: SHAPE_COLOR,
-      strokeOpacityPercent: STROKE_OPACITY_PERCENT,
-      strokeWeight: OUTLINE_WEIGHT,
-    })),
-    styles: ["feature:poi|visibility:off"],
-  });
-
-  const res = await fetch(url);
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Google Static Maps request failed (${res.status}). ${text.slice(0, 200)}`);
-  }
-
-  // The overlay is authored in the image's ACTUAL pixel space (size x scale), so a stroke
-  // width or a font size means the same thing here as it does in the panel.
-  const pxWidth = fitted.width * SCALE;
-  const pxHeight = fitted.height * SCALE;
+  // The overlay is authored at 1x and scaled as a group, so one factor keeps the legend,
+  // badges and compass the same size RELATIVE to the map however many tiles were stitched.
   const overlay = Buffer.from(
     `<svg width="${pxWidth}" height="${pxHeight}" xmlns="http://www.w3.org/2000/svg">
-    ${badgesSvg(input.measurements, fitted.center, fitted.zoom, fitted.width, fitted.height)}
-    ${rows.length > 0 ? legendSvg(rows, totalSqm, rows.length > 1) : ""}
-    ${northArrowSvg(pxWidth)}
+    <g transform="scale(${plan.ui})">
+      ${badgesSvg(input.measurements, plan.center, plan.zoom, plan.width, plan.height, plan.ui)}
+      ${rows.length > 0 ? legendSvg(rows, totalSqm, rows.length > 1) : ""}
+      ${northArrowSvg(pxWidth / plan.ui)}
+    </g>
   </svg>`
   );
 
-  const composed = await sharp(Buffer.from(await res.arrayBuffer()))
+  const composed = await sharp(stitched)
     .composite([{ input: overlay, top: 0, left: 0 }])
     .png()
     .toBuffer();

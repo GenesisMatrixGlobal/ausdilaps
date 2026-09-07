@@ -184,23 +184,40 @@ Consequences worth knowing:
   bar scales WITH `scale`, so no size/scale combination shrinks it relative to the map, and
   cropping or shrinking it is what the Maps Platform terms forbid. The centre is shifted
   south by half the pad so the space lands at the bottom rather than being split.
-- ⚠️ **Do NOT widen the frame to spend the rest of Google's 640px budget.** It is tempting —
-  integer zoom levels leave the frame between 320 and 640 px, so up to 38% of the resolution
-  goes unused and a real export came out 790x494. Scaling the frame up at the same zoom does
-  fill the budget (1280x778 in that case), but it fills it with **more ground**, because
-  metres-per-pixel is fixed by the zoom. The export then no longer shows what the operator
-  framed on screen, which is a worse fault than a small image: a drawing covering a different
-  area than the one you set up is simply wrong. Tried and reverted the same day, 2026-09-07.
-- **Matching the frame and raising the detail are mutually exclusive within one Static Maps
-  request.** The export always matches the live bounds (verified to ~0.3 m east-west); the
-  only deliberate difference is the attribution strip of extra ground at the bottom. Whatever
-  resolution the integer zoom yields for that frame is what you get. Both at once needs
-  tiling.
-- **1280x1280 is a hard per-request ceiling.** Verified: `size` is silently clamped to
-  640/axis and **`scale=4` is silently clamped to 2** — no error, just a smaller image than
-  asked for. Genuinely finer detail needs a deeper zoom, which exceeds the cap, so it would
-  mean stitching several requests and cropping Google's attribution off the inner tiles —
-  considered and declined 2026-09-07 rather than take on that terms question.
+- **The export is TILED.** Google caps `size` at 640 per axis, so `planTiles()` goes one zoom
+  deeper than the single-request fit and covers the frame with a grid of requests, stitched
+  with sharp — 2x the linear detail, 4x the pixels, for up to `MAX_TILES` (8) requests. A
+  frame that would need more falls back to a single request, which is the same code path with
+  a 1x1 grid. Verified on a real 2.3x4km job: 1012x622 became 2024x1216 in 2.7s, and both the
+  column and row seams are invisible.
+- ⚠️ **Do NOT widen the frame to spend the rest of the 640px budget instead.** It looks like
+  free resolution — integer zoom leaves the frame between 320 and 640px, so up to 38% goes
+  unused. But scaling the frame up at the same zoom fills that with **more ground**, because
+  metres-per-pixel is fixed by the zoom, so the export stops showing what the operator framed.
+  Tried and reverted the same day, 2026-09-07. Tiling is the answer; that is not.
+- **Tile boundaries are EVEN logical pixels.** An odd `size` puts Static Maps' centre on a
+  half pixel, which at `scale: 2` is a one-pixel seam.
+- **Exactly ONE tile keeps its Google attribution — the bottom-left.** Every other tile is
+  requested `TILE_BAND_CROP_PX` taller and the band cropped off, so the bar isn't burned
+  across the middle of the stitched image. The kept bar is Google's own, unmodified and where
+  Google drew it, over the `ATTRIBUTION_PAD_PX` strip of spare ground. Nothing is redrawn:
+  the provider list ("Airbus, CNES / Airbus, Landsat / Copernicus…") arrives as pixels, not
+  data, so it cannot be reproduced by hand.
+- **The bottom row's split is biased so the leftmost tile is full width.** Google renders the
+  provider list to fit the width it was asked for, and at 506px it clipped to "data ©2026
+  Google Imagery…", losing the leading "Map". A full-width tile gives it room for the whole
+  credit — which, on a 2024px-wide composite, is also only 3.6% of the height instead of the
+  original 7.1%.
+- **A cropped tile's requested centre accounts for the extra band.** Miss that and the kept
+  top portion shows ground half a band north of where it belongs — a subtle vertical offset
+  per tile rather than an obvious break.
+- **One simplify tolerance for all tiles.** A dozen 100-point measurements buffer into rings
+  of ~200 vertices, which blows the ~8192-char URL limit even encoded, so `polygonsFor()`
+  simplifies until it fits. The tolerance is chosen off the longest URL any tile would
+  produce, because tiles simplifying differently would break a shape at a seam.
+- **The overlay is authored at 1x and scaled as a group** (`transform="scale(ui)"`), so the
+  legend, badges and compass stay the same size relative to the map however many tiles were
+  stitched.
 - **`mercatorSpan()` computes the box centre in world-pixel space, not by averaging
   latitudes.** Mercator is non-linear in latitude, so the mean of north and south is not the
   centre of the frame, and using it shifts the export vertically against the live map.

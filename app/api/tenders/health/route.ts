@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireBearerSecret } from "@/lib/auth/shared-secret";
 import { isApiAdmin } from "@/lib/auth/is-staff";
 import { safeText } from "@/lib/html";
-import { STALLED_RUN_MS } from "@/lib/tenders/config";
+import { STALLED_RUN_MS, forwardingEnabled } from "@/lib/tenders/config";
 
 /**
  * The morning invariant check — 9am Brisbane, before anyone opens the inbox.
@@ -34,10 +34,11 @@ export async function GET(req: NextRequest) {
   const checks: Check[] = [];
 
   try {
-    const [lastRun, sources, unforwarded, pending, stalled] = await Promise.all([
+    const [lastRun, sources, unforwarded, untrusted, pending, stalled] = await Promise.all([
       db.from("tender_scan_runs").select("started_at, status").eq("status", "succeeded").order("started_at", { ascending: false }).limit(1),
       db.from("tender_sources").select("slug, label, is_enabled, consecutive_empty, consecutive_failures, last_error, alert_on_quiet"),
       db.from("tender_items").select("id", { count: "exact", head: true }).in("relevance", ["match", "maybe"]).is("forwarded_at", null),
+      db.from("tender_items").select("id", { count: "exact", head: true }).in("relevance", ["match", "maybe"]).is("forwarded_at", null).eq("sender_trusted", false),
       db.from("tender_items").select("id", { count: "exact", head: true }).eq("relevance", "pending"),
       db
         .from("tender_scan_runs")
@@ -90,12 +91,33 @@ export async function GET(req: NextRequest) {
     }
 
     // 3. Are matches reaching anyone?
-    if ((unforwarded.count ?? 0) > 0) {
-      checks.push({
-        level: "warning",
-        title: `${unforwarded.count} matched tender(s) not delivered`,
-        detail: "Email delivery is failing or not configured. They will be re-sent on the next successful run.",
-      });
+    //
+    // Shadow mode is a DELIBERATE setting, not a fault. Reporting it as an issue fires this
+    // email every single morning of exactly the week the system is meant to be watched
+    // closely — which teaches people to archive it unread, and the first real failure lands
+    // in a folder nobody opens. It goes in the Monday all-clear instead, where it reads as a
+    // standing reminder to turn forwarding on rather than as a broken thing.
+    const undelivered = unforwarded.count ?? 0;
+    const blocked = untrusted.count ?? 0;
+
+    if (undelivered > 0 && forwardingEnabled()) {
+      if (blocked === undelivered) {
+        // Forwarding is ON and still nothing can go out. This is the failure mode that
+        // looks exactly like success from the dashboard: runs succeed, matches accumulate,
+        // and the trust gate silently swallows every one of them.
+        checks.push({
+          level: "critical",
+          title: `${undelivered} matched tender(s) blocked — no trusted senders`,
+          detail:
+            "Forwarding is enabled, but every match came from a domain not marked trusted, so none can be sent. Mark the real portals as trusted in Tender Watch, or set TENDER_FORWARD_UNTRUSTED=true.",
+        });
+      } else {
+        checks.push({
+          level: "warning",
+          title: `${undelivered} matched tender(s) not delivered`,
+          detail: "Email delivery is failing or not configured. They will be re-sent on the next successful run.",
+        });
+      }
     }
 
     // 4. Is the classifier keeping up?
@@ -121,9 +143,16 @@ export async function GET(req: NextRequest) {
 
     const shouldEmail = checks.length > 0 || isMonday;
     let emailed = false;
-    if (shouldEmail) emailed = await sendHealthEmail(checks, isMonday, hours);
+    if (shouldEmail) emailed = await sendHealthEmail(checks, isMonday, hours, undelivered, blocked);
 
-    return NextResponse.json({ ok: true, checks, emailed });
+    return NextResponse.json({
+      ok: true,
+      checks,
+      emailed,
+      shadowMode: !forwardingEnabled(),
+      undelivered,
+      blockedUntrusted: blocked,
+    });
   } catch (e) {
     const error = (e as Error).message;
     console.error("[tenders] health check failed:", error);
@@ -131,7 +160,13 @@ export async function GET(req: NextRequest) {
   }
 }
 
-async function sendHealthEmail(checks: Check[], isAllClear: boolean, hoursSinceScan: number): Promise<boolean> {
+async function sendHealthEmail(
+  checks: Check[],
+  isAllClear: boolean,
+  hoursSinceScan: number,
+  undelivered: number,
+  blocked: number
+): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
   if (!key) {
     console.error("[tenders] health check found issues but RESEND_API_KEY is not set:", checks);
@@ -141,6 +176,15 @@ async function sendHealthEmail(checks: Check[], isAllClear: boolean, hoursSinceS
   const to = process.env.ADMIN_EMAIL ?? "info@ausdilaps.com.au";
   const from = process.env.RESEND_FROM_EMAIL ?? "AusDilaps <no-reply@ausdilaps.com.au>";
   const critical = checks.filter((c) => c.level === "critical").length;
+
+  // Shadow mode rides along on the weekly all-clear rather than firing daily (see check 3).
+  const shadowNote =
+    !forwardingEnabled() && undelivered > 0
+      ? `<tr><td style="padding:10px 0;border-top:1px solid #e3e5e7;font-size:12px;color:#a8701a">
+           <strong>Shadow mode.</strong> ${undelivered} matched tender(s) are queued but not being emailed,
+           because TENDER_FORWARD_ENABLED is off. ${blocked === undelivered ? "All of them are also from senders not yet marked trusted, so turning forwarding on alone would still send nothing." : ""}
+         </td></tr>`
+      : "";
 
   const subject = checks.length
     ? `Tender Watch — ${critical > 0 ? "action needed" : "check"}: ${checks.length} issue${checks.length === 1 ? "" : "s"}`
@@ -158,7 +202,7 @@ async function sendHealthEmail(checks: Check[], isAllClear: boolean, hoursSinceS
     : `<tr><td style="padding:10px 0;font-size:13px;color:#2f343a">
          Everything is running. Last successful scan was ${Math.floor(hoursSinceScan)} hours ago, all sources are producing,
          and nothing is stuck in the queue.
-       </td></tr>`;
+       </td></tr>${shadowNote}`;
 
   const html = `<!doctype html><html><body style="margin:0;padding:24px 12px;background:#f3f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e3e5e7;border-radius:10px;overflow:hidden">

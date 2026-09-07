@@ -191,7 +191,6 @@ export async function loadDashboard(origin: string) {
       enquiries: {
         thisWeek: thisWeek.length,
         lastWeek: lastWeek.length,
-        tier1ThisWeek: thisWeek.filter((l) => l.tier === "tier1").length,
         last30: inWindow(now - 30 * DAY, now + DAY).length,
         total90: leads.length,
         daysSinceLast: daysQuiet,
@@ -228,7 +227,6 @@ function empty(unavailable: string, now: number) {
     enquiries: {
       thisWeek: 0,
       lastWeek: 0,
-      tier1ThisWeek: 0,
       last30: 0,
       total90: 0,
       daysSinceLast: null as number | null,

@@ -18,13 +18,32 @@ import type { TenderSummary } from "@/lib/tenders/summary";
  */
 
 type Item = TenderSummary["items"][number];
+type Group = TenderSummary["groups"][number];
 type Source = TenderSummary["sources"][number];
 
+/**
+ * Two panes, not one page.
+ *
+ * Source health used to sit between the stat tiles and the tenders, which put a diagnostic
+ * table in front of the only thing anyone opens this tool to do. It is one click away now.
+ */
+const PANES = [
+  { key: "opportunities", label: "Opportunities" },
+  { key: "health", label: "Source health" },
+] as const;
+type Pane = (typeof PANES)[number]["key"];
+
+/**
+ * The queue is the default and everything else is an archive.
+ *
+ * "Rejected" reads from `items` rather than `groups` — a no_match row is never an
+ * opportunity, so grouping it would be work nobody looks at.
+ */
 const FILTERS = [
-  { key: "match", label: "Matches" },
-  { key: "maybe", label: "Needs review" },
-  { key: "no_match", label: "Rejected" },
-  { key: "all", label: "All" },
+  { key: "queue", label: "To review" },
+  { key: "sent", label: "Sent" },
+  { key: "dismissed", label: "Dismissed" },
+  { key: "rejected", label: "Rejected" },
 ] as const;
 type Filter = (typeof FILTERS)[number]["key"];
 
@@ -80,9 +99,34 @@ function Pill({ tone, children }: { tone: "ok" | "warn" | "critical" | "muted"; 
 
 export function TenderWatchView({ initial }: { initial: TenderSummary }) {
   const [data, setData] = useState(initial);
-  const [filter, setFilter] = useState<Filter>("match");
+  const [pane, setPane] = useState<Pane>("opportunities");
+  const [filter, setFilter] = useState<Filter>("queue");
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Selection is by GROUP KEY, not row id: the unit a person ticks is the opportunity, and
+  // one opportunity can be five rows. The ids are expanded only when the request is built,
+  // so every duplicate gets marked and none of them come back tomorrow.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
+
+  function toggle(key: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  /** Changing list resets the selection — carrying ticks into another tab invites a misfire. */
+  function switchFilter(next: Filter) {
+    setFilter(next);
+    setSelected(new Set());
+    setFlash(null);
+  }
 
   async function refresh() {
     const res = await fetch("/api/tenders/summary", {
@@ -112,6 +156,59 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
       return;
     }
     setData(json as TenderSummary);
+  }
+
+  /**
+   * Hand the ticked opportunities to the team, or dismiss them.
+   *
+   * The selection is cleared only on success. A failed send must leave the ticks exactly as
+   * they were so the same button press retries them — re-ticking twelve rows after a
+   * transient Resend error is how someone gives up on a tool.
+   */
+  async function act(action: "send" | "dismiss") {
+    const chosen = data.groups.filter((g) => selected.has(g.key));
+    const itemIds = chosen.flatMap((g) => g.members.map((m) => m.id));
+    if (itemIds.length === 0) return;
+
+    setBusy(true);
+    setError(null);
+    setFlash(null);
+    try {
+      const res = await fetch("/api/tenders/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, itemIds, note: note.trim() || undefined }),
+      });
+      const json = (await res.json()) as {
+        ok: boolean;
+        error?: string;
+        warning?: string;
+        sent?: number;
+        dismissed?: number;
+      } & Partial<TenderSummary>;
+
+      if (!res.ok || !json.ok) {
+        setError(json.error ?? "That didn't go through.");
+        // The route returns the refreshed summary even on a send failure, so the screen
+        // still catches up with anything another person changed meanwhile.
+        if (json.groups) setData(json as TenderSummary);
+        return;
+      }
+
+      setData(json as TenderSummary);
+      setSelected(new Set());
+      setNote("");
+      setFlash(
+        json.warning ??
+          (action === "send"
+            ? `Sent ${json.sent} opportunit${json.sent === 1 ? "y" : "ies"} to the team.`
+            : `Dismissed ${chosen.length} opportunit${chosen.length === 1 ? "y" : "ies"}.`)
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function runScan() {
@@ -146,7 +243,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
 
   const tiles: Stat[] = [
     {
-      label: "Scans · 30d",
+      label: `Scans · ${data.windowDays}d`,
       value: data.stats.scans,
       sub: neverRun ? "Not started yet" : data.stats.scans >= 28 ? "Nightly, none missed" : "Some nights missed",
       tone: neverRun ? "default" : data.stats.scans >= 28 ? "ok" : "warn",
@@ -157,9 +254,14 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
       sub: `across ${data.sources.length} source${data.sources.length === 1 ? "" : "s"}`,
     },
     {
-      label: "Matches",
-      value: data.stats.matched,
-      sub: data.stats.scanned > 0 ? `${((data.stats.matched / data.stats.scanned) * 100).toFixed(1)}% of scanned` : "—",
+      // Deliberately the number of CARDS below, not a count of rows. The old tile summed a
+      // run counter nothing ever wrote, so it read "0 matches" directly above a list of
+      // sixteen. Anything on this page that claims a total now comes from the same array
+      // the list renders.
+      label: "To review",
+      value: data.stats.open,
+      sub: data.stats.open === 0 ? "Queue is clear" : "Waiting for someone",
+      tone: data.stats.open > 0 ? "warn" : "ok",
     },
     {
       label: "Last scan",
@@ -181,16 +283,21 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
     },
   ];
 
-  const visible = data.items.filter((i) => (filter === "all" ? true : i.relevance === filter));
-  const count = (key: Filter) => (key === "all" ? data.items.length : data.items.filter((i) => i.relevance === key).length);
+  const groupsFor = (key: Filter) =>
+    key === "rejected" ? [] : data.groups.filter((g) => g.state === key);
+  const rejected = data.items.filter((i) => i.relevance === "no_match");
+
+  const count = (key: Filter) => (key === "rejected" ? rejected.length : groupsFor(key).length);
+  const visibleGroups = groupsFor(filter);
 
   // Nothing to scan and nothing scanned yet — the pipeline is built but not switched on.
-  // Distinct from shadow mode, which means it IS running and just not emailing anyone.
   const comingSoon = neverRun && !data.sources.some((s) => s.configured);
+  const selectedGroups = data.groups.filter((g) => selected.has(g.key));
+  const selectedRows = selectedGroups.reduce((n, g) => n + g.count, 0);
 
   return (
     <div>
-      {comingSoon ? (
+      {comingSoon && (
         <div className="mb-6 rounded-lg border border-ad-steel/30 border-l-[3px] border-l-ad-steel bg-ad-steel/5 p-4">
           <p className="text-sm font-semibold text-ad-ink">Coming soon — not running yet</p>
           <p className="mt-1 max-w-[70ch] text-xs leading-relaxed text-ad-muted">
@@ -202,17 +309,6 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
             <code className="rounded bg-white px-1">docs/tender-watch.md</code>.
           </p>
         </div>
-      ) : (
-        data.shadowMode && (
-          <div className="mb-6 rounded-lg border border-ad-border border-l-[3px] border-l-ad-orange bg-ad-orange/5 p-3.5">
-            <p className="text-sm font-semibold text-ad-ink">Shadow mode — nothing is being emailed yet</p>
-            <p className="mt-0.5 text-xs text-ad-muted">
-              The scan runs and classifies normally. Set{" "}
-              <code className="rounded bg-white px-1">TENDER_FORWARD_ENABLED=true</code> once a week of results looks
-              right.
-            </p>
-          </div>
-        )
       )}
 
       {data.unavailable && (
@@ -225,62 +321,206 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
         </div>
       )}
 
+      {data.truncated && (
+        <p className="mb-4 text-xs text-ad-orange">
+          More tenders in the last {data.windowDays} days than this page can list, so the counts below are short. Narrow
+          the window with <code className="rounded bg-white px-1">TENDER_WINDOW_DAYS</code>.
+        </p>
+      )}
+
       {error && <p className="mb-4 text-sm text-ad-orange">{error}</p>}
+      {flash && <p className="mb-4 text-sm font-medium text-ad-steel">{flash}</p>}
 
       <StatTiles stats={tiles} />
 
-      {(data.queues.unforwarded > 0 || data.queues.pending > 0 || data.queues.stalled > 0) && (
+      {(data.queues.pending > 0 || data.queues.stalled > 0) && (
         <p className="mt-3 text-xs text-ad-muted">
           {data.queues.pending > 0 && <span className="mr-3">{data.queues.pending} awaiting classification</span>}
-          {data.queues.unforwarded > 0 && <span className="mr-3">{data.queues.unforwarded} not yet sent</span>}
           {data.queues.stalled > 0 && <span className="text-ad-orange">{data.queues.stalled} stalled run(s)</span>}
         </p>
       )}
 
-      <SourceHealth sources={data.sources} now={now} isAdmin={data.isAdmin} onUpdate={updateSource} />
+      <div className="mt-8">
+        <TabBar tabs={PANES} active={pane} onChange={setPane} />
+      </div>
 
-      <section className="mt-8">
-        <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-3">
-          <h3 className="text-sm font-semibold text-ad-ink">Opportunities</h3>
-          <button
-            onClick={() => void runScan()}
-            // No sources means a scan would do nothing but write an empty run row.
-            disabled={scanning || comingSoon}
-            title={comingSoon ? "No tender sources are connected yet" : undefined}
-            className={cn(
-              buttonVariants({ variant: "primary", size: "sm" }),
-              (scanning || comingSoon) && "cursor-not-allowed opacity-40"
-            )}
-          >
-            {scanning ? "Scanning…" : "Run scan now"}
-          </button>
-        </div>
+      {pane === "health" ? (
+        <SourceHealth sources={data.sources} now={now} isAdmin={data.isAdmin} onUpdate={updateSource} />
+      ) : (
+        <section className="mt-5">
+          <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-ad-ink">
+                {filter === "queue" ? "Tick what\u2019s worth chasing" : FILTERS.find((f) => f.key === filter)?.label}
+              </h3>
+              {filter === "queue" && (
+                <p className="mt-0.5 text-xs text-ad-muted">
+                  Sending emails the details to the team so they can be added to the portal.
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => void runScan()}
+              // No sources means a scan would do nothing but write an empty run row.
+              disabled={scanning || comingSoon}
+              title={comingSoon ? "No tender sources are connected yet" : undefined}
+              className={cn(
+                buttonVariants({ variant: "primary", size: "sm" }),
+                (scanning || comingSoon) && "cursor-not-allowed opacity-40"
+              )}
+            >
+              {scanning ? "Scanning\u2026" : "Run scan now"}
+            </button>
+          </div>
 
-        <TabBar
-          tabs={FILTERS.map((f) => ({ key: f.key, label: `${f.label} (${count(f.key)})` }))}
-          active={filter}
-          onChange={setFilter}
+          <TabBar
+            tabs={FILTERS.map((f) => ({ key: f.key, label: `${f.label} (${count(f.key)})` }))}
+            active={filter}
+            onChange={switchFilter}
+          />
+
+          {filter === "queue" && visibleGroups.length > 0 && (
+            <SelectionBar
+              selectedCount={selectedGroups.length}
+              selectedRows={selectedRows}
+              total={visibleGroups.length}
+              note={note}
+              busy={busy}
+              onNote={setNote}
+              onSelectAll={() =>
+                setSelected(
+                  selected.size === visibleGroups.length ? new Set() : new Set(visibleGroups.map((g) => g.key))
+                )
+              }
+              onSend={() => void act("send")}
+              onDismiss={() => void act("dismiss")}
+            />
+          )}
+
+          {filter === "rejected" ? (
+            rejected.length === 0 ? (
+              <div className="mt-4">
+                <EmptyState title="Nothing rejected yet" body="The prefilter hasn’t turned anything away." />
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-b-xl border border-t-0 border-ad-border">
+                {rejected.map((item) => (
+                  <TenderRow key={item.id} item={item} now={now} />
+                ))}
+              </div>
+            )
+          ) : visibleGroups.length === 0 ? (
+            <div className="mt-4">
+              <EmptyState
+                title={filter === "queue" ? "Nothing waiting" : "Nothing here"}
+                body={
+                  filter === "queue"
+                    ? "Every opportunity has been sent or dismissed."
+                    : "Nothing in this list yet."
+                }
+              />
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-b-xl border border-t-0 border-ad-border">
+              {visibleGroups.map((g) => (
+                <GroupCard
+                  key={g.key}
+                  group={g}
+                  now={now}
+                  selectable={filter === "queue"}
+                  selected={selected.has(g.key)}
+                  onToggle={() => toggle(g.key)}
+                />
+              ))}
+            </div>
+          )}
+
+          {filter === "rejected" && (
+            <p className="mt-2.5 text-xs text-ad-muted">
+              Rejected tenders stay visible on purpose. A classifier that quietly starts dropping real work is the
+              failure you&rsquo;d never notice — reading a few rejections each week is the only thing that catches it.
+            </p>
+          )}
+        </section>
+      )}
+
+      {data.isAdmin && pane === "health" && <AdminPanels data={data} />}
+    </div>
+  );
+}
+
+/**
+ * The bar that turns a list into a work queue.
+ *
+ * Both buttons are disabled with nothing ticked rather than hidden — a control that appears
+ * and disappears as you tick things makes the page jump under the cursor.
+ */
+function SelectionBar({
+  selectedCount,
+  selectedRows,
+  total,
+  note,
+  busy,
+  onNote,
+  onSelectAll,
+  onSend,
+  onDismiss,
+}: {
+  selectedCount: number;
+  selectedRows: number;
+  total: number;
+  note: string;
+  busy: boolean;
+  onNote: (v: string) => void;
+  onSelectAll: () => void;
+  onSend: () => void;
+  onDismiss: () => void;
+}) {
+  const none = selectedCount === 0;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-x border-ad-border bg-ad-surface px-3.5 py-2.5">
+      <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-ad-ink">
+        <input
+          type="checkbox"
+          checked={selectedCount === total && total > 0}
+          onChange={onSelectAll}
+          className="h-4 w-4 accent-ad-steel"
         />
+        {none ? "Select all" : `${selectedCount} selected`}
+      </label>
 
-        {visible.length === 0 ? (
-          <div className="mt-4">
-            <EmptyState title="Nothing here" body="No tenders in this category yet." />
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-b-xl border border-t-0 border-ad-border">
-            {visible.map((item) => (
-              <TenderRow key={item.id} item={item} now={now} />
-            ))}
-          </div>
-        )}
+      {/* Only worth saying once something is ticked, and it explains what "5 rows" means. */}
+      {!none && selectedRows !== selectedCount && (
+        <span className="text-xs text-ad-muted">{selectedRows} alerts</span>
+      )}
 
-        <p className="mt-2.5 text-xs text-ad-muted">
-          Rejected tenders stay visible on purpose. A classifier that quietly starts dropping real work is the failure
-          you&rsquo;d never notice — reading a few rejections each week is the only thing that catches it.
-        </p>
-      </section>
+      <input
+        type="text"
+        value={note}
+        onChange={(e) => onNote(e.target.value)}
+        maxLength={600}
+        placeholder="Optional note for the team…"
+        className="min-w-[12rem] flex-1 rounded border border-ad-border bg-white px-2.5 py-1.5 text-xs text-ad-ink placeholder:text-ad-muted focus:border-ad-steel focus:outline-none"
+      />
 
-      {data.isAdmin && <AdminPanels data={data} />}
+      <button
+        type="button"
+        onClick={onDismiss}
+        disabled={none || busy}
+        title="Archive these without emailing anyone"
+        className={cn(buttonVariants({ variant: "outline", size: "sm" }), (none || busy) && "cursor-not-allowed opacity-40")}
+      >
+        Dismiss
+      </button>
+      <button
+        type="button"
+        onClick={onSend}
+        disabled={none || busy}
+        className={cn(buttonVariants({ variant: "accent", size: "sm" }), (none || busy) && "cursor-not-allowed opacity-40")}
+      >
+        {busy ? "Sending\u2026" : "Send email"}
+      </button>
     </div>
   );
 }
@@ -366,7 +606,7 @@ function SourceHealth({
                   title={
                     s.isTrusted
                       ? "Mail from this domain is treated as genuine."
-                      : "Unverified: items are badged, and stay out of the digest unless TENDER_FORWARD_UNTRUSTED is on."
+                      : "Unverified: items are badged so a reader knows, but nothing is held back \u2014 a person approves every send."
                   }
                 >
                   Trusted
@@ -407,6 +647,142 @@ function Toggle({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * One opportunity — which may be five emails about the same job.
+ *
+ * The whole card is a label wrapping the checkbox, so ticking works anywhere on the row
+ * rather than only on a 16px square. The tender link is the one exception: it stops
+ * propagation, because clicking through to read a notice must not silently tick it.
+ */
+function GroupCard({
+  group,
+  now,
+  selectable,
+  selected,
+  onToggle,
+}: {
+  group: Group;
+  now: number;
+  selectable: boolean;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  const lead = group.lead;
+  const closes = closesLabel(lead.closesAt, now);
+  const primary = group.sources.find((s) => s.url) ?? null;
+  const host = primary?.url ? hostOf(primary.url) : null;
+  const isMatch = group.members.some((m) => m.relevance === "match");
+
+  return (
+    <article
+      className={cn(
+        "border-b border-ad-border bg-white transition-colors last:border-b-0",
+        selected && "bg-ad-steel/5"
+      )}
+    >
+      <div className="flex items-start gap-3 p-4">
+        {selectable && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggle}
+            aria-label={`Select ${group.title}`}
+            className="mt-1 h-4 w-4 shrink-0 accent-ad-steel"
+          />
+        )}
+        <div className={cn("w-[3px] self-stretch rounded-sm", isMatch ? "bg-ad-steel" : "bg-ad-orange")} aria-hidden />
+
+        <div className="min-w-0 flex-1">
+          <h4 className="text-[0.925rem] font-semibold text-ad-ink">
+            {primary?.url ? (
+              <a
+                href={primary.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="hover:text-ad-steel hover:underline"
+              >
+                {group.title}
+              </a>
+            ) : (
+              group.title
+            )}
+          </h4>
+
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ad-muted">
+            {lead.agency && <span>{lead.agency}</span>}
+            {closes && (
+              <>
+                <span className="opacity-40">·</span>
+                <span className={cn("tabular-nums", closes.urgent && "font-semibold text-ad-orange")}>
+                  {closes.text}
+                </span>
+              </>
+            )}
+            {/* Hostname in plain text: escaping an href stops injection, it does not stop
+                navigation. A human should see where a link goes before they click it. */}
+            {host && (
+              <>
+                <span className="opacity-40">·</span>
+                <span className="font-mono text-[0.7rem]">{host}</span>
+              </>
+            )}
+          </div>
+
+          {(lead.services.length > 0 || !isMatch || group.members.some((m) => m.injectionSuspected)) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {lead.services.map((sv) => (
+                <Pill key={sv} tone="ok">
+                  {SERVICE_LABELS[sv] ?? sv}
+                </Pill>
+              ))}
+              {!isMatch && <Pill tone="warn">Needs review</Pill>}
+              {group.members.some((m) => m.injectionSuspected) && <Pill tone="critical">Flagged content</Pill>}
+            </div>
+          )}
+
+          {lead.summary && <p className="mt-2 max-w-[78ch] text-[0.85rem] text-ad-ink">{lead.summary}</p>}
+
+          {/* Only when it genuinely arrived more than once — on every card it would be noise. */}
+          {group.count > 1 && (
+            <p className="mt-2 text-xs text-ad-muted">
+              Arrived {group.count} times · {group.sources.map((sv) => sv.label.replace(/^email:/, "")).join(", ")}
+            </p>
+          )}
+
+          {group.state === "sent" && (
+            <p className="mt-2 text-xs text-ad-steel">Sent {ago(lead.forwardedAt, now)}</p>
+          )}
+        </div>
+
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className={cn("text-lg font-semibold tabular-nums", isMatch ? "text-ad-steel" : "text-ad-orange")}>
+            {lead.confidence === null ? "—" : `${Math.round(lead.confidence * 100)}%`}
+          </span>
+          {group.count > 1 && (
+            <span className="text-[0.65rem] font-semibold uppercase tracking-wide text-ad-muted">
+              ×{group.count}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {lead.reasoning && (
+        <details className="border-t border-ad-border">
+          <summary className="cursor-pointer px-4 py-2.5 text-xs font-medium text-ad-steel">Why this verdict</summary>
+          <div className="px-4 pb-3.5">
+            <p className="max-w-[76ch] text-[0.82rem] text-ad-ink">{lead.reasoning}</p>
+            <p className="mt-2 font-mono text-[0.7rem] text-ad-muted">
+              {lead.model ?? lead.classifiedBy}
+              {lead.classifiedAt ? ` · ${ago(lead.classifiedAt, now)}` : ""}
+            </p>
+          </div>
+        </details>
+      )}
+    </article>
   );
 }
 
@@ -515,17 +891,18 @@ function AdminPanels({ data }: { data: TenderSummary }) {
     { k: "Prefiltered", v: f.prefiltered, r: pct(f.prefiltered, f.fresh) },
     { k: "Classified", v: f.classified, r: pct(f.classified, f.fresh) },
     { k: "Matched", v: f.matched, r: pct(f.matched, f.classified) },
-    { k: "Sent", v: f.forwarded, r: pct(f.forwarded, f.matched) },
+    { k: "To review", v: f.review, r: pct(f.review, f.classified) },
+    { k: "Sent", v: f.sent, r: pct(f.sent, f.matched + f.review) },
   ];
 
   return (
     <>
       <section className="mt-10">
         <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-3">
-          <h3 className="text-sm font-semibold text-ad-ink">Pipeline · last 14 days</h3>
+          <h3 className="text-sm font-semibold text-ad-ink">Pipeline · last {data.windowDays} days</h3>
           <p className="text-xs text-ad-muted">Watch the ratios, not the totals — a stage falling to zero is the tell.</p>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
           {steps.map((s) => (
             <div key={s.k} className="rounded-lg border border-ad-border bg-white p-3">
               <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-ad-muted">{s.k}</p>
@@ -548,7 +925,7 @@ function AdminPanels({ data }: { data: TenderSummary }) {
                 <th className="px-3 py-2 text-xs font-medium uppercase tracking-wide">Status</th>
                 <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide">Fetched</th>
                 <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide">New</th>
-                <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide">Matched</th>
+                <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide">Dupe</th>
                 <th className="px-3 py-2 text-xs font-medium uppercase tracking-wide">Note</th>
               </tr>
             </thead>
@@ -571,7 +948,7 @@ function AdminPanels({ data }: { data: TenderSummary }) {
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{r.items_fetched}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{r.items_new}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{r.items_matched}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{r.items_duplicate}</td>
                   <td className="px-3 py-2 font-mono text-xs text-ad-muted">{r.error ?? "—"}</td>
                 </tr>
               ))}

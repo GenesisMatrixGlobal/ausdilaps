@@ -58,9 +58,33 @@ export const STALLED_RUN_MS = 30 * 60_000;
 
 /** Give up re-trying a single item after this many attempts, rather than nightly forever. */
 export const MAX_CLASSIFY_ATTEMPTS = 5;
-export const MAX_FORWARD_ATTEMPTS = 5;
 
-/** Week-1 shadow mode: run the whole pipeline, send nothing. */
-export function forwardingEnabled(): boolean {
-  return process.env.TENDER_FORWARD_ENABLED === "true";
-}
+/**
+ * THE reporting window for the whole tool. One number, deliberately.
+ *
+ * The dashboard used to run on four different scopes at once — stats over 30 days, the
+ * funnel over 14, the item list over no window at all but capped at 120 rows, and the queue
+ * counts over the entire table. That is how it came to say "329 scanned, 0 matches" directly
+ * above a list of 16 matches: every figure was true about a different span of time, so none
+ * of them could be reconciled with any other.
+ *
+ * Any new number rendered on this page reads this constant. If a figure needs a different
+ * window, it needs a label saying so on screen.
+ */
+export const WINDOW_DAYS = Math.min(Math.max(Number(process.env.TENDER_WINDOW_DAYS ?? 14), 1), 365);
+
+/**
+ * Ceiling on rows pulled for the list.
+ *
+ * High enough that WINDOW_DAYS is what bounds the query in practice — a bare .limit() used
+ * to silently truncate the counts, which is the other half of the "16 matches" bug.
+ */
+export const MAX_LIST_ROWS = 1000;
+
+/**
+ * How long a match may sit untriaged before the morning check complains.
+ *
+ * Manual send has exactly one failure mode — nobody looked — and unlike a broken cron it
+ * produces no error anywhere. This is the only thing that catches it.
+ */
+export const STALE_TRIAGE_DAYS = Math.max(Number(process.env.TENDER_STALE_TRIAGE_DAYS ?? 3), 1);

@@ -22,6 +22,7 @@
 
 import { parseMessages, type GraphMessage, type EmailSource } from "../lib/tenders/sources/mailbox";
 import { detectParseMode, contentLinks, senderDomain, slugForDomain } from "../lib/tenders/senders";
+import { displayTitle, groupItems, groupKey } from "../lib/tenders/group";
 
 let fails = 0;
 const ok = (l: string, c: boolean, extra = "") => {
@@ -152,6 +153,55 @@ for (const [from, expect] of [
 ] as [string, string | null][]) {
   ok(`domain of ${from.slice(0, 34).padEnd(34)} -> ${expect}`, senderDomain(from) === expect, String(senderDomain(from)));
 }
+
+// ── Grouping ───────────────────────────────────────────────────────────────────
+//
+// The same tender arrives up to five times. Grouping is what turns 41 stored rows into 12
+// opportunities, and it runs at READ time so nothing is ever deleted — hence the
+// "nothing is lost" assertion below, which is the one that must never be relaxed.
+const g = (id: string, title: string, closes: string | null, agency: string | null = null, confidence = 0.8) =>
+  ({ id, title, closesAt: closes, agency, confidence, createdAt: "2026-09-01T00:00:00Z" });
+
+const reminders = [
+  g("1", "Muswellbrook Bypass Project - Dilapidation Survey", null, "Seymour Whyte", 0.95),
+  g("2", "Muswellbrook Bypass Project - Dilapidation Survey", null, "Seymour Whyte", 0.83),
+  g("3", "Muswellbrook Bypass Project — Dilapidation Survey", null, "AusDilaps", 0.9),
+];
+const grouped = groupItems(reminders);
+ok("three reminders of one job group into one", grouped.length === 1, `${grouped.length}`);
+ok("...led by the most confident copy", grouped[0].lead.id === "1", grouped[0].lead.id);
+ok("...and NOTHING IS LOST", grouped[0].members.length === 3, `${grouped[0].members.length}`);
+
+ok("a different tender reference stays separate",
+   groupKey(g("a", "126379 - Survey", null)) !== groupKey(g("b", "126380 - Survey", null)));
+ok("the same closing date matches across timestamp formats",
+   groupKey(g("a", "X", "2026-09-09T00:00:00+00:00")) === groupKey(g("b", "X", "2026-09-09T14:00:00+10:00")));
+ok("a missing closing date never matches a real one",
+   groupKey(g("a", "X", null)) !== groupKey(g("b", "X", "2026-09-09T00:00:00Z")));
+
+// TenderSearch titles every row with its own tracking URL, so the title carries no identity
+// and the key has to fall back to the agency — otherwise one job becomes eleven cards.
+const urlTitled = [
+  g("1", "https://link.tendersearch.com.au/token/AAA-111", "2026-09-17T00:00:00Z", "Queensland Health"),
+  g("2", "https://link.tendersearch.com.au/token/BBB-222", "2026-09-17T00:00:00Z", "Queensland Health"),
+];
+ok("URL-titled rows group by agency + closing date", groupItems(urlTitled).length === 1);
+ok("...but a different agency still separates them",
+   groupItems([urlTitled[0], { ...urlTitled[1], agency: "City of Kingston" }]).length === 2);
+// Without an agency there is nothing to key on, and collapsing them would merge unrelated
+// tenders from unrelated portals into one card.
+ok("URL-titled rows with NO agency do not all collapse together",
+   groupItems([
+     { ...urlTitled[0], agency: null },
+     { ...urlTitled[1], agency: null },
+   ]).length === 2);
+
+ok("a URL title never reaches the screen",
+   !displayTitle({ title: "https://link.tendersearch.com.au/token/AAA", agency: "Glenelg Shire Council",
+                   summary: "Council seeks a condition assessment of a watertower. Contract 2026-27." })
+     .startsWith("http"));
+ok("...and a real title passes through untouched",
+   displayTitle({ title: "Muswellbrook Bypass - Dilapidation Survey" }) === "Muswellbrook Bypass - Dilapidation Survey");
 
 console.log(fails === 0 ? "\nAll passed." : `\n${fails} FAILED`);
 process.exit(fails === 0 ? 0 : 1);

@@ -71,9 +71,7 @@ export type ScanSummary = {
   sources: SourceRunSummary[];
   itemsClassified: number;
   itemsMatched: number;
-  itemsForwarded: number;
   itemsErrored: number;
   pendingRemaining: number;
-  notified: boolean;
   error?: string;
 };

@@ -82,11 +82,28 @@ Queensland doesn't observe daylight saving, so a fixed UTC expression *is* 5am B
 
 Three Vercel caveats: crons only fire on **production** deployments, only after the next push to `main`, and count/duration are plan-limited (Hobby caps at 2 crons — these two use the whole allowance).
 
-### 4. Shadow mode — do this for the first week
+### 4. Sending is manual — there is nothing to switch on
 
-Leave `TENDER_FORWARD_ENABLED=false`. The full pipeline runs and classifies; nothing is emailed. Read `/staff/accounts/tools/tender-watch` each morning against what actually landed in `tenders@`.
+Open `/staff/accounts/tools/tender-watch`, tick the opportunities worth chasing, and press
+**Send email**. It goes to `TENDER_NOTIFY_EMAIL` (falling back to `ADMIN_EMAIL`, currently
+`info@ausdilaps.com.au`) as a handoff: what the job is, the closing date, the link, one block
+per opportunity.
 
-Five mornings of that comparison is worth more than any amount of design review, and it costs one env var. Then flip it on, leaving `TENDER_FORWARD_UNTRUSTED=false` for another week.
+This replaced an automatic nightly digest that needed three env vars to be safe —
+`TENDER_FORWARD_ENABLED`, `TENDER_FORWARD_UNTRUSTED` and a trusted-sender list — whose only
+purpose was making *unattended* sending survivable. A person ticking a box is a better gate
+than all three, so they are gone. Anyone in the **accounts** department can send; they can
+already read every tender and click every link, and the recipient is our own inbox, so
+sending is not an escalation.
+
+Two actions, both on columns migration `0006` already shipped:
+
+| | Writes | Effect |
+|---|---|---|
+| **Send email** | `forwarded_at`, `reviewed_by`, `reviewed_at` | Leaves the queue, appears under *Sent* |
+| **Dismiss** | `status = 'archived'` | Leaves the queue, emails nobody, appears under *Dismissed* |
+
+Nothing is deleted, so a mis-click is recoverable from the other tabs.
 
 ### 5. Phase 2 — the mailbox (Microsoft Graph)
 
@@ -110,8 +127,9 @@ Two defaults carry the design, and both are the opposite of the obvious choice:
 | `parse_mode` | **auto, leaning digest** | A 30-tender digest read as one email loses 29 silently. A single read as a digest makes a little junk the classifier rejects. The zero-link fallback in `parseDigest()` turns a misread single back into one item, which is what makes the bias safe — don't remove it. |
 
 Trust is per row too (`is_trusted`), seeded from `TENDER_TRUSTED_SENDER_DOMAINS` at
-discovery and toggled in the dashboard. New domains start unverified: badged in the UI, and
-out of the digest until `TENDER_FORWARD_UNTRUSTED` says otherwise.
+discovery and toggled in the dashboard. It is now **informational only** — an unverified
+sender is badged so a reader knows to look twice, but nothing is held back, because a person
+approves every send.
 
 `npm run check:tenders` pins the parsers with no env or network. `npm run check:sources`
 checks the discovery and alarm behaviour against the real database. The first caught a
@@ -140,13 +158,14 @@ Phase A — fetch + persist        cheap, must always finish
   └─ raw payload written BEFORE the parse is trusted
   └─ items upserted as relevance='pending'
 
-Phase B — classify + forward     expensive, fully resumable
+Phase B — classify              expensive, fully resumable
   ├─ prefilter   keyword gate, zero API cost, ~75% of intake
-  ├─ classify    one Claude call per item, never batched
-  └─ digest      only when there's something in it
+  └─ classify    one Claude call per item, never batched
+
+Sending is NOT a phase — a person does it from the tool.
 ```
 
-"Needs classifying" and "needs forwarding" are **queries against partial indexes**, not in-memory state. A crashed, timed-out or budget-capped run leaves its work in the database and the next run picks it up. There is no retry queue and no dead-letter table — **tomorrow's 8pm run is the retry.**
+"Needs classifying" and "needs reviewing" are **queries against partial indexes**, not in-memory state. A crashed, timed-out or budget-capped run leaves its work in the database and the next run picks it up. There is no retry queue and no dead-letter table — **tomorrow's 5am run is the retry.**
 
 ### Cost control
 
@@ -156,7 +175,34 @@ Phase B — classify + forward     expensive, fully resumable
 | `TENDER_MAX_CLASSIFY_PER_RUN` | 60 | Per-invocation ceiling |
 | `TENDER_DAILY_CLASSIFY_BUDGET` | 200 | 24h circuit breaker; exceeded ⇒ run is `skipped`, loudly |
 
+⚠️ The daily budget did **nothing** until 2026-09-07. `classifiedInLast24h()` summed
+`tender_scan_runs.items_classified`, a column no code has ever written, so it returned 0 on
+every call and only the per-run cap was live. It now counts `tender_items` rows — the same
+fact the classifier writes, rather than a tally kept beside it.
+
 Roughly **$25–35/month** at 30–50 items a day on `claude-opus-5`, before the prefilter. `TENDER_CLASSIFY_MODEL` is the lever if that ever matters.
+
+### Known: TenderSearch bulletins parse as N copies of the whole digest
+
+`tendersearch.com.au` is the highest-volume source and its daily bulletin is currently
+parsed wrong. Each of the ~14 links in it becomes an item whose `excerpt` is the **entire
+bulletin**, not the notice beside that link. Three consequences:
+
+1. **Titles are tracking URLs.** The classifier is handed a body containing fourteen notices,
+   correctly declines to name "the" tender, returns an empty title, and `scan.ts` falls back
+   to the parsed anchor text — which for this sender is the href.
+2. **The same bulletin is classified up to fourteen times**, at Opus rates, each pass picking
+   a different notice out of the same text. That is the single largest avoidable cost here.
+3. Some rows are summaries *of the bulletin* ("Bulletin of 14 notices") rather than a tender.
+
+Two read-time mitigations keep the tool usable, both in `lib/tenders/group.ts` and both
+clearly marked as workarounds: `displayTitle()` rebuilds a readable heading from the agency
+and summary, and `groupKey()` falls back to the agency when the title is a URL — without it
+one Queensland Health job showed as eleven separate cards.
+
+**The real fix is in `parseDigest()`**: split the bulletin into per-notice blocks and give
+each item only its own block as `excerpt`. That fixes titles, cost and accuracy at once.
+Needs a real `.eml` sample to build against.
 
 ---
 

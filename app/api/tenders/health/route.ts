@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireBearerSecret } from "@/lib/auth/shared-secret";
 import { isApiAdmin } from "@/lib/auth/is-staff";
 import { safeText } from "@/lib/html";
-import { STALLED_RUN_MS, forwardingEnabled } from "@/lib/tenders/config";
+import { STALE_TRIAGE_DAYS, STALLED_RUN_MS } from "@/lib/tenders/config";
 
 /**
  * The morning invariant check — 9am Brisbane, before anyone opens the inbox.
@@ -34,11 +34,19 @@ export async function GET(req: NextRequest) {
   const checks: Check[] = [];
 
   try {
-    const [lastRun, sources, unforwarded, untrusted, pending, stalled] = await Promise.all([
+    const [lastRun, sources, untriaged, stale, pending, stalled] = await Promise.all([
       db.from("tender_scan_runs").select("started_at, status").eq("status", "succeeded").order("started_at", { ascending: false }).limit(1),
       db.from("tender_sources").select("slug, label, is_enabled, consecutive_empty, consecutive_failures, last_error, alert_on_quiet"),
-      db.from("tender_items").select("id", { count: "exact", head: true }).in("relevance", ["match", "maybe"]).is("forwarded_at", null),
-      db.from("tender_items").select("id", { count: "exact", head: true }).in("relevance", ["match", "maybe"]).is("forwarded_at", null).eq("sender_trusted", false),
+      db.from("tender_items").select("id", { count: "exact", head: true }).in("relevance", ["match", "maybe"]).is("forwarded_at", null).neq("status", "archived"),
+      db
+        .from("tender_items")
+        .select("id, title, closes_at", { count: "exact" })
+        .in("relevance", ["match", "maybe"])
+        .is("forwarded_at", null)
+        .neq("status", "archived")
+        .lt("created_at", new Date(Date.now() - STALE_TRIAGE_DAYS * 86_400_000).toISOString())
+        .order("created_at", { ascending: true })
+        .limit(5),
       db.from("tender_items").select("id", { count: "exact", head: true }).eq("relevance", "pending"),
       db
         .from("tender_scan_runs")
@@ -90,34 +98,31 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3. Are matches reaching anyone?
+    // 3. Is anyone actually looking?
     //
-    // Shadow mode is a DELIBERATE setting, not a fault. Reporting it as an issue fires this
-    // email every single morning of exactly the week the system is meant to be watched
-    // closely — which teaches people to archive it unread, and the first real failure lands
-    // in a folder nobody opens. It goes in the Monday all-clear instead, where it reads as a
-    // standing reminder to turn forwarding on rather than as a broken thing.
-    const undelivered = unforwarded.count ?? 0;
-    const blocked = untrusted.count ?? 0;
+    // Sending is manual now (a person ticks what is real in the tool), so "not delivered" is
+    // no longer a fault — an untriaged match is simply work waiting. That makes THIS the only
+    // failure mode manual triage has, and the reason it needs an alarm: unlike a broken cron
+    // it produces no error anywhere. The queue just quietly grows while everyone assumes
+    // somebody looked.
+    //
+    // An earlier version of this check reported every unsent match as "email delivery is
+    // failing", which fired every single morning of the week the pipeline was deliberately
+    // in shadow mode. A daily alert for a chosen setting is how an inbox learns to archive
+    // this email unread.
+    const waiting = untriaged.count ?? 0;
+    const stuck = stale.count ?? 0;
 
-    if (undelivered > 0 && forwardingEnabled()) {
-      if (blocked === undelivered) {
-        // Forwarding is ON and still nothing can go out. This is the failure mode that
-        // looks exactly like success from the dashboard: runs succeed, matches accumulate,
-        // and the trust gate silently swallows every one of them.
-        checks.push({
-          level: "critical",
-          title: `${undelivered} matched tender(s) blocked — no trusted senders`,
-          detail:
-            "Forwarding is enabled, but every match came from a domain not marked trusted, so none can be sent. Mark the real portals as trusted in Tender Watch, or set TENDER_FORWARD_UNTRUSTED=true.",
-        });
-      } else {
-        checks.push({
-          level: "warning",
-          title: `${undelivered} matched tender(s) not delivered`,
-          detail: "Email delivery is failing or not configured. They will be re-sent on the next successful run.",
-        });
-      }
+    if (stuck > 0) {
+      const oldest = (stale.data ?? [])
+        .slice(0, 3)
+        .map((i) => (i.title as string).slice(0, 60))
+        .join("; ");
+      checks.push({
+        level: "critical",
+        title: `${stuck} tender(s) untouched for over ${STALE_TRIAGE_DAYS} days`,
+        detail: `Nobody has sent or dismissed these. Oldest: ${oldest}`,
+      });
     }
 
     // 4. Is the classifier keeping up?
@@ -143,16 +148,9 @@ export async function GET(req: NextRequest) {
 
     const shouldEmail = checks.length > 0 || isMonday;
     let emailed = false;
-    if (shouldEmail) emailed = await sendHealthEmail(checks, isMonday, hours, undelivered, blocked);
+    if (shouldEmail) emailed = await sendHealthEmail(checks, isMonday, hours, waiting);
 
-    return NextResponse.json({
-      ok: true,
-      checks,
-      emailed,
-      shadowMode: !forwardingEnabled(),
-      undelivered,
-      blockedUntrusted: blocked,
-    });
+    return NextResponse.json({ ok: true, checks, emailed, waiting, stale: stuck });
   } catch (e) {
     const error = (e as Error).message;
     console.error("[tenders] health check failed:", error);
@@ -164,8 +162,7 @@ async function sendHealthEmail(
   checks: Check[],
   isAllClear: boolean,
   hoursSinceScan: number,
-  undelivered: number,
-  blocked: number
+  waiting: number
 ): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
   if (!key) {
@@ -177,12 +174,12 @@ async function sendHealthEmail(
   const from = process.env.RESEND_FROM_EMAIL ?? "AusDilaps <no-reply@ausdilaps.com.au>";
   const critical = checks.filter((c) => c.level === "critical").length;
 
-  // Shadow mode rides along on the weekly all-clear rather than firing daily (see check 3).
-  const shadowNote =
-    !forwardingEnabled() && undelivered > 0
-      ? `<tr><td style="padding:10px 0;border-top:1px solid #e3e5e7;font-size:12px;color:#a8701a">
-           <strong>Shadow mode.</strong> ${undelivered} matched tender(s) are queued but not being emailed,
-           because TENDER_FORWARD_ENABLED is off. ${blocked === undelivered ? "All of them are also from senders not yet marked trusted, so turning forwarding on alone would still send nothing." : ""}
+  // The queue depth rides along on the weekly all-clear rather than firing as an issue (see
+  // check 3): work waiting is normal, work waiting for days is not.
+  const waitingNote =
+    waiting > 0
+      ? `<tr><td style="padding:10px 0;border-top:1px solid #e3e5e7;font-size:12px;color:#5b6570">
+           ${waiting} matched tender(s) are waiting to be reviewed and sent in Tender Watch.
          </td></tr>`
       : "";
 
@@ -202,7 +199,7 @@ async function sendHealthEmail(
     : `<tr><td style="padding:10px 0;font-size:13px;color:#2f343a">
          Everything is running. Last successful scan was ${Math.floor(hoursSinceScan)} hours ago, all sources are producing,
          and nothing is stuck in the queue.
-       </td></tr>${shadowNote}`;
+       </td></tr>${waitingNote}`;
 
   const html = `<!doctype html><html><body style="margin:0;padding:24px 12px;background:#f3f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e3e5e7;border-radius:10px;overflow:hidden">

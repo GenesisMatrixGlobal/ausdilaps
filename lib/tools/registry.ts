@@ -26,7 +26,8 @@ import { canAccess, type StaffUser } from "@/lib/auth/session";
  *    site-markups          -> "Markup and Measure" (its Building Markup tab is still
  *                             `residential` / standard-markup in code, routes and components)
  *    property-sizing       -> "Bulk Property Sizing"
- *    road-survey-estimator -> "KMZ Analyser" */
+ *    road-survey-estimator -> "KMZ Analyser"
+ *    floor-plan            -> "Floor Plan Generator" */
 export type ToolDefinition = {
   slug: string;
   /** Short reference code (SMK, PSZ, ...) so a tool can be named in a message
@@ -92,7 +93,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     slug: "floor-plan",
     code: "FPL",
-    title: "Floor Plan",
+    title: "Floor Plan Generator",
     description:
       "Turn a photo of the inspector's hand sketch into a clean A4 floor plan .png for the report.",
     departments: ["reports"],

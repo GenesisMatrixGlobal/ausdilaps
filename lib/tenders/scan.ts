@@ -10,12 +10,9 @@ import {
   DAILY_CLASSIFY_BUDGET,
   MAX_CLASSIFY_ATTEMPTS,
   MAX_CLASSIFY_PER_RUN,
-  MAX_FORWARD_ATTEMPTS,
   STALLED_RUN_MS,
-  forwardingEnabled,
 } from "./config";
 import { externalRefForMessage } from "./dedupe";
-import { sendDigest, type DigestAlert, type DigestItem } from "./notify";
 import { prefilter } from "./prefilter";
 import { enabledSources, SOURCES } from "./sources";
 import { discoverMailboxSources, loadEmailSources } from "./sources/mailbox";
@@ -64,15 +61,29 @@ export async function reapStalledRuns(db: Db): Promise<number> {
   return data?.length ?? 0;
 }
 
-/** Output tokens are not the constraint here; runaway item volume is. */
+/**
+ * Output tokens are not the constraint here; runaway item volume is.
+ *
+ * ⚠️ This counts tender_items, NOT tender_scan_runs.items_classified. That column exists in
+ * the schema but no code has ever written it, so this function returned 0 on every call and
+ * DAILY_CLASSIFY_BUDGET has never once engaged — the only live ceiling was the per-run one.
+ * With more portals being signed up that was an unbounded Opus bill waiting for one big
+ * digest night.
+ *
+ * Counting the rows that were actually classified cannot drift, because it reads the same
+ * fact the classifier writes rather than a tally kept alongside it.
+ */
 async function classifiedInLast24h(db: Db): Promise<number> {
   const since = new Date(Date.now() - 86_400_000).toISOString();
-  const { data, error } = await db
-    .from("tender_scan_runs")
-    .select("items_classified")
-    .gte("started_at", since);
-  if (error || !data) return 0;
-  return data.reduce((sum, r) => sum + (r.items_classified ?? 0), 0);
+  const { count, error } = await db
+    .from("tender_items")
+    .select("id", { count: "exact", head: true })
+    .eq("classified_by", "anthropic")
+    .gte("classified_at", since);
+  // Fail OPEN on a read error: a transient blip must not silently halt classification for a
+  // day. The per-run cap still bounds the damage.
+  if (error) return 0;
+  return count ?? 0;
 }
 
 async function updateSourceHealth(
@@ -341,10 +352,8 @@ export async function runScan(
     sources: [],
     itemsClassified: 0,
     itemsMatched: 0,
-    itemsForwarded: 0,
     itemsErrored: 0,
     pendingRemaining: 0,
-    notified: false,
   };
 
   if (sources.length === 0) {
@@ -385,8 +394,8 @@ export async function runScan(
 
   const queue = pending ?? [];
 
-  // The prefilter runs first and costs nothing. Rejections are still written as rows so
-  // items_prefiltered on the dashboard makes an over-aggressive filter visible.
+  // The prefilter runs first and costs nothing. Rejections are still written as rows, which
+  // is what lets the dashboard count them and show an over-aggressive filter.
   const needsModel: typeof queue = [];
   for (const row of queue) {
     if (prefilter({ title: row.title, excerpt: row.excerpt })) {
@@ -404,8 +413,6 @@ export async function runScan(
         .eq("id", row.id);
     }
   }
-
-  const prefiltered = queue.length - needsModel.length;
 
   await mapPool(needsModel, CLASSIFY_CONCURRENCY, async (row) => {
     // The self-imposed deadline sits ~50s inside the route's maxDuration. That gap is the
@@ -473,116 +480,5 @@ export async function runScan(
     .eq("relevance", "pending");
   result.pendingRemaining = stillPending ?? 0;
 
-  // ── Phase B — forward ────────────────────────────────────────────────
-  await forwardPending(db, result, prefiltered);
-
   return result;
-}
-
-/**
- * Builds and sends the digest, then marks what went out.
- *
- * Send FIRST, mark second. The reverse ordering risks an item that looks forwarded but
- * never was — a silent miss — whereas this ordering risks a duplicate, which is noisy and
- * harmless. For a business where a missed tender is a lost job that is not a close call.
- * The Resend Idempotency-Key in notify.ts closes most of the duplicate window anyway.
- */
-async function forwardPending(db: Db, result: ScanSummary, prefiltered: number) {
-  const { data: unforwarded } = await db
-    .from("tender_items")
-    .select(
-      "id, title, agency, url, closes_at, relevance, confidence, services, model_summary, model_reasoning, source_slug, sender_trusted, injection_suspected, forward_attempts"
-    )
-    .in("relevance", ["match", "maybe"])
-    .is("forwarded_at", null)
-    .lt("forward_attempts", MAX_FORWARD_ATTEMPTS)
-    .order("confidence", { ascending: false })
-    .limit(25);
-
-  // Flag any source that has gone quiet. A dead source is precisely when we DO want an
-  // email, even though a nothing-found night gets none.
-  const { data: quiet } = await db
-    .from("tender_sources")
-    .select("label, consecutive_empty, consecutive_failures")
-    .or("consecutive_empty.gte.3,consecutive_failures.gte.1");
-
-  const alerts: DigestAlert[] = (quiet ?? []).map((s) => ({
-    sourceLabel: s.label as string,
-    message:
-      (s.consecutive_failures ?? 0) > 0
-        ? `${s.consecutive_failures} failed run(s) in a row.`
-        : `No items for ${s.consecutive_empty} runs. Worth checking we are still on their alert list.`,
-  }));
-
-  // Two exclusions from the digest, both of which still leave the item visible in the tool:
-  //   - injection_suspected: an attack becomes a flagged row a human reviews, never an
-  //     email sent under our own signed domain.
-  //   - untrusted sender: anyone can email the monitored inbox. Off by default for week
-  //     one; TENDER_FORWARD_UNTRUSTED=true turns it on once real mail has been seen.
-  //     Feed items set sender_trusted at ingest, so this never touches RSS.
-  const allowUntrusted = process.env.TENDER_FORWARD_UNTRUSTED === "true";
-  const items = (unforwarded ?? []).filter(
-    (i) => i.injection_suspected !== true && (allowUntrusted || i.sender_trusted === true)
-  );
-
-  // No "nothing found today" emails — people stop reading those. But a quiet source is
-  // exactly the case that must still reach someone.
-  if (items.length === 0 && alerts.length === 0) return;
-
-  const scanned = result.sources.reduce((n, s) => n + s.itemsFetched, 0) + prefiltered;
-
-  const digestItems: DigestItem[] = items.map((i) => ({
-    id: i.id as string,
-    title: i.title as string,
-    agency: i.agency as string | null,
-    url: i.url as string | null,
-    closesAt: i.closes_at as string | null,
-    relevance: i.relevance as "match" | "maybe",
-    confidence: i.confidence as number | null,
-    services: (i.services as string[]) ?? [],
-    summary: i.model_summary as string | null,
-    reasoning: i.model_reasoning as string | null,
-    sourceLabel: i.source_slug as string,
-    senderTrusted: (i.sender_trusted as boolean) ?? false,
-    injectionSuspected: (i.injection_suspected as boolean) ?? false,
-  }));
-
-  if (!forwardingEnabled()) {
-    // Shadow mode: the pipeline runs in full and sends nothing, so a week of output can be
-    // read against the real inbox before anyone trusts it.
-    console.warn(`[tenders] shadow mode — ${digestItems.length} item(s) not sent (TENDER_FORWARD_ENABLED=false)`);
-    return;
-  }
-
-  const send = await sendDigest({
-    items: digestItems,
-    alerts,
-    scanned,
-    sources: result.sources.length,
-    testMode: process.env.TENDER_TEST_MODE === "true",
-  });
-
-  const now = new Date().toISOString();
-  for (const item of digestItems) {
-    await db
-      .from("tender_items")
-      .update(
-        send.sent
-          ? { forwarded_at: now, forward_error: null }
-          : {
-              forward_attempts: (unforwarded?.find((u) => u.id === item.id)?.forward_attempts ?? 0) + 1,
-              forward_error: send.error?.slice(0, 500) ?? "unknown",
-            }
-      )
-      .eq("id", item.id);
-  }
-
-  if (send.sent) {
-    result.notified = true;
-    result.itemsForwarded = digestItems.length;
-  } else {
-    // Never report green when matches did not reach anyone.
-    result.status = "partial";
-    result.error = send.error;
-  }
 }

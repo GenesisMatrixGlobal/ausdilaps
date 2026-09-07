@@ -195,7 +195,6 @@ export default async function AdminHomePage() {
           : `${delta >= 0 ? "+" : ""}${delta} vs last week`,
       tone: delta > 0 ? "ok" : delta < 0 ? "warn" : "default",
     },
-    { label: "Tier-1 this week", value: e.tier1ThisWeek, sub: "estimated from role & company" },
     {
       label: "Enquiries · 30d",
       value: e.last30,

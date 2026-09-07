@@ -24,6 +24,9 @@ const requestSchema = z.object({
   /** Base64 PNG, supplied by the browser so the image isn't re-rendered (and re-billed). */
   image: z.string().min(1, "Missing image data"),
   linkToQuote: z.boolean().default(false),
+  /** When present the link is written to this line item's own markup field instead of a
+   *  Quote slot. The file still goes to the Quote's Box folder. */
+  lineItemId: z.string().trim().min(15).max(18).optional(),
   /** The editable source for the image — a Measure or Building Markup .json save file,
    *  filed beside the PNG so the job can be reopened and adjusted rather than redrawn. */
   sidecar: z
@@ -86,6 +89,7 @@ export async function POST(req: NextRequest) {
       filename: parsed.data.filename,
       bytes: new Uint8Array(bytes),
       linkToQuote: parsed.data.linkToQuote,
+      lineItemId: parsed.data.lineItemId,
       sidecar,
     });
     return NextResponse.json({ ok: true, result });

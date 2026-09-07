@@ -26,6 +26,7 @@ interface ResolvedTarget {
   nextMarkupSlot: number | null;
   markupSlotsUsed: number;
   markupSlotsTotal: number;
+  lineItem: { id: string; label: string; alreadyFilled: boolean } | null;
 }
 
 interface UploadResult {
@@ -36,6 +37,7 @@ interface UploadResult {
   linkedToQuote: boolean;
   linkError?: string;
   markupSlot?: number;
+  linkedToLineItem?: boolean;
   sidecarFileName?: string;
   sidecarError?: string;
 }
@@ -121,6 +123,9 @@ export function SyncToSalesforce({
           filename,
           image,
           linkToQuote,
+          // Present only for a line-item paste; the server then writes to the line item's
+          // own field instead of a Quote slot.
+          ...(target.lineItem ? { lineItemId: target.lineItem.id } : {}),
           ...(sidecar ? { sidecar } : {}),
         }),
       });
@@ -175,7 +180,7 @@ export function SyncToSalesforce({
             setQuoteInput(e.target.value);
             reset();
           }}
-          placeholder="Paste the Salesforce Quote URL"
+          placeholder="Paste the Salesforce Quote or Quote Line Item URL"
           className="mt-1 w-full rounded-lg border border-ad-border p-2 text-sm text-ad-ink outline-none focus:border-ad-steel"
         />
       </label>
@@ -200,6 +205,11 @@ export function SyncToSalesforce({
               Opportunity{" "}
               <span className="font-medium text-ad-ink">{target.opportunityName ?? "—"}</span>
             </p>
+            {target.lineItem && (
+              <p className="text-ad-muted">
+                Line item <span className="font-medium text-ad-ink">{target.lineItem.label}</span>
+              </p>
+            )}
             {target.folder && (
               <p className="text-ad-muted">
                 Saving to <span className="font-medium text-ad-ink">{target.folder.path}</span>
@@ -244,12 +254,20 @@ export function SyncToSalesforce({
                   type="checkbox"
                   checked={linkToQuote}
                   onChange={(e) => setLinkToQuote(e.target.checked)}
-                  disabled={target.nextMarkupSlot === null}
+                  // A line item has one field, not five slots, so "already filled" is the
+                  // equivalent of "all slots full": upload, don't overwrite.
+                  disabled={
+                    target.lineItem ? target.lineItem.alreadyFilled : target.nextMarkupSlot === null
+                  }
                   className="h-4 w-4 rounded border-ad-border"
                 />
-                {target.nextMarkupSlot === null
-                  ? `All ${target.markupSlotsTotal} Site Mark Up slots are full — upload only`
-                  : `Link it to Site Mark Up ${target.nextMarkupSlot} (${target.markupSlotsUsed} of ${target.markupSlotsTotal} used)`}
+                {target.lineItem
+                  ? target.lineItem.alreadyFilled
+                    ? "That line item already has a markup linked — upload only"
+                    : "Link it to the line item's Line Item Mark Up field"
+                  : target.nextMarkupSlot === null
+                    ? `All ${target.markupSlotsTotal} Site Mark Up slots are full — upload only`
+                    : `Link it to Site Mark Up ${target.nextMarkupSlot} (${target.markupSlotsUsed} of ${target.markupSlotsTotal} used)`}
               </label>
               <button
                 className={cn(buttonVariants({ variant: "primary", size: "md" }))}
@@ -268,7 +286,9 @@ export function SyncToSalesforce({
           <p className="font-medium text-ad-ink">Saved {result.fileName}</p>
           {result.linkedToQuote ? (
             <p className="mt-1 text-ad-muted">
-              Linked to Site Mark Up {result.markupSlot ?? ""} on the Quote.
+              {result.linkedToLineItem
+                ? "Linked to the line item's Line Item Mark Up field."
+                : `Linked to Site Mark Up ${result.markupSlot ?? ""} on the Quote.`}
             </p>
           ) : result.linkError ? (
             // Deliberately explicit: the file is filed, only the link failed, so the operator

@@ -1,8 +1,9 @@
 # Sync To Salesforce — setup reference
 
-The **Sync To Salesforce** button on both admin markup tools (Residential Mark Up and Road
-Markup) files a generated PNG into Box and links it onto the Quote. This is the reference for
-what it's called and where it's configured, so nobody has to re-derive it.
+The **Sync To Salesforce** button on the markup tools (Building Markup, Road Markup and
+Measure) files a generated PNG into Box and links it onto the Quote — or onto a single Quote
+Line Item. It also files the tool's `.json` save file beside the PNG. This is the reference
+for what it's called and where it's configured, so nobody has to re-derive it.
 
 ## The Salesforce app
 
@@ -89,3 +90,40 @@ and tells you to clear a slot — it does not silently drop the link.
 
 Box shared links are **company-scoped**, not public: a job document, unlike the marketing
 samples library, which is deliberately `open`.
+
+### Quote Line Items
+
+Paste a **Quote Line Item** URL instead of a Quote URL and the link is written to that line
+item's own field rather than a Quote slot:
+
+| | |
+|---|---|
+| Object | `QuoteLineItem` |
+| Field | `Line_Item_Mark_Up__c` |
+| Count | **One**, not five — so a filled field is refused, never overwritten |
+
+The file still lands in the **Quote's** Box folder: a line item has no folder of its own, so
+`resolveLineItem()` walks up to `QuoteId` and the whole existing chain
+(`Opportunity.Link_to_Box_Files__c` → `2. Estimations` → `Site Markup`) runs unchanged. The
+suggested filename gains the line item, e.g. `Q-01234 - Some Opp - Line 3 - Dilapidation
+Survey - Site Markup.png`.
+
+**Detection** is by the object name in a Lightning URL when present, falling back to the
+Salesforce key prefix (`0QL` = QuoteLineItem) for a bare pasted Id. Getting it wrong means
+the record isn't found — a clear error, never a write to the wrong place. A Quote URL, a
+Quote number, a bare Quote Id and a Quote's related-list URL all still resolve to the Quote.
+
+### The .json companion
+
+Every sync also uploads the tool's save file next to the PNG, sharing its filename stem, so
+whoever picks the job up can reopen and adjust the markup instead of redrawing from a
+flattened image. Building Markup's carries the resolved cadastre geometry; Measure's carries
+the measurements and the frame.
+
+It is **never** linked to a markup slot or to `Line_Item_Mark_Up__c` — those fields hold an
+image URL that Salesforce's document merge fetches expecting renderable bytes, and a `.json`
+in one would merge a broken image.
+
+A companion failure is **reported, never thrown**. The PNG is already filed and possibly
+already linked, so failing the whole sync over the companion would have the operator
+re-uploading a markup that is sitting in Box correctly.

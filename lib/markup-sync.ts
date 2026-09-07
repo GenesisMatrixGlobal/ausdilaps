@@ -55,6 +55,17 @@ const MARKUP_SLOTS = [
 /** Name fields are 150 chars in the org; URL fields are 255 and a Box link is well under. */
 const SLOT_NAME_MAX = 150;
 
+/** QuoteLineItem's single markup URL field.
+ *
+ *  The Quote carries five numbered slots; a line item has exactly one, so there is no slot
+ *  logic here. A field that already holds a link is REFUSED rather than overwritten —
+ *  overwriting a colleague's markup is unrecoverable, and the same rule the Quote slots
+ *  already follow. */
+const LINE_ITEM_MARKUP_FIELD = "Line_Item_Mark_Up__c";
+
+/** Salesforce key prefixes. Fixed per object, so they identify a bare pasted Id. */
+const QUOTE_LINE_ITEM_PREFIX = "0QL";
+
 interface QuoteSlots { Id: string; [field: string]: unknown }
 
 /** First slot with no URL, or null when all five are taken. */
@@ -73,16 +84,21 @@ export function isConfigError(e: unknown): boolean {
   return e instanceof SalesforceConfigError || e instanceof BoxConfigError;
 }
 
-type QuoteLookup = { kind: "id" | "number"; value: string };
+type QuoteLookup = { kind: "id" | "number" | "lineItemId"; value: string };
 
 const SF_ID = /^[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?$/;
 
 /**
  * Works out what was pasted: a Lightning/Classic record URL, a bare 15- or 18-character
- * record Id, or a Quote Number.
+ * record Id, or a Quote Number — and whether it points at a Quote or at one of its LINE
+ * ITEMS, which file to the line item's own markup field instead of a Quote slot.
  *
  * URLs are searched by pathname only — a host like `ausdilaps--dev.lightning.force.com`
  * contains alphanumeric runs that would otherwise look like record Ids.
+ *
+ * The object name in a Lightning URL is authoritative when present; a bare Id falls back to
+ * the key prefix, which is fixed per object in Salesforce. Guessing wrong just means the
+ * record isn't found, which reads as a clear error rather than writing to the wrong place.
  */
 export function parseQuoteLookup(input: string): QuoteLookup {
   const trimmed = input.trim();
@@ -96,19 +112,29 @@ export function parseQuoteLookup(input: string): QuoteLookup {
       throw new MarkupSyncError("That doesn't look like a valid URL.");
     }
 
-    // Lightning: /lightning/r/Quote/0Q0.../view
-    const lightning = path.match(/\/r\/[^/]+\/([a-zA-Z0-9]{15,18})/);
-    if (lightning) return { kind: "id", value: lightning[1] };
+    // Lightning: /lightning/r/Quote/0Q0.../view or /lightning/r/QuoteLineItem/0QL.../view
+    const lightning = path.match(/\/r\/([^/]+)\/([a-zA-Z0-9]{15,18})/);
+    if (lightning) {
+      const [, object, id] = lightning;
+      return { kind: object === "QuoteLineItem" ? "lineItemId" : idKind(id), value: id };
+    }
 
     // Classic and anything else: the last path segment shaped like a record Id.
     const candidates = path.split("/").filter((seg) => SF_ID.test(seg));
-    if (candidates.length > 0) return { kind: "id", value: candidates[candidates.length - 1] };
+    if (candidates.length > 0) {
+      const id = candidates[candidates.length - 1];
+      return { kind: idKind(id), value: id };
+    }
 
     throw new MarkupSyncError("Couldn't find a Salesforce record Id in that URL.");
   }
 
-  if (SF_ID.test(trimmed)) return { kind: "id", value: trimmed };
+  if (SF_ID.test(trimmed)) return { kind: idKind(trimmed), value: trimmed };
   return { kind: "number", value: trimmed };
+}
+
+function idKind(id: string): "id" | "lineItemId" {
+  return id.startsWith(QUOTE_LINE_ITEM_PREFIX) ? "lineItemId" : "id";
 }
 
 /** SOQL string literals escape backslash and single quote — without this a quote number
@@ -137,15 +163,53 @@ export interface ResolvedTarget {
   /** Which link in the chain was missing, for the message shown alongside the paste box. */
   missingStep?: string;
   suggestedFilename: string;
-  /** 1-based slot the link would be written to, or null when all five are taken. */
+  /** 1-based slot the link would be written to, or null when all five are taken. Only
+   *  meaningful when `lineItem` is null. */
   nextMarkupSlot: number | null;
   markupSlotsUsed: number;
   markupSlotsTotal: number;
+  /** Set when a Quote LINE ITEM was pasted. The file still lands in the Quote's Box
+   *  folder — same job, same place — but the link is written to the line item's own
+   *  markup field rather than a Quote slot. */
+  lineItem: { id: string; label: string; alreadyFilled: boolean } | null;
 }
 
-function suggestFilename(quoteNumber: string | null, quoteId: string, opportunityName: string | null): string {
-  const parts = [quoteNumber ?? quoteId, opportunityName, "Site Markup"].filter(Boolean);
+function suggestFilename(
+  quoteNumber: string | null,
+  quoteId: string,
+  opportunityName: string | null,
+  lineItemLabel?: string | null
+): string {
+  const parts = [quoteNumber ?? quoteId, opportunityName, lineItemLabel, "Site Markup"].filter(Boolean);
   return sanitiseBoxFilename(`${parts.join(" - ")}.png`);
+}
+
+interface LineItemRecord {
+  Id: string;
+  QuoteId: string;
+  LineNumber?: string | null;
+  Description?: string | null;
+  Product2?: { Name?: string | null } | null;
+  [field: string]: unknown;
+}
+
+/** Resolves a pasted line-item Id to its parent Quote, so the folder chain is walked from
+ *  the Quote exactly as it always was — a line item has no Box folder of its own. */
+async function resolveLineItem(lineItemId: string) {
+  const [record] = await soqlQuery<LineItemRecord>(
+    `SELECT Id, QuoteId, LineNumber, Description, Product2.Name, ${LINE_ITEM_MARKUP_FIELD} ` +
+      `FROM QuoteLineItem WHERE Id = '${soqlEscape(lineItemId)}' LIMIT 1`
+  );
+  if (!record) throw new MarkupSyncError(`No Quote Line Item found for "${lineItemId}".`);
+  const existing = record[LINE_ITEM_MARKUP_FIELD];
+  const name = record.Product2?.Name ?? record.Description ?? null;
+  return {
+    id: record.Id,
+    quoteId: record.QuoteId,
+    // "Line 3 — Dilapidation Survey" is what tells the operator they're on the right one.
+    label: [record.LineNumber ? `Line ${record.LineNumber}` : null, name].filter(Boolean).join(" — ") || record.Id,
+    alreadyFilled: existing !== null && existing !== undefined && existing !== "",
+  };
 }
 
 /**
@@ -162,10 +226,16 @@ export async function resolveQuoteTarget(opts: {
   const lookup = parseQuoteLookup(opts.quoteInput);
   const field = boxFolderField();
 
+  // A line item is resolved to its parent Quote first; everything after this point — the
+  // Opportunity, the folder chain, the filename — is the existing Quote path unchanged.
+  const lineItem = lookup.kind === "lineItemId" ? await resolveLineItem(lookup.value) : null;
+
   const where =
-    lookup.kind === "id"
-      ? `Id = '${soqlEscape(lookup.value)}'`
-      : `QuoteNumber = '${soqlEscape(lookup.value)}'`;
+    lineItem !== null
+      ? `Id = '${soqlEscape(lineItem.quoteId)}'`
+      : lookup.kind === "id"
+        ? `Id = '${soqlEscape(lookup.value)}'`
+        : `QuoteNumber = '${soqlEscape(lookup.value)}'`;
   const slotFields = MARKUP_SLOTS.map((s) => s.url).join(", ");
   const records = await soqlQuery<QuoteRecord>(
     `SELECT Id, Name, QuoteNumber, ${slotFields}, Opportunity.Name, Opportunity.${field} FROM Quote WHERE ${where} LIMIT 2`
@@ -189,7 +259,12 @@ export async function resolveQuoteTarget(opts: {
     quoteName: quote.Name ?? null,
     opportunityName,
     boxFolderLink: rawLink,
-    suggestedFilename: suggestFilename(quote.QuoteNumber ?? null, quote.Id, opportunityName),
+    suggestedFilename: suggestFilename(
+      quote.QuoteNumber ?? null,
+      quote.Id,
+      opportunityName,
+      lineItem?.label
+    ),
     nextMarkupSlot: (() => {
       const free = firstFreeSlot(quote as unknown as QuoteSlots);
       return free === null ? null : free + 1;
@@ -199,6 +274,7 @@ export async function resolveQuoteTarget(opts: {
       return v !== null && v !== undefined && v !== "";
     }).length,
     markupSlotsTotal: MARKUP_SLOTS.length,
+    lineItem,
   };
 
   const manual = opts.boxFolderOverrideUrl?.trim();
@@ -253,8 +329,10 @@ export interface UploadResult {
   linkedToQuote: boolean;
   /** Set when the file uploaded but writing the link to Salesforce failed. */
   linkError?: string;
-  /** 1-based Site Mark Up slot the link was written to. */
+  /** 1-based Site Mark Up slot the link was written to. Absent for a line-item link. */
   markupSlot?: number;
+  /** The link went to a Quote Line Item's own field rather than a Quote slot. */
+  linkedToLineItem?: boolean;
   /** The .json companion's Box name, when one was sent. */
   sidecarFileName?: string;
   /** Set when the PNG filed but its .json companion didn't. */
@@ -276,6 +354,9 @@ export async function uploadMarkup(opts: {
   filename: string;
   bytes: Uint8Array;
   linkToQuote: boolean;
+  /** When set, the link goes to this line item's own markup field instead of a Quote slot.
+   *  The file still lands in the Quote's Box folder — a line item has no folder of its own. */
+  lineItemId?: string;
   /** The editable source for the image — a Measure or Building Markup save file. Filed
    *  beside the PNG so whoever picks the job up can reopen and adjust it instead of
    *  redrawing from the flattened image. */
@@ -290,9 +371,12 @@ export async function uploadMarkup(opts: {
     token,
   });
 
-  const linked = opts.linkToQuote
-    ? await linkMarkupToQuote(opts.quoteId, file, token)
-    : { fileId: file.id, fileName: file.name, sharedLink: null, linkedToQuote: false };
+  const unlinked = { fileId: file.id, fileName: file.name, sharedLink: null, linkedToQuote: false };
+  const linked = !opts.linkToQuote
+    ? unlinked
+    : opts.lineItemId
+      ? await linkMarkupToLineItem(opts.lineItemId, file, token)
+      : await linkMarkupToQuote(opts.quoteId, file, token);
 
   const sidecar = opts.sidecar
     ? await uploadSidecar(opts.folderId, opts.sidecar, token)
@@ -328,6 +412,61 @@ async function uploadSidecar(
     return { sidecarFileName: file.name };
   } catch (e) {
     return { sidecarError: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Writes the Box link to a Quote Line Item's own markup field.
+ *
+ * Mirrors linkMarkupToQuote — same "company" shared link, same direct-download URL for
+ * Salesforce's document merge, same re-read before writing — but a line item has ONE field
+ * rather than five slots, so a filled field is refused instead of falling through to the
+ * next one. Overwriting a colleague's markup is unrecoverable.
+ */
+async function linkMarkupToLineItem(
+  lineItemId: string,
+  file: { id: string; name: string },
+  token: string
+): Promise<UploadResult> {
+  try {
+    const link = await ensureSharedLink(file.id, token, "company");
+    const sharedLink = link.downloadUrl;
+    if (!sharedLink) {
+      throw new MarkupSyncError(
+        "Box didn't return a direct download link for that file — check that downloads are allowed on shared links for this folder. The file is uploaded either way."
+      );
+    }
+
+    // Re-read at write time, not trusting the resolve step: someone else may have filled it
+    // in the meantime.
+    const [current] = await soqlQuery<LineItemRecord>(
+      `SELECT Id, ${LINE_ITEM_MARKUP_FIELD} FROM QuoteLineItem WHERE Id = '${soqlEscape(lineItemId)}' LIMIT 1`
+    );
+    if (!current) throw new MarkupSyncError("That Quote Line Item no longer exists.");
+    const existing = current[LINE_ITEM_MARKUP_FIELD];
+    if (existing !== null && existing !== undefined && existing !== "") {
+      throw new MarkupSyncError(
+        "That line item already has a markup linked — clear its Line Item Mark Up field to replace it. The file is uploaded to Box either way."
+      );
+    }
+
+    await updateRecord("QuoteLineItem", lineItemId, { [LINE_ITEM_MARKUP_FIELD]: sharedLink });
+    return {
+      fileId: file.id,
+      fileName: file.name,
+      sharedLink,
+      previewLink: link.url,
+      linkedToQuote: true,
+      linkedToLineItem: true,
+    };
+  } catch (e) {
+    return {
+      fileId: file.id,
+      fileName: file.name,
+      sharedLink: null,
+      linkedToQuote: false,
+      linkError: e instanceof Error ? e.message : String(e),
+    };
   }
 }
 

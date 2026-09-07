@@ -238,6 +238,15 @@ export async function sendHandoff(opts: {
   note?: string | null;
   sentBy?: string | null;
   testMode?: boolean;
+  /**
+   * Send to one address instead of the team, for a dry run.
+   *
+   * ⚠️ The CALLER must derive this from the signed-in session, never from a request body.
+   * An arbitrary recipient on an endpoint that renders our own tender pipeline into a
+   * DKIM-signed email is a data-exfiltration primitive; "send it to my own address" is not.
+   * See app/api/tenders/send/route.ts, which passes user.email and nothing else.
+   */
+  onlyTo?: string | null;
 }): Promise<{ sent: boolean; error?: string; id?: string }> {
   const key = process.env.RESEND_API_KEY;
   if (!key) {
@@ -248,16 +257,20 @@ export async function sendHandoff(opts: {
 
   const from = process.env.RESEND_FROM_EMAIL ?? "AusDilaps <no-reply@ausdilaps.com.au>";
   const adminEmail = process.env.ADMIN_EMAIL ?? "info@ausdilaps.com.au";
-  const to = opts.testMode
-    ? [adminEmail]
-    : (process.env.TENDER_NOTIFY_EMAIL ?? adminEmail)
-        .split(",")
-        .map((a) => a.trim())
-        .filter(Boolean);
+  const dryRun = !!opts.onlyTo;
+  const to = dryRun
+    ? [opts.onlyTo!]
+    : opts.testMode
+      ? [adminEmail]
+      : (process.env.TENDER_NOTIFY_EMAIL ?? adminEmail)
+          .split(",")
+          .map((a) => a.trim())
+          .filter(Boolean);
 
   if (to.length === 0) return { sent: false, error: "No recipients configured" };
 
   const { subject, html } = renderHandoff(opts);
+  const prefix = dryRun ? "[TEST TO YOURSELF] " : opts.testMode ? "[TEST] " : "";
 
   try {
     const res = await fetch("https://api.resend.com/emails", {
@@ -272,12 +285,12 @@ export async function sendHandoff(opts: {
         // one, and Resend silently returned the first message instead of delivering the
         // second. A double-clicked button must not send twice, but two genuinely different
         // selections of three tenders must both arrive — so the key is a hash of the ids.
-        "Idempotency-Key": idempotencyKey(opts.items),
+        "Idempotency-Key": `${dryRun ? "dryrun:" : ""}${idempotencyKey(opts.items)}`,
       },
       body: JSON.stringify({
         from,
         to,
-        subject: opts.testMode ? `[TEST] ${subject}` : subject,
+        subject: `${prefix}${subject}`,
         html,
       }),
     });

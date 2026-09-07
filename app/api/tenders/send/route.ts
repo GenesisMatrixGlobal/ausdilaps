@@ -36,6 +36,16 @@ const Body = z.object({
    */
   itemIds: z.array(z.string().uuid()).min(1).max(200),
   note: z.string().trim().max(600).optional(),
+  /**
+   * A dry run: mail it to the signed-in user instead of the team, and DON'T consume the
+   * queue — the whole point is to look at the email before anyone else does.
+   *
+   * Note there is deliberately no way to name a recipient. The address comes from the
+   * session (`user.email`) and nothing here influences it, because an endpoint that renders
+   * our tender pipeline into an email from our own signed domain must never accept an
+   * arbitrary destination.
+   */
+  toSelf: z.boolean().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -59,7 +69,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: "Bad request." }, { status: 400 });
   }
-  const { action, itemIds, note } = parsed.data;
+  const { action, itemIds, note, toSelf } = parsed.data;
 
   const db = createAdminClient();
   const now = new Date().toISOString();
@@ -158,11 +168,21 @@ export async function POST(req: NextRequest) {
     });
 
     const sentBy = user?.fullName ?? user?.email ?? null;
+
+    // A dry run needs an address to send to, and the session is the only source for it.
+    if (toSelf && !user?.email) {
+      return NextResponse.json(
+        { ok: false, error: "Can't send you a copy — this session has no email address." },
+        { status: 400 }
+      );
+    }
+
     const result = await sendHandoff({
       items,
       note,
       sentBy,
       testMode: process.env.TENDER_TEST_MODE === "true",
+      onlyTo: toSelf ? user!.email : null,
     });
 
     // Send FIRST, mark second. The reverse order risks a row that looks handed over but
@@ -178,6 +198,19 @@ export async function POST(req: NextRequest) {
         },
         { status: 502 }
       );
+    }
+
+    // A dry run leaves the queue exactly as it was. Marking rows handed over because
+    // somebody previewed the email would be the worst of both outcomes: the opportunities
+    // vanish from the queue and nobody on the team ever received them.
+    if (toSelf) {
+      return NextResponse.json({
+        ok: true,
+        sent: items.length,
+        rows: fresh.length,
+        toSelf: true,
+        ...(await loadTenderSummary(!!user && isAdmin(user))),
+      });
     }
 
     const { error: markError } = await db

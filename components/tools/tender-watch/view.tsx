@@ -165,7 +165,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
    * they were so the same button press retries them — re-ticking twelve rows after a
    * transient Resend error is how someone gives up on a tool.
    */
-  async function act(action: "send" | "dismiss") {
+  async function act(action: "send" | "dismiss", toSelf = false) {
     const chosen = data.groups.filter((g) => selected.has(g.key));
     const itemIds = chosen.flatMap((g) => g.members.map((m) => m.id));
     if (itemIds.length === 0) return;
@@ -177,7 +177,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
       const res = await fetch("/api/tenders/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action, itemIds, note: note.trim() || undefined }),
+        body: JSON.stringify({ action, itemIds, note: note.trim() || undefined, toSelf }),
       });
       const json = (await res.json()) as {
         ok: boolean;
@@ -185,6 +185,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
         warning?: string;
         sent?: number;
         dismissed?: number;
+        toSelf?: boolean;
       } & Partial<TenderSummary>;
 
       if (!res.ok || !json.ok) {
@@ -196,6 +197,12 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
       }
 
       setData(json as TenderSummary);
+      if (json.toSelf) {
+        // Keep the ticks and the note: the next press is the real send of this same
+        // selection, and re-picking twelve rows after a preview is a reason not to preview.
+        setFlash(`Test copy sent to you only — ${json.sent} opportunit${json.sent === 1 ? "y" : "ies"}. Nothing left the queue.`);
+        return;
+      }
       setSelected(new Set());
       setNote("");
       setFlash(
@@ -393,6 +400,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
                 )
               }
               onSend={() => void act("send")}
+              onSendToSelf={() => void act("send", true)}
               onDismiss={() => void act("dismiss")}
             />
           )}
@@ -464,6 +472,7 @@ function SelectionBar({
   onNote,
   onSelectAll,
   onSend,
+  onSendToSelf,
   onDismiss,
 }: {
   selectedCount: number;
@@ -474,6 +483,7 @@ function SelectionBar({
   onNote: (v: string) => void;
   onSelectAll: () => void;
   onSend: () => void;
+  onSendToSelf: () => void;
   onDismiss: () => void;
 }) {
   const none = selectedCount === 0;
@@ -512,6 +522,18 @@ function SelectionBar({
         className={cn(buttonVariants({ variant: "outline", size: "sm" }), (none || busy) && "cursor-not-allowed opacity-40")}
       >
         Dismiss
+      </button>
+      <button
+        type="button"
+        onClick={onSendToSelf}
+        disabled={none || busy}
+        title="Emails a copy to you only. Nothing leaves the queue, so you can send it for real afterwards."
+        className={cn(
+          "text-xs font-medium text-ad-steel underline-offset-2 hover:underline",
+          (none || busy) && "cursor-not-allowed opacity-40 hover:no-underline"
+        )}
+      >
+        Send to me first
       </button>
       <button
         type="button"

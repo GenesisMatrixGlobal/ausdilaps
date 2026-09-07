@@ -97,8 +97,33 @@ function fitToBounds(bounds: LatLngBox) {
   }
 
   const at = 2 ** zoom;
-  const width = clamp(spanX * at);
-  const height = clamp(spanY * at + ATTRIBUTION_PAD_PX);
+  const mapWidth = spanX * at;
+  const mapHeight = spanY * at;
+
+  // Spend the WHOLE 640 budget, by widening the geographic frame at the same zoom until the
+  // limiting axis hits the cap.
+  //
+  // Integer zoom levels otherwise leave up to 38% of the resolution unused: the zoom chosen
+  // above is the largest that fits, so the next one up would have needed more than 640 —
+  // which means the frame occupies somewhere between 320 and 640 px and the rest of the
+  // budget is simply thrown away. A real export came out 790x494 for want of this.
+  //
+  // Note what this does and does not do. The image gets bigger (up to just under 2x
+  // linearly) and Google's fixed-size attribution therefore covers a proportionally smaller
+  // part of it. Ground DETAIL is unchanged — same zoom, same metres per pixel — so the
+  // export is not sharper, it shows more surrounding context at the same crispness. Real
+  // extra detail needs a deeper zoom, which exceeds the cap and would mean stitching
+  // several requests.
+  const fill = Math.max(
+    1,
+    Math.min(
+      mapWidth > 0 ? MAX_STATIC_DIMENSION / mapWidth : 1,
+      mapHeight > 0 ? (MAX_STATIC_DIMENSION - ATTRIBUTION_PAD_PX) / mapHeight : 1
+    )
+  );
+
+  const width = clamp(mapWidth * fill);
+  const height = clamp(mapHeight * fill + ATTRIBUTION_PAD_PX);
 
   // Move the centre SOUTH by half the pad so all the extra ground lands at the BOTTOM,
   // under the attribution, rather than being split evenly top and bottom. Done by

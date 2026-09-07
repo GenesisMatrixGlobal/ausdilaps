@@ -184,12 +184,20 @@ Consequences worth knowing:
   bar scales WITH `scale`, so no size/scale combination shrinks it relative to the map, and
   cropping or shrinking it is what the Maps Platform terms forbid. The centre is shifted
   south by half the pad so the space lands at the bottom rather than being split.
-- **1280x1280 is a hard per-request ceiling and the export is already at it.** Verified:
-  `size` is silently clamped to 640/axis and **`scale=4` is silently clamped to 2** — no
-  error, just a smaller image than asked for. Higher resolution would need several requests
-  stitched together, which means cropping Google's attribution off the inner tiles. Within
-  one request the export is already at maximum resolution for its frame; a tighter frame on
-  screen is the only way to get more detail.
+- **`fitToBounds()` spends the WHOLE 640 budget** by widening the geographic frame at the
+  chosen zoom until the limiting axis hits the cap. Integer zoom levels otherwise waste up to
+  38% of the resolution: the zoom picked is the largest that fits, so the frame lands
+  somewhere between 320 and 640 px and the rest is thrown away — a real export came out
+  790x494 for want of this, and now comes out 1280x778.
+  ⚠️ Note precisely what that does. The image gets bigger (up to just under 2x linearly) and
+  Google's fixed-size attribution therefore covers proportionally less of it (7.1% of height
+  down to 4.5%). Ground DETAIL is unchanged — same zoom, same metres per pixel — so the
+  export is not *sharper*, it shows more surrounding context at the same crispness.
+- **1280x1280 is a hard per-request ceiling.** Verified: `size` is silently clamped to
+  640/axis and **`scale=4` is silently clamped to 2** — no error, just a smaller image than
+  asked for. Genuinely finer detail needs a deeper zoom, which exceeds the cap, so it would
+  mean stitching several requests and cropping Google's attribution off the inner tiles —
+  considered and declined 2026-09-07 rather than take on that terms question.
 - **`mercatorSpan()` computes the box centre in world-pixel space, not by averaging
   latitudes.** Mercator is non-linear in latitude, so the mean of north and south is not the
   centre of the frame, and using it shifts the export vertically against the live map.

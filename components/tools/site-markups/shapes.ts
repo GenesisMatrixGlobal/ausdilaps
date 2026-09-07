@@ -62,6 +62,9 @@ export interface ShapesState {
   undoPoint: (id: string) => void;
   clearPoints: (id: string) => void;
   reset: () => void;
+  /** Swaps the whole list — the Open .json path. Ids are regenerated rather than trusted
+   *  from the file: a duplicate would collide React keys. */
+  replaceAll: (incoming: Omit<MarkupShape, never>[]) => void;
   /** Only shapes with enough points to render — what goes over the wire. */
   payload: () => MarkupShape[];
 }
@@ -155,6 +158,22 @@ export function useShapes(): ShapesState {
     select(null);
   }, [write, select]);
 
+  const replaceAll = useCallback(
+    (incoming: MarkupShape[]) => {
+      write(() =>
+        incoming.slice(0, MAX_SHAPES).map((a) => ({
+          id: crypto.randomUUID(),
+          points: a.points.slice(0, MAX_SHAPE_POINTS),
+          widthMetres: a.widthMetres,
+          mode: a.mode,
+          color: a.color,
+        }))
+      );
+      select(null);
+    },
+    [write, select]
+  );
+
   const activeShape = shapes.find((a) => a.id === activeShapeId) ?? null;
 
   return {
@@ -185,6 +204,7 @@ export function useShapes(): ShapesState {
     undoPoint: useCallback((id) => update(id, (a) => ({ ...a, points: a.points.slice(0, -1) })), [update]),
     clearPoints: useCallback((id) => update(id, (a) => ({ ...a, points: [] })), [update]),
     reset,
+    replaceAll,
     // Reads the ref, not the state, so a render triggered by the click that opened this
     // request can never make it send the previous tick's geometry.
     payload: useCallback(

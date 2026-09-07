@@ -4,9 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { SyncToSalesforce } from "@/components/tools/shared/sync-to-salesforce";
+import { downloadBlob } from "@/components/tools/shared/download";
+import {
+  buildBuildingMarkupFile,
+  parseBuildingMarkupFile,
+} from "@/lib/maps/building-markup-file";
 import { AddressSearch, type ParsedAddress } from "./address-search";
 import { ShapePanel } from "./shape-panel";
-import { useShapes } from "./shapes";
+import {
+  useShapes,
+  MAX_SHAPE_POINTS,
+  MAX_SHAPE_WIDTH_M,
+  MIN_SHAPE_WIDTH_M,
+} from "./shapes";
 import { MarkupCanvas, type Projection } from "./markup-canvas";
 import { SITE_RED } from "@/lib/kml/standard-markup/style";
 import { markerLabel } from "@/lib/kml/standard-markup/labels";
@@ -104,6 +114,111 @@ export function ResidentialMarkupTab() {
   const [pickBusy, setPickBusy] = useState(false);
   const [pickMessage, setPickMessage] = useState<string | null>(null);
   const shapes = useShapes();
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  /** base64 of a UTF-8 string — plain btoa() throws on an accented address. */
+  function toBase64(text: string): string {
+    const bytes = new TextEncoder().encode(text);
+    let binary = "";
+    for (const b of bytes) binary += String.fromCharCode(b);
+    return btoa(binary);
+  }
+
+  /** The save file: the RESOLVED geometry, not just the address. Re-resolving on open would
+   *  hand back whatever the cadastre says today, which is not the drawing that was signed
+   *  off — and would re-pay the geocode and ArcGIS lookup. */
+  function saveFileJson(): string | null {
+    if (!result) return null;
+    return JSON.stringify(
+      buildBuildingMarkupFile({
+        address: { street, suburb, postcode, state },
+        matchedAddress: result.matchedAddress,
+        mapType: result.mapType,
+        subjectRing: result.subjectRing,
+        neighbours: result.neighbours,
+        frame,
+        zoomAdjust,
+        excludedIds: Array.from(excludedIds),
+        hideSubject,
+        shapes: shapes.payload(),
+      }),
+      null,
+      2
+    );
+  }
+
+  function saveJson() {
+    const doc = saveFileJson();
+    if (!doc) return;
+    downloadBlob(
+      doc,
+      `${slugify(street)}-${slugify(suburb)}-standard-markup.json`,
+      "application/json"
+    );
+  }
+
+  async function openJson(file: File) {
+    setError(null);
+    const parsed = parseBuildingMarkupFile(await file.text(), {
+      maxShapePoints: MAX_SHAPE_POINTS,
+      maxRingPoints: 2000,
+      minWidth: MIN_SHAPE_WIDTH_M,
+      maxWidth: MAX_SHAPE_WIDTH_M,
+    });
+    if (!parsed.ok) {
+      setError(parsed.error);
+      return;
+    }
+    const f = parsed.file;
+    setStreet(f.address.street);
+    setSuburb(f.address.suburb);
+    setPostcode(f.address.postcode);
+    const supported = STATES.find((st) => st.key === f.address.state && !st.disabled);
+    if (supported) setState(f.address.state as SupportedState);
+    setParsedSummary(f.matchedAddress ?? null);
+    setAddressError(null);
+    setZoomAdjust(f.zoomAdjust);
+    setExcludedIds(new Set(f.excludedIds));
+    setHideSubject(f.hideSubject);
+    setFrame(f.frame);
+    shapes.replaceAll(f.shapes);
+    // The basemap image itself isn't in the file — it is a few hundred KB of pixels that
+    // /render regenerates exactly from the frame. Setting `result` is what makes the
+    // canvas, the lot list and the shape panel appear; the effect on `result` then fetches
+    // the photo.
+    setResult({
+      image: "",
+      subjectRing: f.subjectRing,
+      neighbours: f.neighbours,
+      matchedAddress: f.matchedAddress,
+      mapType: f.mapType,
+      zoomAdjust: f.zoomAdjust,
+      flags: [],
+      center: f.frame?.center ?? f.subjectRing[0],
+      zoom: f.frame?.fitZoom ?? 18,
+      fitZoom: f.frame?.fitZoom ?? 18,
+      // Seeded, never read: the canvas takes its projection from the /render response
+      // below, and nothing reads these two off `result`. Kept only to satisfy the type
+      // rather than duplicating static-map.ts's constants into the client bundle.
+      imageSizePx: 0,
+      scale: 0,
+    });
+    setFlags(
+      parsed.skippedShapes > 0
+        ? [`${parsed.skippedShapes} shape(s) in that file couldn't be read and were skipped`]
+        : []
+    );
+    // The basemap image is deliberately not in the save file — a few hundred KB of pixels
+    // /render reproduces exactly from the frame, and storing it would let the photo and the
+    // geometry drift apart. Called with the file's own values, not state, which has not
+    // re-rendered yet.
+    await fetchBasemap({
+      subjectRing: f.subjectRing,
+      mapType: f.mapType,
+      zoomAdjust: f.zoomAdjust,
+      frame: f.frame,
+    });
+  }
 
   function handleAddressSelect(parsed: ParsedAddress) {
     setStreet(parsed.street);
@@ -163,6 +278,25 @@ export function ResidentialMarkupTab() {
    *  control changes what the overlay draws, which costs nothing. */
   async function refreshBasemap() {
     if (!result) return;
+    await fetchBasemap({
+      subjectRing: result.subjectRing,
+      mapType: result.mapType,
+      zoomAdjust,
+      frame,
+    });
+  }
+
+  /** The basemap fetch, taking its inputs explicitly rather than off state.
+   *
+   *  Open .json needs it immediately after setResult(), when the state variables still hold
+   *  the previous markup — and reaching for an effect to wait for the re-render trips the
+   *  "no synchronous setState in an effect" rule for no benefit. */
+  async function fetchBasemap(opts: {
+    subjectRing: LatLng[];
+    mapType: MapType;
+    zoomAdjust: number;
+    frame: Frame | null;
+  }) {
     setError(null);
     setRegenerating(true);
     try {
@@ -175,12 +309,12 @@ export function ResidentialMarkupTab() {
           // arrow). That is what makes a checkbox instant: unticking a lot changes what
           // the overlay renders, with no round trip at all. The subject ring is still
           // sent because it anchors the frame; `hideSubject` stops it being drawn.
-          subjectRing: result.subjectRing,
+          subjectRing: opts.subjectRing,
           neighbours: [],
-          mapType: result.mapType,
-          zoomAdjust,
+          mapType: opts.mapType,
+          zoomAdjust: opts.zoomAdjust,
           hideSubject: true,
-          frame,
+          frame: opts.frame,
         }),
       });
       const json = (await res.json().catch(() => null)) as
@@ -193,7 +327,7 @@ export function ResidentialMarkupTab() {
       setImageDataUrl(`data:image/png;base64,${json.image}`);
       setFlags(json.flags ?? []);
       if (json.center && json.zoom !== undefined && json.imageSizePx !== undefined && json.scale !== undefined) {
-        zoomSettled.current = zoomAdjust;
+        zoomSettled.current = opts.zoomAdjust;
       setProjection({ center: json.center, zoom: json.zoom, imageSizePx: json.imageSizePx, scale: json.scale });
       }
     } catch (e) {
@@ -463,8 +597,46 @@ export function ResidentialMarkupTab() {
         >
           {downloading ? "Preparing…" : "Download .png"}
         </button>
+        <button
+          className={cn(buttonVariants({ variant: "outline", size: "md" }))}
+          onClick={saveJson}
+          disabled={!result}
+          title="Save the lots, boundary and shapes so this markup can be reopened and adjusted"
+        >
+          Save .json
+        </button>
+        <button
+          className={cn(buttonVariants({ variant: "outline", size: "md" }))}
+          onClick={() => fileInput.current?.click()}
+          title="Reopen a saved markup"
+        >
+          Open .json
+        </button>
+        {/* Cleared after every pick, so choosing the same file twice still fires. */}
+        <input
+          ref={fileInput}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) void openJson(file);
+          }}
+        />
         <SyncToSalesforce
           getImageBase64={renderCleanImageBase64}
+          // Same stem as the confirmed PNG, so the pair sit together in Box and whoever
+          // picks the job up can reopen the markup instead of redrawing from the image.
+          getSidecar={async (imageFilename) => {
+            const doc = saveFileJson();
+            if (!doc) throw new Error("Generate a markup first.");
+            return {
+              filename: `${imageFilename.replace(/\.(png|jpe?g)$/i, "")}.json`,
+              contentBase64: toBase64(doc),
+              contentType: "application/json",
+            };
+          }}
           fallbackName={`${slugify(street)}-${slugify(suburb)}-standard-markup.png`}
           disabled={!imageDataUrl}
         />

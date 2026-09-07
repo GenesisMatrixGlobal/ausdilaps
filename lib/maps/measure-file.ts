@@ -8,6 +8,7 @@
 import type { LatLng } from "@/lib/kml/types";
 import type { ShapeMode } from "@/lib/kml/standard-markup/measure";
 import type { LatLngBox } from "@/lib/kml/standard-markup/projection";
+import { isFiniteNumber, parseLatLngList } from "./latlng-parse";
 
 /** Stamped into every file so a stray .json picked from a folder is rejected with a useful
  *  message rather than silently loading as an empty set. */
@@ -61,23 +62,6 @@ export function buildMeasureFile(input: {
 export type ParseResult =
   | { ok: true; file: MeasureFile; skipped: number }
   | { ok: false; error: string };
-
-function isFiniteNumber(v: unknown): v is number {
-  return typeof v === "number" && Number.isFinite(v);
-}
-
-function parsePoints(raw: unknown, maxPoints: number): LatLng[] | null {
-  if (!Array.isArray(raw)) return null;
-  const points: LatLng[] = [];
-  for (const p of raw.slice(0, maxPoints)) {
-    if (!p || typeof p !== "object") return null;
-    const { lat, lng } = p as Record<string, unknown>;
-    if (!isFiniteNumber(lat) || !isFiniteNumber(lng)) return null;
-    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-    points.push({ lat, lng });
-  }
-  return points;
-}
 
 function parseBounds(raw: unknown): LatLngBox | null {
   if (!raw || typeof raw !== "object") return null;
@@ -140,7 +124,7 @@ export function parseMeasureFile(
       skipped += 1;
       continue;
     }
-    const parsedPoints = parsePoints(points, limits.maxPoints);
+    const parsedPoints = parseLatLngList(points, limits.maxPoints);
     if (!parsedPoints) {
       skipped += 1;
       continue;

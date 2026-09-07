@@ -12,16 +12,7 @@
 // Named markup-sync rather than site-markup to avoid reading as part of
 // lib/kml/site-markup/, which is the Road Markup renderer.
 
-import {
-  BoxConfigError,
-  ensureSharedLink,
-  findChildFolder,
-  getAccessToken as getBoxToken,
-  listFolderItems,
-  parseBoxFolderId,
-  sanitiseBoxFilename,
-  uploadFile,
-} from "@/lib/box";
+import { BoxConfigError, BoxNameConflictError, ensureSharedLink, findChildFolder, getAccessToken as getBoxToken, listFolderItems, parseBoxFolderId, sanitiseBoxFilename, uploadFile } from "@/lib/box";
 import { SalesforceConfigError, soqlQuery, updateRecord } from "@/lib/salesforce";
 
 /** Folder naming convention inside an Opportunity's Box folder. Constants rather than
@@ -65,6 +56,11 @@ const LINE_ITEM_MARKUP_FIELD = "Line_Item_Mark_Up__c";
 
 /** Salesforce key prefixes. Fixed per object, so they identify a bare pasted Id. */
 const QUOTE_LINE_ITEM_PREFIX = "0QL";
+
+/** Attempts at " (2)", " (3)", ... before giving up on finding a free filename. A Site
+ *  Markup folder with twenty same-named drawings in it is a naming problem, not a retry
+ *  problem. */
+const MAX_RENAME_ATTEMPTS = 20;
 
 interface QuoteSlots { Id: string; [field: string]: unknown }
 
@@ -341,6 +337,8 @@ export interface UploadResult {
   markupSlot?: number;
   /** The link went to a Quote Line Item's own field rather than a Quote slot. */
   linkedToLineItem?: boolean;
+  /** That field already held a link and was overwritten at the operator's request. */
+  replacedExistingLink?: boolean;
   /** The .json companion's Box name, when one was sent. */
   sidecarFileName?: string;
   /** Set when the PNG filed but its .json companion didn't. */
@@ -356,6 +354,47 @@ export interface UploadResult {
  * and retry. The caller surfaces `linkError` so the partial success is explicit. The same
  * applies to the companion — see uploadSidecar.
  */
+function splitExtension(filename: string): { stem: string; ext: string } {
+  const dot = filename.lastIndexOf(".");
+  return dot > 0
+    ? { stem: filename.slice(0, dot), ext: filename.slice(dot) }
+    : { stem: filename, ext: "" };
+}
+
+/**
+ * Uploads, stepping the filename to " (2)", " (3)"... until Box accepts it.
+ *
+ * The operator shouldn't have to think about a name collision: two markups of the same job
+ * is completely normal, and the old behaviour was a 409 that stopped the sync and made them
+ * retype a filename.
+ *
+ * Deliberately retries the UPLOAD rather than listing the folder to pick a free name first.
+ * listFolderItems() carries `next: { revalidate: 1800 }` for the marketing samples page, so
+ * it can be half an hour stale — it would happily hand back a name that a colleague filled
+ * ten minutes ago. Box's own 409 is the only current answer. In practice this is one extra
+ * call, occasionally two.
+ */
+async function uploadFileAutoRenamed(opts: {
+  folderId: string;
+  filename: string;
+  bytes: Uint8Array;
+  contentType?: string;
+  token: string;
+}): Promise<{ id: string; name: string }> {
+  const { stem, ext } = splitExtension(opts.filename);
+  for (let attempt = 1; attempt <= MAX_RENAME_ATTEMPTS; attempt++) {
+    const filename = attempt === 1 ? opts.filename : `${stem} (${attempt})${ext}`;
+    try {
+      return await uploadFile({ ...opts, filename });
+    } catch (e) {
+      if (!(e instanceof BoxNameConflictError)) throw e;
+    }
+  }
+  throw new MarkupSyncError(
+    `Couldn't find a free filename in that folder after ${MAX_RENAME_ATTEMPTS} tries — rename the file and try again.`
+  );
+}
+
 export async function uploadMarkup(opts: {
   quoteId: string;
   folderId: string;
@@ -365,6 +404,10 @@ export async function uploadMarkup(opts: {
   /** When set, the link goes to this line item's own markup field instead of a Quote slot.
    *  The file still lands in the Quote's Box folder — a line item has no folder of its own. */
   lineItemId?: string;
+  /** The operator has been shown that the line item already has a markup linked and has
+   *  asked to replace it. Without this an occupied field is refused, so a stale resolve can
+   *  never silently overwrite a colleague's link. */
+  replaceExistingLink?: boolean;
   /** The editable source for the image — a Measure or Building Markup save file. Filed
    *  beside the PNG so whoever picks the job up can reopen and adjust it instead of
    *  redrawing from the flattened image. */
@@ -372,7 +415,7 @@ export async function uploadMarkup(opts: {
 }): Promise<UploadResult> {
   const token = await getBoxToken();
   // The PNG first, always: it is the deliverable, and the companion is a convenience.
-  const file = await uploadFile({
+  const file = await uploadFileAutoRenamed({
     folderId: opts.folderId,
     filename: opts.filename,
     bytes: opts.bytes,
@@ -392,11 +435,21 @@ export async function uploadMarkup(opts: {
   const linked = !opts.linkToQuote
     ? unlinked
     : opts.lineItemId
-      ? await linkMarkupToLineItem(opts.lineItemId, file, token)
+      ? await linkMarkupToLineItem(opts.lineItemId, file, token, opts.replaceExistingLink === true)
       : await linkMarkupToQuote(opts.quoteId, file, token);
 
+  // Named off the PNG's ACTUAL name, not the requested one: if the PNG became
+  // "... (2).png" the companion has to become "... (2).json" or the pair stop matching in
+  // the folder, which is the whole point of filing them together.
   const sidecar = opts.sidecar
-    ? await uploadSidecar(opts.folderId, opts.sidecar, token)
+    ? await uploadSidecar(
+        opts.folderId,
+        {
+          ...opts.sidecar,
+          filename: `${splitExtension(file.name).stem}${splitExtension(opts.sidecar.filename).ext}`,
+        },
+        token
+      )
     : {};
 
   return { ...linked, ...sidecar };
@@ -419,7 +472,7 @@ async function uploadSidecar(
   token: string
 ): Promise<Pick<UploadResult, "sidecarFileName" | "sidecarError">> {
   try {
-    const file = await uploadFile({
+    const file = await uploadFileAutoRenamed({
       folderId,
       filename: sidecar.filename,
       bytes: sidecar.bytes,
@@ -443,7 +496,8 @@ async function uploadSidecar(
 async function linkMarkupToLineItem(
   lineItemId: string,
   file: { id: string; name: string },
-  token: string
+  token: string,
+  replaceExisting: boolean
 ): Promise<UploadResult> {
   try {
     const link = await ensureSharedLink(file.id, token, "company");
@@ -461,9 +515,12 @@ async function linkMarkupToLineItem(
     );
     if (!current) throw new MarkupSyncError("That Quote Line Item no longer exists.");
     const existing = current[LINE_ITEM_MARKUP_FIELD];
-    if (existing !== null && existing !== undefined && existing !== "") {
+    // Occupied and not authorised: refuse. The operator is shown `alreadyFilled` at resolve
+    // time and has to tick the box, so this only fires when someone else filled the field
+    // between resolve and upload — exactly the race worth losing.
+    if (existing !== null && existing !== undefined && existing !== "" && !replaceExisting) {
       throw new MarkupSyncError(
-        "That line item already has a markup linked — clear its Line Item Mark Up field to replace it. The file is uploaded to Box either way."
+        "That line item already has a markup linked. Tick \"replace\" and sync again to overwrite it — the file is uploaded to Box either way."
       );
     }
 
@@ -475,6 +532,7 @@ async function linkMarkupToLineItem(
       previewLink: link.url,
       linkedToQuote: true,
       linkedToLineItem: true,
+      replacedExistingLink: existing !== null && existing !== undefined && existing !== "",
     };
   } catch (e) {
     return {

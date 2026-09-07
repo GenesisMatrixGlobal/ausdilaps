@@ -38,6 +38,7 @@ interface UploadResult {
   linkError?: string;
   markupSlot?: number;
   linkedToLineItem?: boolean;
+  replacedExistingLink?: boolean;
   sidecarFileName?: string;
   sidecarError?: string;
 }
@@ -100,6 +101,9 @@ export function SyncToSalesforce({
       }
       setTarget(json.target);
       setFilename(json.target.suggestedFilename || fallbackName);
+      // Linking is opt-IN when it would overwrite something. Everywhere else it stays the
+      // default, because linking is the point of the button.
+      setLinkToQuote(!json.target.lineItem?.alreadyFilled);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -125,7 +129,13 @@ export function SyncToSalesforce({
           linkToQuote,
           // Present only for a line-item paste; the server then writes to the line item's
           // own field instead of a Quote slot.
-          ...(target.lineItem ? { lineItemId: target.lineItem.id } : {}),
+          ...(target.lineItem
+            ? {
+                lineItemId: target.lineItem.id,
+                // Ticking the box on an occupied field IS the authorisation to replace.
+                replaceExistingLink: target.lineItem.alreadyFilled && linkToQuote,
+              }
+            : {}),
           ...(sidecar ? { sidecar } : {}),
         }),
       });
@@ -254,16 +264,15 @@ export function SyncToSalesforce({
                   type="checkbox"
                   checked={linkToQuote}
                   onChange={(e) => setLinkToQuote(e.target.checked)}
-                  // A line item has one field, not five slots, so "already filled" is the
-                  // equivalent of "all slots full": upload, don't overwrite.
-                  disabled={
-                    target.lineItem ? target.lineItem.alreadyFilled : target.nextMarkupSlot === null
-                  }
+                  // A line item's single field can be replaced with a tick, unlike the
+                  // Quote's five slots, where a full set means clearing one by hand — there
+                  // is no way to know WHICH of five a new drawing should displace.
+                  disabled={!target.lineItem && target.nextMarkupSlot === null}
                   className="h-4 w-4 rounded border-ad-border"
                 />
                 {target.lineItem
                   ? target.lineItem.alreadyFilled
-                    ? "That line item already has a markup linked — upload only"
+                    ? "Replace the markup already linked to this line item"
                     : "Link it to the line item's Line Item Mark Up field"
                   : target.nextMarkupSlot === null
                     ? `All ${target.markupSlotsTotal} Site Mark Up slots are full — upload only`
@@ -283,11 +292,21 @@ export function SyncToSalesforce({
 
       {result && (
         <div className="mt-4 rounded-lg border border-ad-border bg-ad-surface p-3 text-sm">
+          {/* The name Box actually gave it. uploadMarkup steps a clashing name to " (2)"
+              rather than stopping to ask, so this is where a rename becomes visible. */}
           <p className="font-medium text-ad-ink">Saved {result.fileName}</p>
+          {result.fileName !== filename.trim() && (
+            <p className="mt-1 text-ad-muted">
+              A file called {filename.trim()} was already in that folder, so this one was
+              renamed.
+            </p>
+          )}
           {result.linkedToQuote ? (
             <p className="mt-1 text-ad-muted">
               {result.linkedToLineItem
-                ? "Linked to the line item's Line Item Mark Up field."
+                ? result.replacedExistingLink
+                  ? "Replaced the line item's Line Item Mark Up link."
+                  : "Linked to the line item's Line Item Mark Up field."
                 : `Linked to Site Mark Up ${result.markupSlot ?? ""} on the Quote.`}
             </p>
           ) : result.linkError ? (

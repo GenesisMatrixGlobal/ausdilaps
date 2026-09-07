@@ -102,6 +102,26 @@ item's own field rather than a Quote slot:
 | Field | `Line_Item_Mark_Up__c` |
 | Count | **One**, not five — so a filled field is refused, never overwritten |
 
+**An occupied line-item field can be replaced with a tick.** The resolve step reports
+`alreadyFilled`, the checkbox relabels to "Replace the markup already linked to this line
+item", and it starts **unticked** — linking is opt-in wherever it would overwrite something.
+The server still refuses an occupied field unless `replaceExistingLink` is set, so a stale
+resolve can't silently overwrite a link a colleague added in between.
+
+The Quote's five slots behave differently on purpose: a full set is refused outright rather
+than offering a replace, because there is no way to know *which* of five a new drawing should
+displace. Clear one by hand.
+
+**A filename clash renames itself.** Box 409s on a duplicate name, which used to stop the
+sync and make the operator retype. `uploadMarkup` now steps the name to `… (2).png`,
+`… (3).png` and so on until Box accepts it, and the result tells you it was renamed. The
+`.json` companion is named off the PNG's **actual** name, so a renamed pair still match.
+
+⚠️ It retries the **upload** rather than listing the folder to pick a free name first.
+`listFolderItems()` carries `next: { revalidate: 1800 }` for the marketing samples page, so
+it can be half an hour stale and would hand back a name a colleague filled ten minutes ago.
+Box's own 409 is the only trustworthy answer.
+
 **A line-item paste does NOT also fill a Quote slot.** The two are mutually exclusive: the
 markup links to `Line_Item_Mark_Up__c` and the Quote's five slots are left alone. A Quote can
 have a dozen line items, so writing the same file to a shared slot as well would burn one of

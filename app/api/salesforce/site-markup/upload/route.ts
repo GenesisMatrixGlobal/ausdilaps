@@ -27,6 +27,9 @@ const requestSchema = z.object({
   /** When present the link is written to this line item's own markup field instead of a
    *  Quote slot. The file still goes to the Quote's Box folder. */
   lineItemId: z.string().trim().min(15).max(18).optional(),
+  /** The operator was shown that the line item's markup field is occupied and asked to
+   *  replace it. Without this an occupied field is refused. */
+  replaceExistingLink: z.boolean().default(false),
   /** The editable source for the image — a Measure or Building Markup .json save file,
    *  filed beside the PNG so the job can be reopened and adjusted rather than redrawn. */
   sidecar: z
@@ -90,6 +93,7 @@ export async function POST(req: NextRequest) {
       bytes: new Uint8Array(bytes),
       linkToQuote: parsed.data.linkToQuote,
       lineItemId: parsed.data.lineItemId,
+      replaceExistingLink: parsed.data.replaceExistingLink,
       sidecar,
     });
     return NextResponse.json({ ok: true, result });
@@ -97,7 +101,8 @@ export async function POST(req: NextRequest) {
     if (isConfigError(e)) {
       return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 501 });
     }
-    // The UI turns this into a rename prompt rather than a dead end.
+    // Should be unreachable now that uploadMarkup steps the filename to " (2)" itself, but
+    // kept so a future caller that uploads directly still gets a usable message.
     if (e instanceof BoxNameConflictError) {
       return NextResponse.json({ ok: false, error: e.message, conflict: true }, { status: 409 });
     }

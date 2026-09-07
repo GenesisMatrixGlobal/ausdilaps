@@ -153,6 +153,17 @@ Consequences worth knowing:
 - **Numbered badges are baked in.** The Building Markup tab deliberately strips its numbered
   pins from the client download; here the numbers are the legend's key, so without them the
   legend is a list of anonymous areas.
+- **A LINE's badge is nudged perpendicular to the run of the line; an AREA's stays at the
+  centroid.** A ribbon's centroid sits ON the ribbon, and at any zoom wide enough to hold a
+  whole road the ribbon is thinner than the badge — a real 4km-wide export had a 10m ribbon
+  at 2.5 output px against a 30px badge, which erased the shape it was labelling. The badge
+  is also small (12px radius) and translucent for the same reason. The nudge is skipped if
+  it would push the badge out of frame, since a dropped badge leaves a legend row with
+  nothing to match it to.
+- **At a wide zoom Google's attribution grows a longer provider list** ("Airbus, CNES /
+  Airbus, Landsat / Copernicus, Maxar Technologies, Vexcel Imaging US, Inc") and overflows
+  the image width, clipping at the left. That's Google's own rendering inside the image it
+  returns; nothing here controls it.
 - **Shapes are one flat orange, on screen and in the export.** Selection used to swap a
   shape to steel blue, which was too dark to pick out against imagery — the shapes you
   weren't editing vanished into the photo. Selection is signalled instead by the things that

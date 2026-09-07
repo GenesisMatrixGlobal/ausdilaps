@@ -179,7 +179,15 @@ function rowsFor(measurements: (Measurable & { id: string })[]): { rows: Row[]; 
 const PANEL_PAD = 18;
 const ROW_HEIGHT = 30;
 const ROW_SIZE = 19;
-const BADGE_R = 15;
+/** Badge radius in OUTPUT pixels. Small on purpose: at a wide zoom a 10m ribbon is barely
+ *  2-3 output px across, so the badge is an order of magnitude wider than the thing it
+ *  labels and any bigger simply erases it. */
+const BADGE_R = 12;
+/** Enough to clear a thin ribbon's centreline entirely. A wide ribbon at a close zoom is
+ *  broad enough to host the badge anyway, so this only ever helps. */
+const BADGE_CLEARANCE = 4;
+/** Translucent, so whatever it lands on still reads through it. */
+const BADGE_FILL_OPACITY = 0.82;
 /** Between the number column and the area column. A readable separation and nothing more —
  *  see legendSvg() for why this alone didn't control the gap. */
 const GAP = 16;
@@ -274,30 +282,67 @@ function badgesSvg(
   width: number,
   height: number
 ): string {
+  const projection = { center, zoom, imageSizePx: width, imageHeightPx: height };
+  // latLngToPixel works in the pre-`scale` pixel space Static Maps' own `size` describes,
+  // so its result has to be multiplied up to the actual image. Handing it the scaled size
+  // instead lands every offset at exactly half the right distance — which reads as a
+  // plausible-but-wrong position, not a bug.
+  const toOutput = (p: LatLng) => {
+    const logical = latLngToPixel(projection, p);
+    return { x: logical.x * SCALE, y: logical.y * SCALE };
+  };
+  const outWidth = width * SCALE;
+  const outHeight = height * SCALE;
+
   const parts: string[] = [];
   measurements.forEach((m, i) => {
     if (m.points.length < MIN_POINTS[m.mode]) return;
     const ring = ringFor(m);
     if (ring.length < 3) return;
-    // latLngToPixel works in the pre-`scale` pixel space Static Maps' own `size`
-    // describes, so it has to be fed the logical size and its result multiplied up to the
-    // actual image. Handing it the scaled size instead lands every offset at exactly half
-    // the right distance — which looks like a plausible-but-wrong position, not a bug.
-    const logical = latLngToPixel(
-      { center, zoom, imageSizePx: width, imageHeightPx: height },
-      centroidOf(ring)
-    );
+
+    const centre = toOutput(centroidOf(ring));
+    let at = centre;
+
+    // A LINE's ribbon centroid sits ON the ribbon, and at any zoom wide enough to hold a
+    // whole road the ribbon is thinner than the badge — so the badge erased the very shape
+    // it was labelling. Nudge it perpendicular to the run of the line instead. An AREA is
+    // broad enough to carry the badge in the middle of it, which is also where it reads
+    // best, so it stays put.
+    if (m.mode === "line") {
+      const first = toOutput(m.points[0]);
+      const last = toOutput(m.points[m.points.length - 1]);
+      const dx = last.x - first.x;
+      const dy = last.y - first.y;
+      const len = Math.hypot(dx, dy);
+      if (len > 0.001) {
+        const offset = BADGE_R + BADGE_CLEARANCE;
+        const nudged = { x: centre.x - (dy / len) * offset, y: centre.y + (dx / len) * offset };
+        // Only take the nudge if it stays in frame — better a badge sitting on its line
+        // than one pushed off the edge and dropped, which would leave a legend row with
+        // nothing on the map to match it to.
+        const margin = BADGE_R + 2;
+        if (
+          nudged.x > margin &&
+          nudged.y > margin &&
+          nudged.x < outWidth - margin &&
+          nudged.y < outHeight - margin
+        ) {
+          at = nudged;
+        }
+      }
+    }
+
     // Off-frame badges are dropped rather than clamped to the edge, which would point at
     // the wrong place on the ground.
-    if (logical.x < 0 || logical.y < 0 || logical.x > width || logical.y > height) return;
-    const at = { x: logical.x * SCALE, y: logical.y * SCALE };
+    if (at.x < 0 || at.y < 0 || at.x > outWidth || at.y > outHeight) return;
+
     const label = String(i + 1);
     parts.push(
-      `<circle cx="${at.x.toFixed(1)}" cy="${at.y.toFixed(1)}" r="${BADGE_R}" fill="#${SHAPE_COLOR}" stroke="white" stroke-width="2.5" />`,
+      `<circle cx="${at.x.toFixed(1)}" cy="${at.y.toFixed(1)}" r="${BADGE_R}" fill="#${SHAPE_COLOR}" fill-opacity="${BADGE_FILL_OPACITY}" stroke="white" stroke-opacity="0.9" stroke-width="2" />`,
       textToSvgPaths(label, {
-        x: at.x - textWidth(label, 18) / 2,
-        y: at.y + 6.5,
-        fontSize: 18,
+        x: at.x - textWidth(label, 15) / 2,
+        y: at.y + 5.4,
+        fontSize: 15,
         fill: "ffffff",
       })
     );

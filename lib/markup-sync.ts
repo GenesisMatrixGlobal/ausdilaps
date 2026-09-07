@@ -255,14 +255,20 @@ export interface UploadResult {
   linkError?: string;
   /** 1-based Site Mark Up slot the link was written to. */
   markupSlot?: number;
+  /** The .json companion's Box name, when one was sent. */
+  sidecarFileName?: string;
+  /** Set when the PNG filed but its .json companion didn't. */
+  sidecarError?: string;
 }
 
 /**
- * Uploads the markup, then optionally writes its Box link onto the Quote.
+ * Uploads the markup, optionally writes its Box link onto the Quote, and optionally files a
+ * .json companion beside it.
  *
  * A failed link is reported but not rolled back: the file is correctly filed in Box, and
  * deleting it to "undo" would lose work over a field-permission problem the operator can fix
- * and retry. The caller surfaces `linkError` so the partial success is explicit.
+ * and retry. The caller surfaces `linkError` so the partial success is explicit. The same
+ * applies to the companion — see uploadSidecar.
  */
 export async function uploadMarkup(opts: {
   quoteId: string;
@@ -270,8 +276,13 @@ export async function uploadMarkup(opts: {
   filename: string;
   bytes: Uint8Array;
   linkToQuote: boolean;
+  /** The editable source for the image — a Measure or Building Markup save file. Filed
+   *  beside the PNG so whoever picks the job up can reopen and adjust it instead of
+   *  redrawing from the flattened image. */
+  sidecar?: { filename: string; bytes: Uint8Array; contentType?: string };
 }): Promise<UploadResult> {
   const token = await getBoxToken();
+  // The PNG first, always: it is the deliverable, and the companion is a convenience.
   const file = await uploadFile({
     folderId: opts.folderId,
     filename: opts.filename,
@@ -279,10 +290,54 @@ export async function uploadMarkup(opts: {
     token,
   });
 
-  if (!opts.linkToQuote) {
-    return { fileId: file.id, fileName: file.name, sharedLink: null, linkedToQuote: false };
-  }
+  const linked = opts.linkToQuote
+    ? await linkMarkupToQuote(opts.quoteId, file, token)
+    : { fileId: file.id, fileName: file.name, sharedLink: null, linkedToQuote: false };
 
+  const sidecar = opts.sidecar
+    ? await uploadSidecar(opts.folderId, opts.sidecar, token)
+    : {};
+
+  return { ...linked, ...sidecar };
+}
+
+/**
+ * Files the .json beside the PNG.
+ *
+ * Never linked to a Site Mark Up slot: those fields hold an image URL that Salesforce's
+ * document-merge step fetches expecting bytes it can render, and a .json in one would
+ * produce a merged document with a broken image in it.
+ *
+ * Failure is reported, never thrown. The PNG is already filed and possibly already linked;
+ * turning a companion-file problem into a failed sync would have the operator re-uploading
+ * a markup that is sitting in Box correctly.
+ */
+async function uploadSidecar(
+  folderId: string,
+  sidecar: { filename: string; bytes: Uint8Array; contentType?: string },
+  token: string
+): Promise<Pick<UploadResult, "sidecarFileName" | "sidecarError">> {
+  try {
+    const file = await uploadFile({
+      folderId,
+      filename: sidecar.filename,
+      bytes: sidecar.bytes,
+      contentType: sidecar.contentType ?? "application/json",
+      token,
+    });
+    return { sidecarFileName: file.name };
+  } catch (e) {
+    return { sidecarError: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** The existing link-it-to-the-Quote path, extracted so the sidecar upload can run whether
+ *  or not linking was asked for or succeeded. */
+async function linkMarkupToQuote(
+  quoteId: string,
+  file: { id: string; name: string },
+  token: string
+): Promise<UploadResult> {
   try {
     // Enterprise-only, not public: this is a job document, unlike the marketing samples.
     const link = await ensureSharedLink(file.id, token, "company");
@@ -307,7 +362,7 @@ export async function uploadMarkup(opts: {
     // may have filled one in between, and overwriting a colleague's markup is unrecoverable.
     const slotFields = MARKUP_SLOTS.map((slot) => slot.url).join(", ");
     const [quote] = await soqlQuery<QuoteSlots>(
-      `SELECT Id, ${slotFields} FROM Quote WHERE Id = '${soqlEscape(opts.quoteId)}' LIMIT 1`
+      `SELECT Id, ${slotFields} FROM Quote WHERE Id = '${soqlEscape(quoteId)}' LIMIT 1`
     );
     if (!quote) throw new MarkupSyncError("That Quote no longer exists.");
 
@@ -319,7 +374,7 @@ export async function uploadMarkup(opts: {
     }
 
     const slot = MARKUP_SLOTS[free];
-    await updateRecord("Quote", opts.quoteId, {
+    await updateRecord("Quote", quoteId, {
       [slot.url]: sharedLink,
       [slot.name]: file.name.slice(0, SLOT_NAME_MAX),
     });

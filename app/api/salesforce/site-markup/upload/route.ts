@@ -13,6 +13,8 @@ export const maxDuration = 60;
 /** Generous, but bounded — a markup is ~900KB, ~1.2MB once base64'd, and Vercel caps the
  *  request body well below anything pathological. */
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+/** A save file is a few KB of coordinates; a megabyte is already absurd for one. */
+const MAX_SIDECAR_BYTES = 2 * 1024 * 1024;
 
 const requestSchema = z.object({
   quoteId: z.string().trim().min(15).max(18),
@@ -22,6 +24,15 @@ const requestSchema = z.object({
   /** Base64 PNG, supplied by the browser so the image isn't re-rendered (and re-billed). */
   image: z.string().min(1, "Missing image data"),
   linkToQuote: z.boolean().default(false),
+  /** The editable source for the image — a Measure or Building Markup .json save file,
+   *  filed beside the PNG so the job can be reopened and adjusted rather than redrawn. */
+  sidecar: z
+    .object({
+      filename: z.string().trim().min(1).max(240),
+      contentBase64: z.string().min(1),
+      contentType: z.string().trim().max(120).optional(),
+    })
+    .optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -52,6 +63,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "That image is too large to sync." }, { status: 413 });
   }
 
+  let sidecar: { filename: string; bytes: Uint8Array; contentType?: string } | undefined;
+  if (parsed.data.sidecar) {
+    const sidecarBytes = Buffer.from(parsed.data.sidecar.contentBase64, "base64");
+    if (sidecarBytes.length === 0) {
+      return NextResponse.json({ ok: false, error: "The save file data was unreadable." }, { status: 400 });
+    }
+    if (sidecarBytes.length > MAX_SIDECAR_BYTES) {
+      return NextResponse.json({ ok: false, error: "That save file is too large to sync." }, { status: 413 });
+    }
+    sidecar = {
+      filename: parsed.data.sidecar.filename,
+      bytes: new Uint8Array(sidecarBytes),
+      contentType: parsed.data.sidecar.contentType,
+    };
+  }
+
   try {
     const result = await uploadMarkup({
       quoteId: parsed.data.quoteId,
@@ -59,6 +86,7 @@ export async function POST(req: NextRequest) {
       filename: parsed.data.filename,
       bytes: new Uint8Array(bytes),
       linkToQuote: parsed.data.linkToQuote,
+      sidecar,
     });
     return NextResponse.json({ ok: true, result });
   } catch (e) {

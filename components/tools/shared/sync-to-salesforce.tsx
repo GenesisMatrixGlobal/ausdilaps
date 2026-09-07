@@ -36,6 +36,8 @@ interface UploadResult {
   linkedToQuote: boolean;
   linkError?: string;
   markupSlot?: number;
+  sidecarFileName?: string;
+  sidecarError?: string;
 }
 
 export interface SyncToSalesforceProps {
@@ -46,9 +48,19 @@ export interface SyncToSalesforceProps {
   fallbackName: string;
   /** No image generated yet. */
   disabled?: boolean;
+  /** The editable source for the image, filed beside the PNG so whoever picks the job up
+   *  can reopen and adjust it instead of redrawing from a flattened image. Given the
+   *  confirmed PNG filename (extension included) so the pair share a stem in Box. Omit on
+   *  a tool that has nothing reopenable to save. */
+  getSidecar?: (imageFilename: string) => Promise<{ filename: string; contentBase64: string; contentType?: string }>;
 }
 
-export function SyncToSalesforce({ getImageBase64, fallbackName, disabled }: SyncToSalesforceProps) {
+export function SyncToSalesforce({
+  getImageBase64,
+  fallbackName,
+  disabled,
+  getSidecar,
+}: SyncToSalesforceProps) {
   const [open, setOpen] = useState(false);
   const [quoteInput, setQuoteInput] = useState("");
   const [manualFolderUrl, setManualFolderUrl] = useState("");
@@ -99,6 +111,7 @@ export function SyncToSalesforce({ getImageBase64, fallbackName, disabled }: Syn
     setBusy("upload");
     try {
       const image = await getImageBase64();
+      const sidecar = getSidecar ? await getSidecar(filename) : undefined;
       const res = await fetch("/api/salesforce/site-markup/upload", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -108,6 +121,7 @@ export function SyncToSalesforce({ getImageBase64, fallbackName, disabled }: Syn
           filename,
           image,
           linkToQuote,
+          ...(sidecar ? { sidecar } : {}),
         }),
       });
       const json = (await res.json().catch(() => null)) as
@@ -263,6 +277,18 @@ export function SyncToSalesforce({ getImageBase64, fallbackName, disabled }: Syn
               Uploaded, but linking it to the Quote failed: {result.linkError}
             </p>
           ) : null}
+          {result.sidecarFileName && (
+            <p className="mt-1 text-ad-muted">
+              Saved {result.sidecarFileName} beside it — open that to adjust the markup later.
+            </p>
+          )}
+          {result.sidecarError && (
+            // The PNG is filed and possibly linked; only the editable copy failed. Say so
+            // precisely, or the operator re-uploads a markup that is already correct.
+            <p className="mt-1 text-ad-orange">
+              The markup is saved, but its editable .json copy failed: {result.sidecarError}
+            </p>
+          )}
           {(result.previewLink ?? result.sharedLink) && (
             <a
               // Preview page for the human. The direct link goes to Salesforce, where the

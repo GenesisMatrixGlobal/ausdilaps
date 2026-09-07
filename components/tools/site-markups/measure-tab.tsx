@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { downloadBlob } from "@/components/tools/shared/download";
+import { SyncToSalesforce } from "@/components/tools/shared/sync-to-salesforce";
 import { MIN_POINTS } from "@/lib/kml/standard-markup/measure";
 import { buildMeasureFile, parseMeasureFile } from "@/lib/maps/measure-file";
 import {
@@ -55,15 +56,9 @@ export function MeasureTab({ active }: { active: boolean }) {
       .slice(0, 60) || "measurements";
 
   function save() {
-    const camera = commands.current?.getCamera();
-    const doc = buildMeasureFile({
-      label: placeLabel,
-      bounds: camera?.bounds ?? null,
-      mapType: camera?.mapType ?? null,
-      measurements: state.listRef.current,
-    });
+    const doc = saveFileJson();
     setNote(null);
-    downloadBlob(JSON.stringify(doc, null, 2), `${filenameStem("measurements")}.json`, "application/json");
+    downloadBlob(doc, `${filenameStem("measurements")}.json`, "application/json");
   }
 
   async function open(file: File) {
@@ -88,45 +83,72 @@ export function MeasureTab({ active }: { active: boolean }) {
     );
   }
 
-  async function download() {
+  /** base64 of a UTF-8 string. Not plain btoa(): an address with an accent in it would
+   *  throw, and a save file carries the operator's own typing. */
+  function toBase64(text: string): string {
+    const bytes = new TextEncoder().encode(text);
+    let binary = "";
+    for (const b of bytes) binary += String.fromCharCode(b);
+    return btoa(binary);
+  }
+
+  function saveFileJson() {
     const camera = commands.current?.getCamera();
-    if (!camera) {
-      setNote("The map isn't ready yet.");
-      return;
+    return JSON.stringify(
+      buildMeasureFile({
+        label: placeLabel,
+        bounds: camera?.bounds ?? null,
+        mapType: camera?.mapType ?? null,
+        measurements: state.listRef.current,
+      }),
+      null,
+      2
+    );
+  }
+
+  /** The one render path, shared by Download .png and the Salesforce sync — two callers
+   *  producing different images for the same measurements would be indefensible. Throws
+   *  rather than setting a note, because SyncToSalesforce surfaces its own errors. */
+  async function renderPng(): Promise<{ base64: string; fallbackStem: string }> {
+    const camera = commands.current?.getCamera();
+    if (!camera) throw new Error("The map isn't ready yet.");
+    const res = await fetch("/api/maps/measure-export", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...camera,
+        measurements: state.listRef.current.map(({ id, points, mode, widthMetres }) => ({
+          id,
+          points,
+          mode,
+          widthMetres,
+        })),
+      }),
+    });
+    const json = (await res.json().catch(() => null)) as
+      | { ok: boolean; imageBase64?: string; error?: string }
+      | null;
+    if (!json?.ok || !json.imageBase64) {
+      throw new Error(json?.error ?? "Couldn't render the PNG.");
     }
+    // Rough box centre is plenty for a filename.
+    const fallback = `${((camera.bounds.north + camera.bounds.south) / 2).toFixed(5)}-${(
+      (camera.bounds.east + camera.bounds.west) / 2
+    ).toFixed(5)}`;
+    return { base64: json.imageBase64, fallbackStem: filenameStem(fallback) };
+  }
+
+  async function download() {
     setExporting(true);
     setNote(null);
     try {
-      const res = await fetch("/api/maps/measure-export", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ...camera,
-          measurements: state.listRef.current.map(({ id, points, mode, widthMetres }) => ({
-            id,
-            points,
-            mode,
-            widthMetres,
-          })),
-        }),
-      });
-      const json = (await res.json().catch(() => null)) as
-        | { ok: boolean; imageBase64?: string; error?: string }
-        | null;
-      if (!json?.ok || !json.imageBase64) {
-        setNote(json?.error ?? "Couldn't render the PNG.");
-        return;
-      }
+      const { base64, fallbackStem } = await renderPng();
       // base64 -> bytes by hand: fetch()ing a data: URL of a multi-megabyte PNG is
       // measurably slower, and atob is exact.
-      const binary = atob(json.imageBase64);
+      const binary = atob(base64);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      // Rough box centre is plenty for a filename.
-      const fallback = `${((camera.bounds.north + camera.bounds.south) / 2).toFixed(5)}-${(
-        (camera.bounds.east + camera.bounds.west) / 2
-      ).toFixed(5)}`;
-      downloadBlob(bytes, `${filenameStem(fallback)}-measurements.png`, "image/png");
+      downloadBlob(bytes, `${fallbackStem}-measurements.png`, "image/png");
     } catch (e) {
       setNote((e as Error).message);
     } finally {
@@ -215,7 +237,7 @@ export function MeasureTab({ active }: { active: boolean }) {
         {/* mt-6 clears the label line above the input, so the button's top edge lines up
             with the input's rather than drifting every time AddressSearch shows its own
             "Searching…" line underneath. */}
-        <div className="mt-6 flex shrink-0 gap-2">
+        <div className="mt-6 flex flex-wrap items-start gap-2">
           <button
             type="button"
             onClick={download}
@@ -244,6 +266,17 @@ export function MeasureTab({ active }: { active: boolean }) {
           </button>
           {/* Cleared after every pick, so choosing the same file twice in a row still
               fires a change event. */}
+          <SyncToSalesforce
+            getImageBase64={async () => (await renderPng()).base64}
+            // Same stem as the confirmed PNG name, so the pair sit together in Box.
+            getSidecar={async (imageFilename) => ({
+              filename: `${imageFilename.replace(/\.(png|jpe?g)$/i, "")}.json`,
+              contentBase64: toBase64(saveFileJson()),
+              contentType: "application/json",
+            })}
+            fallbackName="site-measurements.png"
+            disabled={drawn === 0}
+          />
           <input
             ref={fileInput}
             type="file"

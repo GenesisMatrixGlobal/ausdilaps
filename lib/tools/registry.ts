@@ -17,6 +17,16 @@ import type { ComponentType } from "react";
 import type { DepartmentSlug } from "@/lib/departments";
 import { canAccess, type StaffUser } from "@/lib/auth/session";
 
+/** `title` is a display label and can be changed freely — it is renamed from time to time as
+ *  the team's language for a tool settles. `slug` and `code` cannot: the slug is a live route
+ *  and a redirect target in data/redirects.ts, and the code is how a tool gets referred to in
+ *  past conversations. Rename the title on its own; don't chase it through the rest.
+ *
+ *  Current label/internal-name divergences, all deliberate:
+ *    site-markups          -> "Markup and Measure" (its Building Markup tab is still
+ *                             `residential` / standard-markup in code, routes and components)
+ *    property-sizing       -> "Bulk Property Sizing"
+ *    road-survey-estimator -> "KMZ Analyzer" */
 export type ToolDefinition = {
   slug: string;
   /** Short reference code (SMK, PSZ, ...) so a tool can be named in a message
@@ -47,7 +57,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     slug: "property-sizing",
     code: "PSZ",
-    title: "Property Sizing",
+    title: "Bulk Property Sizing",
     description:
       "Paste addresses or upload a screenshot to get land and lot sizes from government cadastre data, ready for a quoting sheet.",
     departments: ["estimators"],
@@ -71,7 +81,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     slug: "road-survey-estimator",
     code: "RSE",
-    title: "Road Survey Estimator",
+    title: "KMZ Analyzer",
     description:
       "Turn a client's road-network .kmz into a per-segment quoting sheet, and turn their edited sheet back into a map for Google Earth.",
     departments: ["estimators"],

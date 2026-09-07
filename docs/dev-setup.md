@@ -29,7 +29,7 @@ vercel env add ANTHROPIC_API_KEY development
 ## Variables this project needs
 
 The full list is in [`.env.local.example`](../.env.local.example) (Supabase, Resend,
-GA4, Salesforce, etc.) — most are already set in Vercel. The Property Sizing tool
+GA4, Salesforce, etc.) — most are already set in Vercel. The Bulk Property Sizing tool
 adds two:
 
 | Variable | Environments | Notes |

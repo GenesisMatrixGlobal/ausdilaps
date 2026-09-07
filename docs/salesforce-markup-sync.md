@@ -102,6 +102,14 @@ item's own field rather than a Quote slot:
 | Field | `Line_Item_Mark_Up__c` |
 | Count | **One**, not five — so a filled field is refused, never overwritten |
 
+**A line-item paste does NOT also fill a Quote slot.** The two are mutually exclusive: the
+markup links to `Line_Item_Mark_Up__c` and the Quote's five slots are left alone. A Quote can
+have a dozen line items, so writing the same file to a shared slot as well would burn one of
+five per row and fill them with duplicates of the same drawing. The resolve step returns
+`nextMarkupSlot: null` for a line-item target so there is no slot for the UI to offer.
+(Note `linkedToQuote` in the upload result means "linked to its record", not "linked to the
+Quote" — for a line item it is true alongside `linkedToLineItem`.)
+
 The file still lands in the **Quote's** Box folder: a line item has no folder of its own, so
 `resolveLineItem()` walks up to `QuoteId` and the whole existing chain
 (`Opportunity.Link_to_Box_Files__c` → `2. Estimations` → `Site Markup`) runs unchanged. The

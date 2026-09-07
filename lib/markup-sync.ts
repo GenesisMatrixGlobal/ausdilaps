@@ -265,14 +265,22 @@ export async function resolveQuoteTarget(opts: {
       opportunityName,
       lineItem?.label
     ),
-    nextMarkupSlot: (() => {
-      const free = firstFreeSlot(quote as unknown as QuoteSlots);
-      return free === null ? null : free + 1;
-    })(),
-    markupSlotsUsed: MARKUP_SLOTS.filter((slot) => {
-      const v = (quote as unknown as QuoteSlots)[slot.url];
-      return v !== null && v !== undefined && v !== "";
-    }).length,
+    // Null for a line-item target, so the UI has no Quote slot to offer and no later change
+    // can quietly start writing one. The Quote's slots are simply not part of that flow.
+    nextMarkupSlot:
+      lineItem !== null
+        ? null
+        : (() => {
+            const free = firstFreeSlot(quote as unknown as QuoteSlots);
+            return free === null ? null : free + 1;
+          })(),
+    markupSlotsUsed:
+      lineItem !== null
+        ? 0
+        : MARKUP_SLOTS.filter((slot) => {
+            const v = (quote as unknown as QuoteSlots)[slot.url];
+            return v !== null && v !== undefined && v !== "";
+          }).length,
     markupSlotsTotal: MARKUP_SLOTS.length,
     lineItem,
   };
@@ -372,6 +380,15 @@ export async function uploadMarkup(opts: {
   });
 
   const unlinked = { fileId: file.id, fileName: file.name, sharedLink: null, linkedToQuote: false };
+  // EXCLUSIVE, deliberately. A line-item paste links the markup to that line item's own
+  // field and leaves the Quote's five Site Mark Up slots ALONE — it does not do both. A
+  // line item is one row of a job that may have a dozen; writing the same file to a shared
+  // Quote slot as well would burn one of five slots per row and quickly fill them with
+  // duplicates of the same drawing.
+  //
+  // `linkedToQuote` in the result means "linked to its record", not "linked to the Quote" —
+  // for a line item it is true alongside `linkedToLineItem`. Don't "fix" that by adding a
+  // Quote write here.
   const linked = !opts.linkToQuote
     ? unlinked
     : opts.lineItemId

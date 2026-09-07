@@ -171,6 +171,11 @@ Consequences worth knowing:
 - **The legend panel is sized from measured glyph widths**, never a constant. The Building
   Markup legend was once 5px from clipping its longest label, and a legend that silently
   crops a figure is worse than one that's slightly wide.
+- **Badge numbers are RIGHT-aligned to the label column's edge**, so the space between a
+  number and its area is exactly `GAP` on every row. Left-aligning them puts that space at
+  the mercy of the widest LEFT item: "Total" is 45px against a 10px "1", and with the areas
+  right-aligned to the panel edge the difference showed up as 75px of dead space between
+  "1" and its figure, on a panel only 162px wide.
 - **The legend is badge number + area + total, and nothing else.** No title, no mode, no
   width, no length — each of those widened the panel over the very map it describes, and a
   "MEASUREMENTS" heading was on its own wider than every row. Width and length stay in the

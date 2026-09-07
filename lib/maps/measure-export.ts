@@ -149,30 +149,35 @@ const PANEL_PAD = 18;
 const ROW_HEIGHT = 30;
 const ROW_SIZE = 19;
 const BADGE_R = 15;
-const GAP = 26; // between the row label and its right-aligned value
+/** Between the number column and the area column. A readable separation and nothing more —
+ *  see legendSvg() for why this alone didn't control the gap. */
+const GAP = 16;
 
 function legendSvg(rows: Row[], totalSqm: number, showTotal: boolean): string {
   const x = 20;
   const y = 20;
-  // Room for a two-digit badge number, so a 10th measurement doesn't shift the column.
-  const numberColumn = textWidth("99", ROW_SIZE) + 14;
   const totalLabel = "Total";
-
-  const valueWidths = rows.map((r) => widthWithSuper(r.value, ROW_SIZE));
   const totalValue = formatArea(totalSqm);
-  const leftWidths = rows.map(() => numberColumn);
-  if (showTotal) {
-    leftWidths.push(textWidth(totalLabel, ROW_SIZE) + 14);
-    valueWidths.push(widthWithSuper(totalValue, ROW_SIZE));
-  }
 
-  // Sized from measured glyph widths, never a constant — a legend that silently crops a
-  // figure is worse than one that's slightly wide.
-  const contentWidth = Math.max(...leftWidths.map((w, i) => w + GAP + valueWidths[i]));
+  const values = rows.map((r) => r.value).concat(showTotal ? [totalValue] : []);
+  const valueColumn = Math.max(...values.map((v) => widthWithSuper(v, ROW_SIZE)));
+  // The widest number actually present, not a reserved "99" — with three measurements the
+  // column has no business being two digits wide.
+  const numberColumn = Math.max(...rows.map((r) => textWidth(String(r.index), ROW_SIZE)));
+  const labelColumn = Math.max(numberColumn, showTotal ? textWidth(totalLabel, ROW_SIZE) : 0);
+
+  const contentWidth = labelColumn + GAP + valueColumn;
   const bodyRows = rows.length + (showTotal ? 1 : 0);
   const width = PANEL_PAD * 2 + contentWidth;
   const height = PANEL_PAD * 2 + bodyRows * ROW_HEIGHT - (ROW_HEIGHT - ROW_SIZE);
   const right = x + width - PANEL_PAD;
+  // Numbers are RIGHT-aligned to the label column's edge, so the space between a number
+  // and its area is exactly GAP on every row. Left-aligning them instead put the gap at
+  // the mercy of the widest LEFT item: "Total" is 45px against a 10px "1", and with the
+  // areas right-aligned to the panel edge that difference showed up as 75px of dead space
+  // between "1" and its figure — on a panel 162px wide. Any empty space now sits to the
+  // LEFT of the numbers, where it reads as padding and the Total row fills it anyway.
+  const numberRight = x + PANEL_PAD + labelColumn;
 
   const lines: string[] = [
     `<rect x="${x}" y="${y}" width="${width.toFixed(1)}" height="${height.toFixed(1)}" rx="10" fill="white" fill-opacity="0.93" stroke="#cccccc" stroke-width="1.5" />`,
@@ -180,8 +185,14 @@ function legendSvg(rows: Row[], totalSqm: number, showTotal: boolean): string {
 
   let rowY = y + PANEL_PAD + ROW_SIZE;
   for (const row of rows) {
+    const label = String(row.index);
     lines.push(
-      textToSvgPaths(String(row.index), { x: x + PANEL_PAD, y: rowY, fontSize: ROW_SIZE, fill: SHAPE_COLOR }),
+      textToSvgPaths(label, {
+        x: numberRight - textWidth(label, ROW_SIZE),
+        y: rowY,
+        fontSize: ROW_SIZE,
+        fill: SHAPE_COLOR,
+      }),
       textWithSuper(row.value, right - widthWithSuper(row.value, ROW_SIZE), rowY, ROW_SIZE, INK)
     );
     rowY += ROW_HEIGHT;
@@ -191,7 +202,12 @@ function legendSvg(rows: Row[], totalSqm: number, showTotal: boolean): string {
     const ruleY = (rowY - ROW_SIZE - 8).toFixed(1);
     lines.push(
       `<line x1="${x + PANEL_PAD}" y1="${ruleY}" x2="${right}" y2="${ruleY}" stroke="#dddddd" stroke-width="1.5" />`,
-      textToSvgPaths(totalLabel, { x: x + PANEL_PAD, y: rowY, fontSize: ROW_SIZE, fill: MUTED }),
+      textToSvgPaths(totalLabel, {
+        x: numberRight - textWidth(totalLabel, ROW_SIZE),
+        y: rowY,
+        fontSize: ROW_SIZE,
+        fill: MUTED,
+      }),
       textWithSuper(totalValue, right - widthWithSuper(totalValue, ROW_SIZE), rowY, ROW_SIZE, STEEL)
     );
   }

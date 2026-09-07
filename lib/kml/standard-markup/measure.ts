@@ -62,9 +62,17 @@ export function ringFor(shape: Measurable): LatLng[] {
     : bufferLineToPolygon(shape.points, shape.widthMetres);
 }
 
-/** Hectares past a hectare — "12,400 m²" is harder to picture than "1.24 ha". */
+/** Always square metres, at every magnitude.
+ *
+ *  This used to switch to hectares past 10,000 m² on the theory that "1.24 ha" is easier
+ *  to picture than "12,400 m²". It isn't, for the people using this: m² is the unit
+ *  estimating and pricing are done in, so a hectare figure has to be converted back by
+ *  hand before it's useful. Thousands separators carry the magnitude well enough.
+ *
+ *  Shared by the Residential Mark Up sidebar and the Measure tab, so both read the same
+ *  way for the same outline. Nothing server-side formats area — the exported PNG's legend
+ *  doesn't use this — so changing it moves no client-facing number. */
 export function formatArea(areaSqm: number): string {
-  if (areaSqm >= 10000) return `${(areaSqm / 10000).toFixed(2)} ha`;
   return `${Math.round(areaSqm).toLocaleString()} m²`;
 }
 

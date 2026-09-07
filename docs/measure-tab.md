@@ -1,15 +1,15 @@
 # Measure tab (Markup and Measure · SMK)
 
 Measure lengths and areas straight off a live aerial map. Third tab of the
-`site-markups` tool, alongside Residential Mark Up and Road Markup.
+`site-markups` tool, alongside Building Markup and Road Markup.
 
 `/staff/estimators/tools/site-markups` · `/staff/projects/tools/site-markups`
 
 ---
 
-## What it is, and why it isn't the Residential tab
+## What it is, and why it isn't the Building Markup tab
 
-Residential Mark Up and Road Markup are a Google **Static Maps** PNG fetched server-side
+Building Markup and Road Markup are a Google **Static Maps** PNG fetched server-side
 with an SVG overlay drawn on top. There is no panning at all, and the zoom control
 re-fetches the image. That is the right architecture for what those tabs produce — a fixed,
 reproducible export that gets baked to PNG and pushed into Box — and the wrong one for

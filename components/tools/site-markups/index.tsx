@@ -7,8 +7,13 @@ import { RoadMarkupTab } from "./road-tab";
 import { ResidentialMarkupTab } from "./residential-tab";
 import { MeasureTab } from "./measure-tab";
 
+// ⚠️ The LABEL and the code name differ, deliberately. "Building Markup" is what staff
+// call it; the tab key, the component (ResidentialMarkupTab), the route
+// (/api/kml/standard-markup) and the lib folder all still say residential/standard-markup.
+// Renaming those would touch a live API route and every import for a caption change, so
+// the label is the only thing that moved. Don't "fix" one half of it.
 const TABS = [
-  { key: "residential", label: "Residential Mark Up" },
+  { key: "residential", label: "Building Markup" },
   { key: "road", label: "Road Markup" },
   { key: "measure", label: "Measure" },
 ] as const;

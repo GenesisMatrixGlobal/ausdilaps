@@ -127,6 +127,9 @@ async function upsertItem(db: Db, item: RawItem, runId: string): Promise<{ id: s
       published_at: item.publishedAt ?? "",
       closes_at: item.closesAt ?? "",
       excerpt: item.excerpt ?? "",
+      site_location: item.siteLocation ?? "",
+      contact: item.contact ?? "",
+      mailbox_url: item.mailboxUrl ?? "",
       email_message_id: item.emailMessageId ?? "",
       email_from: item.emailFrom ?? "",
       auth_results: item.authResults ?? "",
@@ -386,7 +389,7 @@ export async function runScan(
   const budgetLeft = Math.min(MAX_CLASSIFY_PER_RUN, DAILY_CLASSIFY_BUDGET - spent);
   const { data: pending } = await db
     .from("tender_items")
-    .select("id, source_slug, external_ref, title, excerpt, url, agency, email_from, published_at, classify_attempts")
+    .select("id, source_slug, external_ref, title, excerpt, url, agency, site_location, email_from, published_at, classify_attempts")
     .eq("relevance", "pending")
     .lt("classify_attempts", MAX_CLASSIFY_ATTEMPTS)
     .order("created_at", { ascending: true })
@@ -469,6 +472,13 @@ export async function runScan(
         title: outcome.extracted.title || row.title,
         agency: outcome.extracted.agency ?? row.agency,
         jurisdiction: outcome.extracted.jurisdiction,
+        // `?? row.site_location`, NOT an unconditional assignment.
+        //
+        // The extractors read a labelled location straight from TenderSearch and Felix, and
+        // that is better data than the model's reading of the same text. Overwriting it with
+        // a model null — which is what `jurisdiction` on the line above does — would blank a
+        // good value every time the classifier ran. Follow `agency`, not `jurisdiction`.
+        site_location: outcome.extracted.location ?? row.site_location,
         closes_at: outcome.extracted.closesAt,
       })
       .eq("id", row.id);

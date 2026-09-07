@@ -77,6 +77,8 @@ type ItemView = {
   id: string;
   title: string;
   agency: string | null;
+  siteLocation: string | null;
+  contact: string | null;
   jurisdiction: string | null;
   url: string | null;
   closesAt: string | null;
@@ -115,6 +117,15 @@ export type GroupView = {
   members: ItemView[];
   /** Every place it arrived from, deduped, most confident first. */
   sources: { label: string; url: string | null }[];
+  /**
+   * Best value across the whole group, not just the lead.
+   *
+   * A reminder often omits the location the original notice carried, and the copy that leads
+   * (highest confidence) is not necessarily the most complete one. The send route resolves
+   * these the same way — the screen and the email must not disagree about an address.
+   */
+  siteLocation: string | null;
+  contact: string | null;
 };
 
 type RunView = {
@@ -164,7 +175,7 @@ async function query(isAdmin: boolean) {
     db
       .from("tender_items")
       .select(
-        "id, title, agency, jurisdiction, url, closes_at, source_slug, relevance, confidence, services, model_summary, model_reasoning, classified_by, classified_at, model, status, reviewed_at, sender_trusted, injection_suspected, forwarded_at, created_at"
+        "id, title, agency, site_location, contact, jurisdiction, url, closes_at, source_slug, relevance, confidence, services, model_summary, model_reasoning, classified_by, classified_at, model, status, reviewed_at, sender_trusted, injection_suspected, forwarded_at, created_at"
       )
       .gte("created_at", since)
       .order("created_at", { ascending: false })
@@ -290,6 +301,8 @@ async function query(isAdmin: boolean) {
     id: i.id as string,
     title: i.title as string,
     agency: (i.agency as string | null) ?? null,
+    siteLocation: (i.site_location as string | null) ?? null,
+    contact: (i.contact as string | null) ?? null,
     jurisdiction: (i.jurisdiction as string | null) ?? null,
     url: (i.url as string | null) ?? null,
     closesAt: (i.closes_at as string | null) ?? null,
@@ -382,10 +395,20 @@ function toGroupView(g: ItemGroup<ItemView>): GroupView {
     if (!bySource.has(m.source)) bySource.set(m.source, { label: m.source, url: m.url });
   }
 
+  const firstOf = (pick: (m: ItemView) => string | null): string | null => {
+    for (const m of g.members) {
+      const v = pick(m)?.trim();
+      if (v) return v;
+    }
+    return null;
+  };
+
   return {
     key: g.key,
     state: groupState(g.members),
     count: g.count,
+    siteLocation: firstOf((m) => m.siteLocation),
+    contact: firstOf((m) => m.contact),
     title: displayTitle({ title: g.lead.title, agency: g.lead.agency, summary: g.lead.summary }),
     lead: g.lead,
     members: g.members,

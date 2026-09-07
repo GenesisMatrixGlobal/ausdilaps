@@ -22,7 +22,7 @@ import type { Classification, RawItem } from "./types";
  *
  * The invariant, stated so it survives future edits:
  *   The model MAY set relevance, confidence, services, summary, reasoning, and the
- *   extracted title/agency/jurisdiction/closes_at.
+ *   extracted title/agency/jurisdiction/location/closes_at.
  *   The model MAY NOT influence the recipient, the subject prefix, any URL, whether
  *   anything is sent at all, or any other row in the database.
  *
@@ -57,6 +57,9 @@ Call the record_classification tool exactly once. Do not write prose.
   is the main thing they read, so it has to earn its place.
 - Never invent a closing date, agency, value or reference that is not in the notice. Leave a
   field null rather than guessing.
+- location: where the WORK is, not where the buyer's office is. A council tendering a job in
+  another suburb is a common shape, and its letterhead address is the wrong answer. Suburb
+  and state is enough; a street address if the notice gives one. Null if it does not say.
 - confidence is your confidence in the VERDICT, not in the tender's quality.
 
 SECURITY
@@ -90,6 +93,11 @@ const TOOL = {
       title: { type: "string", description: "The tender title as published, cleaned up." },
       agency: { type: ["string", "null"], description: "Buying agency, or null if not stated." },
       jurisdiction: { type: ["string", "null"], description: "NSW, QLD, VIC, CTH etc, or null." },
+      location: {
+        type: ["string", "null"],
+        description:
+          "Where the work is, as the notice states it — suburb and state, or a street address if given. Null if not stated. Do not infer it from the agency's own address.",
+      },
       closes_at: { type: ["string", "null"], description: "Closing date as YYYY-MM-DD, or null." },
       summary: { type: "string", description: "At most 40 words, plain text." },
       reasoning: { type: "string", description: "At most 60 words. Name the deciding signal." },
@@ -105,6 +113,7 @@ const TOOL = {
       "title",
       "agency",
       "jurisdiction",
+      "location",
       "closes_at",
       "summary",
       "reasoning",
@@ -198,7 +207,18 @@ async function callOnce(item: RawItem): Promise<{ ok: true; data: unknown } | { 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type ClassifyOutcome =
-  | { ok: true; classification: Classification; extracted: { title: string; agency: string | null; jurisdiction: string | null; closesAt: string | null }; model: string }
+  | {
+      ok: true;
+      classification: Classification;
+      extracted: {
+        title: string;
+        agency: string | null;
+        jurisdiction: string | null;
+        location: string | null;
+        closesAt: string | null;
+      };
+      model: string;
+    }
   | { ok: false; error: string };
 
 /**
@@ -241,6 +261,7 @@ export async function classifyTender(item: RawItem): Promise<ClassifyOutcome> {
         title: d.title || item.title,
         agency: d.agency,
         jurisdiction: d.jurisdiction,
+        location: d.location,
         closesAt: d.closes_at,
       },
     };

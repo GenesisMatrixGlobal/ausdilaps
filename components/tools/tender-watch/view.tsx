@@ -736,6 +736,12 @@ function GroupCard({
 
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ad-muted">
             {lead.agency && <span>{lead.agency}</span>}
+            {group.siteLocation && (
+              <>
+                {lead.agency && <span className="opacity-40">·</span>}
+                <span>{group.siteLocation}</span>
+              </>
+            )}
             {closes && (
               <>
                 <span className="opacity-40">·</span>
@@ -746,13 +752,25 @@ function GroupCard({
             )}
             {/* Hostname in plain text: escaping an href stops injection, it does not stop
                 navigation. A human should see where a link goes before they click it. */}
-            {host && (
+            {host ? (
               <>
                 <span className="opacity-40">·</span>
                 <span className="font-mono text-[0.7rem]">{host}</span>
               </>
+            ) : (
+              <>
+                <span className="opacity-40">·</span>
+                {/* No portal: the only URL we hold is a deep link into the tenders@ mailbox,
+                    which nobody else can open. Say so rather than offering it. */}
+                <span className="italic">invitation by email</span>
+              </>
             )}
           </div>
+          {group.contact && (
+            <p className="mt-1 text-xs text-ad-muted">
+              <span className="font-medium text-ad-ink">Contact:</span> {group.contact}
+            </p>
+          )}
 
           {(lead.services.length > 0 || !isMatch || group.members.some((m) => m.injectionSuspected)) && (
             <div className="mt-2 flex flex-wrap gap-1.5">

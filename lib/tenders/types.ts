@@ -18,6 +18,18 @@ export type RawItem = {
   /** Plain text, already tag-stripped and capped — exactly what the classifier will see. */
   excerpt: string;
   contentHash?: string | null;
+  /** Where the work is, as the notice states it. A display string, not a geocoding input. */
+  siteLocation?: string | null;
+  /** Who to submit to — a named person where the source gives one, else the buying body. */
+  contact?: string | null;
+  /**
+   * A link only WE can open — Graph's webLink into the tenders@ mailbox.
+   *
+   * Kept out of `url` so that `url` means exactly one thing: a link the recipient of a
+   * handoff email can follow. The OWA deep link used to live in `url`, which had the email
+   * offering staff a link into a mailbox they have no access to.
+   */
+  mailboxUrl?: string | null;
   // email sources only
   emailMessageId?: string | null;
   emailFrom?: string | null;

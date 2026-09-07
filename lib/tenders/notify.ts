@@ -41,6 +41,8 @@ export type HandoffItem = {
   ids: string[];
   title: string;
   agency: string | null;
+  siteLocation: string | null;
+  contact: string | null;
   closesAt: string | null;
   relevance: "match" | "maybe";
   confidence: number | null;
@@ -120,15 +122,42 @@ function renderItem(item: HandoffItem, index: number): string {
     ? `<a href="${link.href}" style="color:${BRAND.steel};text-decoration:none">${safeText(item.title, 200)}</a>`
     : safeText(item.title, 200);
 
-  const facts = [
-    item.agency ? safeText(item.agency, 120) : null,
-    closes
-      ? `<span style="color:${urgent ? BRAND.orange : BRAND.muted};font-weight:${urgent ? 600 : 400}">${safeText(closes, 60)}</span>`
-      : null,
-    link ? `<span style="font-family:monospace;font-size:11px">${link.host}</span>` : null,
-  ]
-    .filter(Boolean)
-    .join(" &middot; ");
+  // One fact per LINE, not a single ` · `-joined run.
+  //
+  // This email is now the whole job — read it, create the Salesforce record, done — so it is
+  // read as a form to copy from rather than a headline to skim. A joined run of
+  // "agency · location · closes · host" is fine when the reader is only deciding whether to
+  // click through, and useless when they are transcribing four fields out of it.
+  const rows: [string, string][] = [];
+  if (item.agency) rows.push(["Client", safeText(item.agency, 160)]);
+  if (item.siteLocation) rows.push(["Address", safeText(item.siteLocation, 200)]);
+  if (closes)
+    rows.push([
+      "Closes",
+      `<span style="color:${urgent ? BRAND.orange : BRAND.ink};font-weight:${urgent ? 600 : 400}">${safeText(closes, 60)}</span>`,
+    ]);
+  if (item.contact) rows.push(["Contact", safeText(item.contact, 200)]);
+  rows.push([
+    "Portal",
+    link
+      ? // The hostname in plain text beside the link: escaping an href stops injection, it
+        // does not stop navigation, and a reader should see where a link goes before
+        // clicking. Same reasoning as the tool's own rows.
+        `<a href="${link.href}" style="color:${BRAND.steel}">Open the notice</a> <span style="font-family:monospace;font-size:11px;color:${BRAND.muted}">${link.host}</span>`
+      : // No link, and none invented. A direct email invitation genuinely has no portal —
+        // the only URL we hold is Graph's deep link into the tenders@ mailbox, which nobody
+        // else can open. Saying so, and naming who sent it, is the useful answer.
+        `<span style="color:${BRAND.muted}">Invitation by email${item.contact ? ` — reply to ${safeText(item.contact, 120)}` : ""}</span>`,
+  ]);
+
+  const factRows = rows
+    .map(
+      ([label, value]) => `<tr>
+        <td style="padding:2px 10px 2px 0;font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:${BRAND.muted};white-space:nowrap;vertical-align:top">${label}</td>
+        <td style="padding:2px 0;font-size:13px;color:${BRAND.ink}">${value}</td>
+      </tr>`
+    )
+    .join("");
 
   const badges = [
     item.relevance === "maybe" ? "Was flagged for review" : null,
@@ -158,7 +187,7 @@ function renderItem(item: HandoffItem, index: number): string {
       <div style="font-size:15px;font-weight:600;color:${BRAND.ink};margin-bottom:4px">
         <span style="color:${BRAND.muted};font-weight:400">${index + 1}.</span> ${heading}
       </div>
-      <div style="font-size:12px;color:${BRAND.muted};margin-bottom:8px">${facts}</div>
+      <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 10px">${factRows}</table>
       ${badges ? `<div style="margin-bottom:8px">${badges}</div>` : ""}
       <div style="font-size:13px;color:${BRAND.ink}">${safeText(item.summary, 400)}</div>
       ${services ? `<div style="font-size:11px;color:${BRAND.muted};margin-top:8px">${safeText(services, 120)}</div>` : ""}
@@ -173,7 +202,7 @@ export function renderHandoff(opts: {
   sentBy?: string | null;
 }): { subject: string; html: string } {
   const n = opts.items.length;
-  const headline = `${n} opportunit${n === 1 ? "y" : "ies"} to add to the portal`;
+  const headline = `${n} opportunit${n === 1 ? "y" : "ies"} to convert inside Salesforce`;
 
   // Soonest deadline first. A dated tender always outranks an undated one, whatever its
   // confidence — the thing that makes an opportunity urgent is the clock, not the model.
@@ -207,17 +236,14 @@ export function renderHandoff(opts: {
     <tr><td style="background:${BRAND.navyDeep};padding:20px 22px">
       <div style="font-size:11px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase;color:${BRAND.steelLight};margin-bottom:5px">Tender Watch &middot; ${today}</div>
       <div style="font-size:18px;font-weight:600;color:#ffffff">${headline}</div>
-      <div style="font-size:12px;color:rgba(255,255,255,.7);margin-top:6px">Checked against our services and confirmed by a person. Listed with the soonest deadline first.</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.7);margin-top:6px">Everything needed to raise each one is below — soonest deadline first. No need to open Tender Watch.</div>
     </td></tr>
     <tr><td style="padding:20px 22px">
       ${note}
       ${items.map(renderItem).join("")}
-      <div style="text-align:center;margin:18px 0 4px">
-        <a href="${siteUrl()}/staff/accounts/tools/tender-watch" style="display:inline-block;background:${BRAND.orange};color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:11px 24px;border-radius:7px">Open Tender Watch</a>
-      </div>
     </td></tr>
     <tr><td style="padding:16px 22px;border-top:1px solid ${BRAND.border};background:${BRAND.surface};font-size:11px;color:${BRAND.muted}">
-      ${attribution}<br>AusDilaps &middot; Specialist Building Inspections
+      ${attribution} <a href="${siteUrl()}/staff/accounts/tools/tender-watch" style="color:${BRAND.muted}">Open Tender Watch</a><br>AusDilaps &middot; Specialist Building Inspections
     </td></tr>
   </table>
 </body></html>`;

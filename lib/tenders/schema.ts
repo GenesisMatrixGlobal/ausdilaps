@@ -23,6 +23,14 @@ export const classificationSchema = z.object({
   title: z.string().trim().max(300).catch(""),
   agency: z.string().trim().max(200).nullable().catch(null),
   jurisdiction: z.string().trim().max(60).nullable().catch(null),
+  /**
+   * Where the work is, in the notice's own words.
+   *
+   * Only the free-prose email invitations need this from the model — TenderSearch and Felix
+   * label their location and it is read deterministically in sources/extract/. So this is
+   * the model's answer for a handful of items a fortnight, on a call already being made.
+   */
+  location: z.string().trim().max(200).nullable().catch(null),
   closes_at: z
     .string()
     .trim()

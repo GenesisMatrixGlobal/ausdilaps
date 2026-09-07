@@ -23,6 +23,10 @@
 import { parseMessages, type GraphMessage, type EmailSource } from "../lib/tenders/sources/mailbox";
 import { detectParseMode, contentLinks, senderDomain, slugForDomain } from "../lib/tenders/senders";
 import { displayTitle, groupItems, groupKey } from "../lib/tenders/group";
+import { extractNotices, extractorFor } from "../lib/tenders/sources/extract";
+import type { ExtractSource } from "../lib/tenders/sources/extract/types";
+import { parseDayMonthYear } from "../lib/tenders/sources/extract/date";
+import { readFileSync } from "node:fs";
 
 let fails = 0;
 const ok = (l: string, c: boolean, extra = "") => {
@@ -202,6 +206,83 @@ ok("a URL title never reaches the screen",
      .startsWith("http"));
 ok("...and a real title passes through untouched",
    displayTitle({ title: "Muswellbrook Bypass - Dilapidation Survey" }) === "Muswellbrook Bypass - Dilapidation Survey");
+
+// ── Per-sender extraction ──────────────────────────────────────────────────────
+//
+// Fixtures are the REAL bulletins, lifted from tender_scan_runs.raw_payload with the
+// subscriber tracking tokens redacted (the URL shape is preserved, so extraction is still
+// exercised). This is the corpus the extractors were written against, and the reason a
+// format change shows up here as a failing count rather than in production as silence.
+const FIXTURES: ExtractSource[] = JSON.parse(
+  readFileSync("lib/tenders/sources/extract/__fixtures__/messages.json", "utf8")
+);
+const domainOf = (m: ExtractSource) => (m.from ?? "").split("@").pop() ?? null;
+const run = (m: ExtractSource) => extractNotices(m, domainOf(m));
+
+ok("an extractor is registered for tendersearch and felix",
+   !!extractorFor("tendersearch.com.au") && !!extractorFor("felix.net"));
+ok("...and a subdomain resolves too", !!extractorFor("mail.felix.net"));
+ok("...and an unknown portal has none, so it takes the generic path",
+   extractorFor("buy.nsw.gov.au") === null);
+
+const tsMsgs = FIXTURES.filter((m) => (m.from ?? "").includes("tendersearch"));
+const tsNotices = tsMsgs.flatMap((m) => run(m) ?? []);
+ok("5 TenderSearch bulletins yield 47 notices", tsNotices.length === 47, `${tsNotices.length}`);
+ok("every notice has its own TS reference",
+   new Set(tsNotices.map((n) => n.externalRef)).size === tsNotices.length);
+
+// THE BUG. Every item in a bulletin used to carry the whole bulletin as its excerpt, so the
+// classifier could not tell which of 14 notices it was judging. If this ever passes again
+// with a shared excerpt, the titles go back to being tracking URLs.
+ok("no two notices share an excerpt",
+   new Set(tsNotices.map((n) => n.excerpt)).size === tsNotices.length,
+   `${new Set(tsNotices.map((n) => n.excerpt)).size} distinct of ${tsNotices.length}`);
+ok("no notice is titled with a URL", tsNotices.every((n) => !/^https?:/i.test(n.title)));
+ok("every notice has a closing date", tsNotices.every((n) => !!n.closesAt));
+ok("...parsed day-first", tsNotices.every((n) => /^\d{4}-\d{2}-\d{2}$/.test(n.closesAt!)));
+ok("most notices have a location", tsNotices.filter((n) => n.siteLocation).length >= 30,
+   `${tsNotices.filter((n) => n.siteLocation).length}/47`);
+ok("TenderSearch's own 'NOT STATED' placeholder is not stored as an address",
+   tsNotices.every((n) => !/not stated|as stated/i.test(n.siteLocation ?? "")));
+ok("every notice names a contact", tsNotices.every((n) => !!n.contact));
+ok("...with the 'GovDept' prefix stripped",
+   tsNotices.every((n) => !/^GovDept/i.test(n.contact ?? "")));
+ok("...and not running on into the contract number",
+   tsNotices.every((n) => !/Contract No/i.test(n.contact ?? "")));
+
+const fxMsgs = FIXTURES.filter((m) => (m.from ?? "").includes("felix"));
+const fxNotices = fxMsgs.flatMap((m) => run(m) ?? []);
+ok("6 Felix messages yield 5 notices (the guest-access notice is not a tender)",
+   fxNotices.length === 5, `${fxNotices.length}`);
+// 5 notices, 3 references: the new-RFQ email and BOTH reminders for #126379 resolve to
+// `felix:126379`, so the unique index on (source_slug, external_ref) collapses all three
+// into one row. Previously each reminder carried a fresh tracking URL, keyed differently,
+// and arrived as another opportunity — which is what group.ts had to approximate around.
+ok("the three messages about request #126379 share one reference",
+   new Set(fxNotices.map((n) => n.externalRef)).size === 3,
+   `${new Set(fxNotices.map((n) => n.externalRef)).size} distinct of ${fxNotices.length}`);
+ok("...and it is the request number, not a hash of a link",
+   fxNotices.filter((n) => n.externalRef === "felix:126379").length === 3);
+ok("a named person is captured as the contact where Felix gives one",
+   fxNotices.some((n) => n.contact === "Justin Van Niekerk"));
+ok("the client is captured, not a sentence fragment",
+   fxNotices.some((n) => n.agency === "Seymour Whyte") && fxNotices.some((n) => n.agency === "Fulton Hogan"),
+   fxNotices.map((n) => n.agency).join(" | "));
+ok("the guest-access notice returns null and falls back",
+   run(fxMsgs.find((m) => /Guest user/i.test(m.subject ?? ""))!) === null);
+ok("a Felix location is captured", fxNotices.filter((n) => n.siteLocation).length >= 3);
+
+// Dates: day-first, and never a guess.
+for (const [raw, expect] of [
+  ["07-Oct-2026 04:00 PM", "2026-10-07"],
+  ["14 September 2026", "2026-09-14"],
+  ["09-Sep-2026 05:00 PM", "2026-09-09"],
+  ["not a date", null],
+  ["32-Oct-2026", null],
+  ["07-Xxx-2026", null],
+] as [string, string | null][]) {
+  ok(`date ${raw.padEnd(22)} -> ${expect}`, parseDayMonthYear(raw) === expect, String(parseDayMonthYear(raw)));
+}
 
 console.log(fails === 0 ? "\nAll passed." : `\n${fails} FAILED`);
 process.exit(fails === 0 ? 0 : 1);

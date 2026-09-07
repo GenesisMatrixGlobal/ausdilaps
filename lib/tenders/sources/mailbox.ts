@@ -9,6 +9,7 @@ import {
   slugForDomain,
   type ParseMode,
 } from "../senders";
+import { extractNotices } from "./extract";
 import type { FetchResult, RawItem, SourceDefinition } from "../types";
 
 /**
@@ -276,7 +277,12 @@ function singleItem(
     sourceSlug: source.slug,
     externalRef: externalRefForMessage(message.internetMessageId ?? message.id),
     title,
-    url: message.webLink ?? null,
+    // NOT message.webLink. Graph hands back an OWA deep link into the tenders@ mailbox,
+    // which nobody outside that mailbox can open — and it is a valid https URL, so it sailed
+    // through safeExternalUrl() and the handoff email offered staff a link that 403s. `url`
+    // now means "a link the recipient can follow", and this has no such link.
+    url: null,
+    mailboxUrl: message.webLink ?? null,
     agency: source.senderDomain,
     publishedAt: message.receivedDateTime ?? null,
     closesAt: null,
@@ -305,6 +311,46 @@ function messagesFor(messages: GraphMessage[], source: EmailSource): GraphMessag
  */
 export function parseMessages(messages: GraphMessage[], source: EmailSource): RawItem[] {
   return messagesFor(messages, source).flatMap((message) => {
+    // A per-sender extractor first, where one exists. It reads the labelled fields the
+    // portal already sends — project name, location, closing date, contact, portal link —
+    // which is both free and more accurate than inferring them, and it splits a bulletin on
+    // its own structure instead of on links. See ../extract for why that matters.
+    //
+    // Returns null for anything it does not recognise, so a format change degrades to the
+    // generic path below rather than dropping the night's tenders.
+    const extracted = extractNotices(
+      {
+        from: fromAddress(message),
+        subject: message.subject ?? null,
+        html: htmlBody(message),
+        receivedDateTime: message.receivedDateTime ?? null,
+        hasAttachments: message.hasAttachments,
+      },
+      source.senderDomain
+    );
+
+    if (extracted) {
+      return extracted.map((n) => ({
+        sourceSlug: source.slug,
+        externalRef: n.externalRef,
+        title: n.title,
+        url: n.url,
+        agency: n.agency,
+        publishedAt: message.receivedDateTime ?? null,
+        closesAt: n.closesAt,
+        excerpt: n.excerpt,
+        siteLocation: n.siteLocation,
+        contact: n.contact,
+        // Identity comes from the source's own reference now, so the hash is over the fields
+        // that actually change when a notice is amended.
+        contentHash: contentHash({ title: n.title, agency: n.agency, closesAt: n.closesAt }),
+        mailboxUrl: message.webLink ?? null,
+        emailMessageId: message.internetMessageId ?? message.id,
+        emailFrom: fromAddress(message),
+        senderTrusted: source.isTrusted,
+      })) satisfies RawItem[];
+    }
+
     const mode = resolveParseMode(source.parseMode, htmlBody(message), source.senderDomain);
     if (mode === "digest") return parseDigest(message, source);
 

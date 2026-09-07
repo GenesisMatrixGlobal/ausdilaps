@@ -182,27 +182,62 @@ fact the classifier writes, rather than a tally kept beside it.
 
 Roughly **$25–35/month** at 30–50 items a day on `claude-opus-5`, before the prefilter. `TENDER_CLASSIFY_MODEL` is the lever if that ever matters.
 
-### Known: TenderSearch bulletins parse as N copies of the whole digest
+### Per-sender extraction — `lib/tenders/sources/extract/`
 
-`tendersearch.com.au` is the highest-volume source and its daily bulletin is currently
-parsed wrong. Each of the ~14 links in it becomes an item whose `excerpt` is the **entire
-bulletin**, not the notice beside that link. Three consequences:
+The generic parser splits a message on its anchor links and gives every item the WHOLE email
+body as its excerpt. Fine for one tender per email. Destructive for a daily bulletin:
 
-1. **Titles are tracking URLs.** The classifier is handed a body containing fourteen notices,
-   correctly declines to name "the" tender, returns an empty title, and `scan.ts` falls back
-   to the parsed anchor text — which for this sender is the href.
-2. **The same bulletin is classified up to fourteen times**, at Opus rates, each pass picking
-   a different notice out of the same text. That is the single largest avoidable cost here.
-3. Some rows are summaries *of the bulletin* ("Bulletin of 14 notices") rather than a tender.
+- A TenderSearch bulletin of 14 notices became ~14 items that each carried all 14 notices.
+  The classifier could not name "the" tender, returned an empty title, and the stored title
+  fell back to the anchor href — a **tracking URL**.
+- It could not have worked anyway: within one bulletin the "Web Document Location" URL is
+  **identical for every notice**. There is no per-tender link to split on.
+- The same bulletin was classified up to 14 times, at Opus rates.
+- Felix was detected as a digest too (its body has several links), so one RFQ became several
+  items — which is why 8 rows existed for 4 real requests.
 
-Two read-time mitigations keep the tool usable, both in `lib/tenders/group.ts` and both
-clearly marked as workarounds: `displayTitle()` rebuilds a readable heading from the agency
-and summary, and `groupKey()` falls back to the agency when the title is a URL — without it
-one Queensland Health job showed as eleven separate cards.
+Both senders label everything we need, so extraction is **deterministic and free**:
 
-**The real fix is in `parseDigest()`**: split the bulletin into per-notice blocks and give
-each item only its own block as `excerpt`. That fixes titles, cost and accuracy at once.
-Needs a real `.eml` sample to build against.
+| | TenderSearch | Felix |
+|---|---|---|
+| Split on | `TS #<digits>`, once per notice | one request per email |
+| Project name | the line before the reference | `Title` |
+| Address | `Location:` | `Location:` |
+| Close date | `Closing Date:` | `Closing on` |
+| Contact | `Contact:` (the buying body) | `RFQ Owner` (**a named person**) |
+| Link | `Web Document Location:` | the "Respond to Request" anchor |
+| `external_ref` | `ts:967459` | `felix:127035` |
+
+⚠️ **Split TenderSearch on `TS #<digits>`, not on "Return to Top".** Checked against all five
+bulletins in the archive: "Return to Top" got four right and mis-split the fifth (13 blocks
+for 14 notices). The reference occurs exactly once per notice in all five — 47 in total.
+
+**The `external_ref` is the quiet win.** A real per-tender reference means the three messages
+about Felix request #126379 (the RFQ plus two reminders) collapse to one row on the unique
+index. Previously each reminder carried a fresh tracking URL, keyed differently, and arrived
+as another opportunity.
+
+**Every extractor returns `null` for anything it does not recognise, and never throws.** An
+extractor is regexes over someone else's HTML, and that HTML changes without notice. A format
+shift falls back to the generic parser — worse titles, shared excerpts — rather than losing
+the night's tenders. Discovery stays domain-generic: a new portal is still tracked and parsed
+the first night it emails, with no code change.
+
+Fixtures in `__fixtures__/messages.json` are the real bulletins from
+`tender_scan_runs.raw_payload`, with subscriber tracking tokens redacted (URL shape kept, so
+extraction is still exercised). `npm run check:tenders` pins the notice counts, so a format
+change fails a test instead of going quiet.
+
+### ⚠️ `url` is a link the RECIPIENT can follow
+
+`singleItem()` used to set `url = message.webLink`, which Graph returns as an OWA deep link
+into the `tenders@` mailbox. Valid https, so it passed `safeExternalUrl()`, and the handoff
+email offered staff a link into a mailbox they have no access to — on 6 of 41 rows, including
+the highest-confidence match in the queue.
+
+That link now lives in **`mailbox_url`** and `url` stays null when there is no portal. A
+direct email invitation renders "Invitation by email — reply to <sender>", which is the
+truth. Never put a link only we can open into `url`.
 
 ---
 

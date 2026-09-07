@@ -48,6 +48,37 @@ const Body = z.object({
   toSelf: z.boolean().optional(),
 });
 
+/** The first non-empty value across a group's members, most confident copy first. */
+function firstOf<T>(members: T[], pick: (m: T) => string | null | undefined): string | null {
+  for (const m of members) {
+    const v = pick(m)?.trim();
+    if (v) return v;
+  }
+  return null;
+}
+
+/**
+ * The sending address, but only when it is a person.
+ *
+ * The fallback contact for a direct email invitation is whoever emailed us — that IS the
+ * submission contact. It is worthless for the aggregators, whose mail comes from
+ * `email@tendersearch.com.au` and `no-reply@felix.net`, and actively misleading for our own
+ * staff forwarding something on: "contact kylie.c@ausdilaps.com.au" tells the reader to ring
+ * a colleague about a tender she also just received.
+ */
+const ROBOT_SENDER = /^(no-?reply|do-?not-?reply|noreply|email|alerts?|notifications?|info|support|admin)@/i;
+
+function senderContact<T extends { row: Record<string, unknown> }>(members: T[]): string | null {
+  for (const m of members) {
+    const from = (m.row.email_from as string | null)?.trim();
+    if (!from) continue;
+    if (ROBOT_SENDER.test(from)) continue;
+    if (/@ausdilaps\.com\.au$/i.test(from)) continue;
+    return from;
+  }
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   const user = await getStaffUser();
 
@@ -81,7 +112,7 @@ export async function POST(req: NextRequest) {
     const { data: rows, error } = await db
       .from("tender_items")
       .select(
-        "id, title, agency, url, closes_at, relevance, confidence, services, model_summary, source_slug, sender_trusted, injection_suspected, forwarded_at, status"
+        "id, title, agency, site_location, contact, url, closes_at, relevance, confidence, services, model_summary, source_slug, sender_trusted, injection_suspected, forwarded_at, status"
       )
       .in("id", itemIds)
       .in("relevance", ["match", "maybe"]);
@@ -153,6 +184,11 @@ export async function POST(req: NextRequest) {
           summary: g.lead.row.model_summary as string | null,
         }),
         agency: g.lead.agency,
+        // Read off the lead, but fall back across the group: a reminder often omits the
+        // location the original notice carried, and whichever copy leads is not necessarily
+        // the most complete one.
+        siteLocation: firstOf(g.members, (m) => m.row.site_location as string | null),
+        contact: firstOf(g.members, (m) => m.row.contact as string | null) ?? senderContact(g.members),
         closesAt: g.lead.closesAt,
         // A group is only "review" if EVERY copy was a maybe — one confident match in the
         // set means the job is a match, whatever the weaker duplicates said.

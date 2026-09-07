@@ -30,6 +30,7 @@ Residential exported markup agree on the same outline.
 |---|---|
 | Place a point | Click the map. Nothing selected starts a new measurement; something selected extends it. |
 | Move a point | Drag it. The area updates continuously, not on release. |
+| Zoom | Normal Google behaviour — fractional, so the wheel is smooth rather than jumping a whole 2x level per notch. |
 | Insert a point | Drag the faint midpoint handle between two points. |
 | Delete a point | Right-click it. |
 | Finish a shape | `Esc`, or click the selected row in the panel. The next map click starts a new measurement. |
@@ -150,17 +151,22 @@ Consequences worth knowing:
 - **Numbered badges are baked in.** The Building Markup tab deliberately strips its numbered
   pins from the client download; here the numbers are the legend's key, so without them the
   legend is a list of anonymous areas.
-- **Shapes export in one flat orange.** The live map's steel/orange split means
-  selected-vs-not, which a still has no notion of. Orange is also what reads over grass,
-  bitumen and a tin roof alike.
+- **Shapes are one flat orange, on screen and in the export.** Selection used to swap a
+  shape to steel blue, which was too dark to pick out against imagery — the shapes you
+  weren't editing vanished into the photo. Selection is signalled instead by the things that
+  actually mean editable: Google's vertex handles (only the selected overlay is `editable`,
+  so its dots are the only ones on screen), a heavier stroke and the orange label.
 
 ### Traps specific to the export
 
-- **Static Maps caps `size` at 640 per axis; the live map is routinely 1100+ CSS px wide.**
-  Coverage at a zoom is a function of size in Static Maps "points", so `fitToViewport()`
-  drops a zoom level and halves the requested size until it fits — identical framing, half
-  the resolution — then `scale: 2` brings the pixel output back to roughly on-screen
-  dimensions.
+- **The export frames from `getBounds()`, never from centre+zoom.** The live map allows
+  FRACTIONAL zoom (17.5 is a real state) and Static Maps only accepts integers, so rounding
+  the zoom would move the frame by up to 40% of its area. `fitToBounds()` takes the largest
+  integer zoom at which the box still fits inside Static Maps' 640-per-axis cap and requests
+  exactly the size the box occupies there; `scale: 2` doubles the pixel output.
+- **`mercatorSpan()` computes the box centre in world-pixel space, not by averaging
+  latitudes.** Mercator is non-linear in latitude, so the mean of north and south is not the
+  centre of the frame, and using it shifts the export vertically against the live map.
 - **`latLngToPixel` works in LOGICAL pixels** — the pre-`scale` space Static Maps' own
   `size` describes. Feed it the scaled size and every badge lands at exactly half the right
   offset from centre, which looks like a plausible-but-wrong position rather than a bug.

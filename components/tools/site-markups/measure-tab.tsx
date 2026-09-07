@@ -69,8 +69,12 @@ export function MeasureTab({ active }: { active: boolean }) {
       const binary = atob(json.imageBase64);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      // Rough box centre is plenty for a filename.
+      const fallback = `${((camera.bounds.north + camera.bounds.south) / 2).toFixed(5)}-${(
+        (camera.bounds.east + camera.bounds.west) / 2
+      ).toFixed(5)}`;
       const slug =
-        (placeLabel ?? `${camera.center.lat.toFixed(5)}-${camera.center.lng.toFixed(5)}`)
+        (placeLabel ?? fallback)
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-+|-+$/g, "")
@@ -145,9 +149,13 @@ export function MeasureTab({ active }: { active: boolean }) {
 
   return (
     <div>
-      <div className="flex flex-wrap items-start gap-x-6 gap-y-3 rounded-xl border border-ad-border bg-white p-4">
+      {/* Just the field and the button. The how-to-draw block and the note under the
+          download button are gone on purpose — the gestures are discoverable by clicking
+          the map, the panel's empty state says so once, and a permanent instruction panel
+          was costing a third of the toolbar to say it a second time. */}
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-3 rounded-xl border border-ad-border bg-white p-4">
         <div className="min-w-[18rem] flex-1">
-          <label className="text-sm font-medium text-ad-ink">Go to</label>
+          <label className="block text-sm font-medium text-ad-ink">Go to</label>
           <AddressSearch
             onSelect={handleSelect}
             onPastedLocation={handlePaste}
@@ -156,37 +164,21 @@ export function MeasureTab({ active }: { active: boolean }) {
             requireAddress={false}
             placeholder="Address, suburb, or paste a Google Maps link…"
           />
-          <p className="mt-1.5 text-xs text-ad-muted">
-            Paste a link straight from the Google Maps address bar, a share link, or a{" "}
-            <span className="font-mono text-[0.7rem]">-27.4698, 153.0251</span> pair.
-          </p>
-          {note && <p className="mt-1 text-xs text-ad-orange">{note}</p>}
         </div>
-        <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={download}
-            disabled={exporting || drawn === 0}
-            title={drawn === 0 ? "Draw a measurement first" : "Download the map, shapes and areas as a PNG"}
-            className={cn(buttonVariants({ variant: "accent", size: "sm" }))}
-          >
-            {exporting ? "Rendering…" : "Download .png"}
-          </button>
-          <p className="max-w-[13rem] text-[0.7rem] leading-snug text-ad-muted">
-            Re-rendered server-side at the frame you&apos;re looking at, with a north arrow
-            and a legend of every area.
-          </p>
-        </div>
-        <div className="text-xs leading-relaxed text-ad-muted">
-          <p className="font-medium text-ad-ink">How to draw</p>
-          <p>Click the map to drop points · drag a point to move it</p>
-          <p>Drag a faint midpoint to insert · right-click a point to delete</p>
-          <p>
-            <kbd className="rounded border border-ad-border px-1">Esc</kbd> finishes the shape ·{" "}
-            <kbd className="rounded border border-ad-border px-1">⌫</kbd> undoes a point
-          </p>
-        </div>
+        {/* mt-6 clears the label line above the input, so the button's top edge lines up
+            with the input's rather than drifting every time AddressSearch shows its own
+            "Searching…" line underneath. */}
+        <button
+          type="button"
+          onClick={download}
+          disabled={exporting || drawn === 0}
+          title={drawn === 0 ? "Draw a measurement first" : "Download the map, shapes and areas as a PNG"}
+          className={cn(buttonVariants({ variant: "accent", size: "sm" }), "mt-6 shrink-0")}
+        >
+          {exporting ? "Rendering…" : "Download .png"}
+        </button>
       </div>
+      {note && <p className="mt-2 text-xs text-ad-orange">{note}</p>}
 
       {/* Tall and full width. 70vh keeps the toolbar above it on screen at the same time,
           and the map's own fullscreen button is there for when it isn't enough. */}

@@ -65,3 +65,40 @@ export function latLngToPixel(proj: PixelProjection, point: LatLng): { x: number
     y: (worldY - centerWorldY) * scale + (proj.imageHeightPx ?? proj.imageSizePx) / 2,
   };
 }
+
+export interface LatLngBox {
+  south: number;
+  west: number;
+  north: number;
+  east: number;
+}
+
+/**
+ * A box's Mercator span in world pixels (i.e. at zoom 0), plus its true centre.
+ *
+ * Multiply a span by `2 ** zoom` for the size in native pre-`scale` pixels that the box
+ * occupies at that zoom — which is how the Measure tab's PNG export picks a Static Maps
+ * `size` that frames exactly what was on screen, whatever fractional zoom the live map
+ * happened to be at.
+ *
+ * The centre is computed in world-pixel space, not by averaging latitudes: Mercator is
+ * non-linear in latitude, so the mean of north and south is NOT the centre of the frame,
+ * and using it shifts the export vertically against the live map.
+ */
+export function mercatorSpan(box: LatLngBox): { spanX: number; spanY: number; center: LatLng } {
+  const westX = lngToWorldX(box.west);
+  const eastX = lngToWorldX(box.east);
+  // A box straddling the antimeridian wraps; irrelevant in Australia, but cheap to be
+  // right about rather than returning a negative span.
+  const spanX = eastX >= westX ? eastX - westX : eastX + WORLD_PX - westX;
+  const northY = latToWorldY(box.north);
+  const southY = latToWorldY(box.south);
+  return {
+    spanX,
+    spanY: southY - northY,
+    center: {
+      lat: worldYToLat((northY + southY) / 2),
+      lng: worldXToLng((westX + spanX / 2) % WORLD_PX),
+    },
+  };
+}

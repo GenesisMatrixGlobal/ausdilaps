@@ -11,12 +11,17 @@ export const maxDuration = 30;
 const latLng = z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) });
 
 const bodySchema = z.object({
-  center: latLng,
-  zoom: z.number().int().min(1).max(21),
-  // Bounded so a hand-rolled request can't ask for an absurd frame; the renderer clamps
-  // to Google's 640-point cap regardless.
-  viewportWidth: z.number().min(100).max(6000),
-  viewportHeight: z.number().min(100).max(6000),
+  // The live map's viewport as a box. Not centre+zoom: the map allows fractional zoom and
+  // Static Maps only takes integers, so the renderer derives its own integer zoom and size
+  // from these bounds instead.
+  bounds: z
+    .object({
+      south: z.number().min(-90).max(90),
+      west: z.number().min(-180).max(180),
+      north: z.number().min(-90).max(90),
+      east: z.number().min(-180).max(180),
+    })
+    .refine((b) => b.north > b.south, { message: "Bounds are inverted." }),
   mapType: z.enum(["satellite", "hybrid", "roadmap"]),
   measurements: z
     .array(

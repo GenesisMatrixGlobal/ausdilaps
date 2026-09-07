@@ -18,7 +18,7 @@ import {
   ringFor,
   type Measurable,
 } from "@/lib/kml/standard-markup/measure";
-import { latLngToPixel } from "@/lib/kml/standard-markup/projection";
+import { latLngToPixel, mercatorSpan, type LatLngBox } from "@/lib/kml/standard-markup/projection";
 import {
   FILL_OPACITY_PERCENT,
   OUTLINE_WEIGHT,
@@ -32,6 +32,8 @@ export { GoogleMapsConfigError };
 
 /** Google's hard cap on either `size` dimension. */
 const MAX_STATIC_DIMENSION = 640;
+/** Past this, AU aerial imagery is upsampled — the same ceiling the live map uses. */
+const MAX_ZOOM = 21;
 
 /** One flat colour for every shape, unlike the live map's steel/orange selected split —
  *  an exported still has no notion of "selected", and orange is what reads over grass,
@@ -43,41 +45,34 @@ const MUTED = "5b6570"; // ad-muted
 const STEEL = "46688a"; // ad-steel
 
 export interface MeasureExportInput {
-  /** The live map's camera, so the export frames exactly what was on screen. */
-  center: LatLng;
-  zoom: number;
-  /** The live map's container size in CSS pixels — sets the export's aspect ratio. */
-  viewportWidth: number;
-  viewportHeight: number;
+  /** Exactly what the live map had on screen. Bounds rather than centre+zoom: the live map
+   *  allows FRACTIONAL zoom (17.5 is a real state) and Static Maps only accepts integers,
+   *  so rounding the zoom would shift the frame by up to 40% of its area. A box is
+   *  unambiguous at any zoom. */
+  bounds: LatLngBox;
   mapType: "satellite" | "hybrid" | "roadmap";
   measurements: (Measurable & { id: string })[];
 }
 
 /**
- * Picks a Static Maps size and zoom that cover the SAME ground as the on-screen map.
+ * Picks the Static Maps centre, integer zoom and size that frame exactly the given bounds.
  *
- * Coverage at a given zoom is a function of the image's size in Static Maps "points", and
- * those are capped at 640 — while the live map is routinely 1100+ CSS px wide. Dropping one
- * zoom level doubles the ground each point covers, so halving the requested size alongside
- * it leaves the framing identical. `scale: 2` then brings the actual pixel output back up,
- * so the file lands at roughly the on-screen dimensions.
+ * Coverage at a zoom is a function of the image's size in Static Maps "points", and those
+ * are capped at 640 per axis — while the live map is routinely 1100+ CSS px wide. So take
+ * the largest integer zoom at which the box still fits inside 640, and request precisely
+ * the size the box occupies at that zoom. `scale: 2` then doubles the pixel output, so the
+ * file lands near on-screen dimensions at half the ground resolution.
  */
-function fitToViewport(zoom: number, cssWidth: number, cssHeight: number) {
-  let z = zoom;
-  let width = cssWidth;
-  let height = cssHeight;
-  while ((width > MAX_STATIC_DIMENSION || height > MAX_STATIC_DIMENSION) && z > 1) {
-    z -= 1;
-    width /= 2;
-    height /= 2;
-  }
-  return {
-    zoom: z,
-    // Still clamped: an absurd viewport would otherwise 400 the Static Maps request after
-    // the loop runs out of zoom levels to give away.
-    width: Math.max(1, Math.min(MAX_STATIC_DIMENSION, Math.round(width))),
-    height: Math.max(1, Math.min(MAX_STATIC_DIMENSION, Math.round(height))),
-  };
+function fitToBounds(bounds: LatLngBox) {
+  const { spanX, spanY, center } = mercatorSpan(bounds);
+  const largest = Math.max(spanX, spanY);
+  const zoom = Math.max(
+    1,
+    Math.min(MAX_ZOOM, largest > 0 ? Math.floor(Math.log2(MAX_STATIC_DIMENSION / largest)) : MAX_ZOOM)
+  );
+  const at = 2 ** zoom;
+  const clamp = (n: number) => Math.max(1, Math.min(MAX_STATIC_DIMENSION, Math.round(n)));
+  return { center, zoom, width: clamp(spanX * at), height: clamp(spanY * at) };
 }
 
 /**
@@ -281,7 +276,7 @@ export interface MeasureExportResult {
 }
 
 export async function renderMeasureExport(input: MeasureExportInput): Promise<MeasureExportResult> {
-  const fitted = fitToViewport(input.zoom, input.viewportWidth, input.viewportHeight);
+  const fitted = fitToBounds(input.bounds);
 
   const drawable = input.measurements.filter((m) => m.points.length >= MIN_POINTS[m.mode]);
   const { rows, totalSqm } = rowsFor(input.measurements);
@@ -290,7 +285,7 @@ export async function renderMeasureExport(input: MeasureExportInput): Promise<Me
     mapType: input.mapType,
     // A pinned frame with no adjust — the export must show what was on screen, not refit
     // itself to the geometry.
-    frame: { center: input.center, fitZoom: fitted.zoom },
+    frame: { center: fitted.center, fitZoom: fitted.zoom },
     zoomAdjust: 0,
     size: { width: fitted.width, height: fitted.height },
     polygons: drawable.map((m) => ({
@@ -316,7 +311,7 @@ export async function renderMeasureExport(input: MeasureExportInput): Promise<Me
   const pxHeight = fitted.height * SCALE;
   const overlay = Buffer.from(
     `<svg width="${pxWidth}" height="${pxHeight}" xmlns="http://www.w3.org/2000/svg">
-    ${badgesSvg(input.measurements, input.center, fitted.zoom, fitted.width, fitted.height)}
+    ${badgesSvg(input.measurements, fitted.center, fitted.zoom, fitted.width, fitted.height)}
     ${rows.length > 0 ? legendSvg(rows, totalSqm, rows.length > 1) : ""}
     ${northArrowSvg(pxWidth)}
   </svg>`

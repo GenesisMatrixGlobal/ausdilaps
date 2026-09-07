@@ -35,25 +35,34 @@ import { MAX_POINTS, type MeasureState } from "./measure-shapes";
 export interface MapCommands {
   undoPoint: (id: string) => void;
   clearPoints: (id: string) => void;
-  /** The live camera, for the PNG export — the server re-renders this exact frame through
-   *  the Static Maps API, because Maps JS tiles are cross-origin and the live map's canvas
-   *  can never be read back. Null before the map exists. */
+  /** The live viewport, for the PNG export — the server re-renders this exact frame
+   *  through the Static Maps API, because Maps JS tiles are cross-origin and the live
+   *  map's canvas can never be read back.
+   *
+   *  Bounds rather than centre+zoom: the map allows FRACTIONAL zoom, and Static Maps only
+   *  accepts integers, so rounding would move the frame. Null until the map has settled
+   *  enough to report bounds. */
   getCamera: () => {
-    center: LatLng;
-    zoom: number;
+    bounds: { south: number; west: number; north: number; east: number };
     mapType: "satellite" | "hybrid" | "roadmap";
-    viewportWidth: number;
-    viewportHeight: number;
   } | null;
   /** Fly to a point, or fit a viewport. The only way the parent moves the camera. */
   goTo: (target: { lat: number; lng: number; zoom?: number | null }) => void;
   fit: (bounds: { south: number; west: number; north: number; east: number }) => void;
 }
 
-const IDLE = "#46688a";
-const ACTIVE = "#e8642a";
+/** ONE colour for every shape, selected or not.
+ *
+ *  Selection used to swap the shape to steel blue, which was too dark to pick out against
+ *  aerial imagery — the shapes you weren't editing effectively disappeared into the photo.
+ *  Selection is signalled by the things that actually mean "editable": Google's vertex
+ *  handles (only the selected overlay is `editable`, so its dots are the only ones on
+ *  screen), a heavier stroke, and the orange label. It also matches the exported PNG,
+ *  which has no notion of selection at all. */
+const SHAPE_COLOR = "#e8642a";
 /** Low on purpose — you're measuring the imagery, not admiring the fill. */
 const FILL_OPACITY = 0.18;
+const FILL_OPACITY_ACTIVE = 0.26;
 
 interface Handles {
   mode: ShapeMode;
@@ -108,7 +117,11 @@ function mapOptions(maps: typeof google.maps): google.maps.MapOptions {
     // Past 21 Australian aerial imagery is upsampled — you'd be measuring blur with false
     // precision.
     maxZoom: 21,
-    isFractionalZoomEnabled: false,
+    // Smooth zoom. A raster map defaults this to FALSE, which makes every wheel notch a
+    // whole level — a 2x jump, so one frame is too far out and the next is too far in with
+    // nothing usable between. Verified that RASTER honours it: setZoom(17.5) sticks.
+    // The PNG export is unaffected because it frames from getBounds(), not from the zoom.
+    isFractionalZoomEnabled: true,
 
     draggableCursor: "crosshair",
     draggingCursor: "grabbing",
@@ -286,10 +299,10 @@ export function MeasureMap({
               ...shared,
               paths: path,
               geodesic: false,
-              strokeColor: IDLE,
+              strokeColor: SHAPE_COLOR,
               strokeWeight: 2,
               strokeOpacity: 0.95,
-              fillColor: IDLE,
+              fillColor: SHAPE_COLOR,
               fillOpacity: FILL_OPACITY,
             })
           : new google.maps.Polyline({
@@ -299,7 +312,7 @@ export function MeasureMap({
               // Thin. This is the CENTRELINE — a construction line, not the measurement.
               // The ribbon below is the thing being measured, and a fat centreline reads
               // as a second, competing answer.
-              strokeColor: IDLE,
+              strokeColor: SHAPE_COLOR,
               strokeWeight: 2,
               strokeOpacity: 0.95,
             });
@@ -322,10 +335,10 @@ export function MeasureMap({
               // holds every Polygon and Polyline, so a vertex handle can't be occluded by
               // another shape's fill whatever the zIndex.
               zIndex: 10,
-              strokeColor: IDLE,
+              strokeColor: SHAPE_COLOR,
               strokeWeight: 2,
               strokeOpacity: 0.9,
-              fillColor: IDLE,
+              fillColor: SHAPE_COLOR,
               fillOpacity: FILL_OPACITY,
             })
           : null;
@@ -380,24 +393,23 @@ export function MeasureMap({
   );
 
   const applyStyle = useCallback((h: Handles, isActive: boolean) => {
-    const color = isActive ? ACTIVE : IDLE;
-    // Only the SELECTED measurement is editable, so a stray drag can't deform a finished
-    // one — and only one shape's worth of vertex handles is ever on screen.
+    // `editable` is the whole selection mechanic: Google draws vertex handles and midpoint
+    // ghosts only on an editable overlay, so deselecting a shape removes its dots and
+    // leaves the outline — and a stray drag can't deform a finished measurement. Colour
+    // deliberately does NOT change; see SHAPE_COLOR.
     if (h.mode === "area") {
       (h.editor as google.maps.Polygon).setOptions({
         editable: isActive,
-        strokeColor: color,
-        fillColor: color,
-        strokeWeight: isActive ? 3 : 2,
+        strokeWeight: isActive ? 3.5 : 2,
+        fillOpacity: isActive ? FILL_OPACITY_ACTIVE : FILL_OPACITY,
       });
     } else {
       (h.editor as google.maps.Polyline).setOptions({
         editable: isActive,
-        strokeColor: color,
-        strokeWeight: isActive ? 3 : 2,
+        strokeWeight: isActive ? 3.5 : 2,
       });
     }
-    h.ribbon?.setOptions({ strokeColor: color, fillColor: color });
+    h.ribbon?.setOptions({ fillOpacity: isActive ? FILL_OPACITY_ACTIVE : FILL_OPACITY });
     h.label.setActive(isActive);
   }, []);
 
@@ -545,22 +557,19 @@ export function MeasureMap({
       },
       getCamera: () => {
         if (!map) return null;
-        const centre = map.getCenter();
-        const zoom = map.getZoom();
-        if (!centre || zoom === undefined) return null;
-        const div = map.getDiv();
-        // Only the three the export can actually render. `terrain` isn't offered in the
-        // map-type control, but a URL or a future option could still set it.
+        // Undefined until the map's first idle, so an export fired the instant the tab
+        // opens reports "not ready" rather than exporting the wrong frame.
+        const b = map.getBounds();
+        if (!b) return null;
+        const ne = b.getNorthEast();
+        const sw = b.getSouthWest();
+        // Only the three the export can render. `terrain` isn't offered in the map-type
+        // control, but a URL or a future option could still set it.
         const raw = map.getMapTypeId();
         const mapType = raw === "satellite" || raw === "roadmap" ? raw : "hybrid";
         return {
-          center: { lat: centre.lat(), lng: centre.lng() },
-          // The map is isFractionalZoomEnabled:false, so this is already an integer —
-          // rounded anyway because Static Maps only accepts integers.
-          zoom: Math.round(zoom),
+          bounds: { south: sw.lat(), west: sw.lng(), north: ne.lat(), east: ne.lng() },
           mapType,
-          viewportWidth: div.clientWidth,
-          viewportHeight: div.clientHeight,
         };
       },
       goTo: ({ lat, lng, zoom }) => {

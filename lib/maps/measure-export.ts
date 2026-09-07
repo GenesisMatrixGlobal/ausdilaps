@@ -268,9 +268,15 @@ function rowsFor(measurements: (Measurable & { id: string })[]): { rows: Row[]; 
   return { rows, totalSqm };
 }
 
-const PANEL_PAD = 18;
-const ROW_HEIGHT = 30;
+const PANEL_PAD = 13;
+const ROW_HEIGHT = 26;
 const ROW_SIZE = 19;
+/** Number column to figures. */
+const NUM_GAP = 12;
+/** Figures to their unit. Tight — "16,474" and "m²" are one reading, not two columns. */
+const UNIT_GAP = 5;
+/** Breathing room above the total's hairline. */
+const TOTAL_GAP = 9;
 /** Badge radius in OUTPUT pixels. Small on purpose: at a wide zoom a 10m ribbon is barely
  *  2-3 output px across, so the badge is an order of magnitude wider than the thing it
  *  labels and any bigger simply erases it. */
@@ -280,70 +286,101 @@ const BADGE_R = 12;
 const BADGE_CLEARANCE = 4;
 /** Translucent, so whatever it lands on still reads through it. */
 const BADGE_FILL_OPACITY = 0.82;
-/** Between the number column and the area column. A readable separation and nothing more —
- *  see legendSvg() for why this alone didn't control the gap. */
-const GAP = 16;
 
+
+/** Splits "16,474 m²" into its figures and its unit, so the two can be aligned in separate
+ *  columns — right-aligning the whole string aligns the "m²" and leaves the digits ragged,
+ *  which is the wrong way round for a column of numbers. */
+function splitValue(value: string): { digits: string; unit: string } {
+  const at = value.lastIndexOf(" ");
+  return at < 0 ? { digits: value, unit: "" } : { digits: value.slice(0, at), unit: value.slice(at + 1) };
+}
+
+/**
+ * The legend: a three-column table — badge number, figures, unit.
+ *
+ * Numbers right-align to the label column's edge and figures right-align to their own, so
+ * the ones place lines up down the column and the units sit flush beside it. Everything is
+ * measured from real glyph widths rather than constants, so changing the copy can't silently
+ * clip it.
+ */
 function legendSvg(rows: Row[], totalSqm: number, showTotal: boolean): string {
   const x = 20;
   const y = 20;
   const totalLabel = "Total";
-  const totalValue = formatArea(totalSqm);
+  const parsed = rows.map((r) => ({ index: String(r.index), ...splitValue(r.value) }));
+  const total = splitValue(formatArea(totalSqm));
 
-  const values = rows.map((r) => r.value).concat(showTotal ? [totalValue] : []);
-  const valueColumn = Math.max(...values.map((v) => widthWithSuper(v, ROW_SIZE)));
-  // The widest number actually present, not a reserved "99" — with three measurements the
-  // column has no business being two digits wide.
-  const numberColumn = Math.max(...rows.map((r) => textWidth(String(r.index), ROW_SIZE)));
-  const labelColumn = Math.max(numberColumn, showTotal ? textWidth(totalLabel, ROW_SIZE) : 0);
+  const labelColumn = Math.max(
+    ...parsed.map((r) => textWidth(r.index, ROW_SIZE)),
+    showTotal ? textWidth(totalLabel, ROW_SIZE) : 0
+  );
+  const digitsColumn = Math.max(
+    ...parsed.map((r) => textWidth(r.digits, ROW_SIZE)),
+    showTotal ? textWidth(total.digits, ROW_SIZE) : 0
+  );
+  const unitColumn = Math.max(
+    ...parsed.map((r) => widthWithSuper(r.unit, ROW_SIZE)),
+    showTotal ? widthWithSuper(total.unit, ROW_SIZE) : 0
+  );
 
-  const contentWidth = labelColumn + GAP + valueColumn;
-  const bodyRows = rows.length + (showTotal ? 1 : 0);
+  const contentWidth = labelColumn + NUM_GAP + digitsColumn + UNIT_GAP + unitColumn;
   const width = PANEL_PAD * 2 + contentWidth;
-  const height = PANEL_PAD * 2 + bodyRows * ROW_HEIGHT - (ROW_HEIGHT - ROW_SIZE);
-  const right = x + width - PANEL_PAD;
-  // Numbers are RIGHT-aligned to the label column's edge, so the space between a number
-  // and its area is exactly GAP on every row. Left-aligning them instead put the gap at
-  // the mercy of the widest LEFT item: "Total" is 45px against a 10px "1", and with the
-  // areas right-aligned to the panel edge that difference showed up as 75px of dead space
-  // between "1" and its figure — on a panel 162px wide. Any empty space now sits to the
-  // LEFT of the numbers, where it reads as padding and the Total row fills it anyway.
-  const numberRight = x + PANEL_PAD + labelColumn;
+  const height =
+    PANEL_PAD * 2 + (rows.length - 1) * ROW_HEIGHT + ROW_SIZE + (showTotal ? ROW_HEIGHT + TOTAL_GAP : 0);
+
+  const labelRight = x + PANEL_PAD + labelColumn;
+  const digitsRight = labelRight + NUM_GAP + digitsColumn;
+  const unitLeft = digitsRight + UNIT_GAP;
+
+  const row = (
+    label: string,
+    labelFill: string,
+    digits: string,
+    unit: string,
+    valueFill: string,
+    baseline: number
+  ) =>
+    [
+      textToSvgPaths(label, {
+        x: labelRight - textWidth(label, ROW_SIZE),
+        y: baseline,
+        fontSize: ROW_SIZE,
+        fill: labelFill,
+      }),
+      textToSvgPaths(digits, {
+        x: digitsRight - textWidth(digits, ROW_SIZE),
+        y: baseline,
+        fontSize: ROW_SIZE,
+        fill: valueFill,
+      }),
+      textWithSuper(unit, unitLeft, baseline, ROW_SIZE, valueFill),
+    ].join("\n    ");
 
   const lines: string[] = [
-    `<rect x="${x}" y="${y}" width="${width.toFixed(1)}" height="${height.toFixed(1)}" rx="10" fill="white" fill-opacity="0.93" stroke="#cccccc" stroke-width="1.5" />`,
+    // Nearly opaque with a hairline: a washier panel disappears into bright imagery
+    // (concrete, sand) exactly where a site drawing tends to be.
+    `<rect x="${x}" y="${y}" width="${width.toFixed(1)}" height="${height.toFixed(1)}" rx="8" fill="white" fill-opacity="0.95" stroke="rgba(0,0,0,0.18)" stroke-width="1.2" />`,
   ];
 
-  let rowY = y + PANEL_PAD + ROW_SIZE;
-  for (const row of rows) {
-    const label = String(row.index);
-    lines.push(
-      textToSvgPaths(label, {
-        x: numberRight - textWidth(label, ROW_SIZE),
-        y: rowY,
-        fontSize: ROW_SIZE,
-        fill: SHAPE_COLOR,
-      }),
-      textWithSuper(row.value, right - widthWithSuper(row.value, ROW_SIZE), rowY, ROW_SIZE, INK)
-    );
-    rowY += ROW_HEIGHT;
+  let baseline = y + PANEL_PAD + ROW_SIZE;
+  for (const r of parsed) {
+    // The number is the only colour in here, because it is the one thing that has to be
+    // matched against the badge on the map.
+    lines.push(row(r.index, SHAPE_COLOR, r.digits, r.unit, INK, baseline));
+    baseline += ROW_HEIGHT;
   }
 
   if (showTotal) {
-    const ruleY = (rowY - ROW_SIZE - 8).toFixed(1);
+    baseline += TOTAL_GAP;
+    const ruleY = (baseline - ROW_SIZE - TOTAL_GAP + 1).toFixed(1);
     lines.push(
-      `<line x1="${x + PANEL_PAD}" y1="${ruleY}" x2="${right}" y2="${ruleY}" stroke="#dddddd" stroke-width="1.5" />`,
-      textToSvgPaths(totalLabel, {
-        x: numberRight - textWidth(totalLabel, ROW_SIZE),
-        y: rowY,
-        fontSize: ROW_SIZE,
-        fill: MUTED,
-      }),
-      textWithSuper(totalValue, right - widthWithSuper(totalValue, ROW_SIZE), rowY, ROW_SIZE, STEEL)
+      `<line x1="${x + PANEL_PAD}" y1="${ruleY}" x2="${(x + width - PANEL_PAD).toFixed(1)}" y2="${ruleY}" stroke="rgba(0,0,0,0.14)" stroke-width="1" />`,
+      row(totalLabel, MUTED, total.digits, total.unit, INK, baseline)
     );
   }
 
-  return lines.filter(Boolean).join("\n    ");
+  return lines.join("\n    ");
 }
 
 /** Top-right compass. Static Maps is always rendered north-up here — no `heading` is ever

@@ -228,6 +228,11 @@ Consequences worth knowing:
 - **The glyph atlas is printable ASCII only** (`lib/kml/overlay/glyph-atlas.ts`), so `²`,
   `·` and `×` all render as `?`. `textWithSuper()` composes "m²" from a raised, smaller
   real "2". Anything new in the legend has to stay inside ASCII or get the same treatment.
+- **The legend is a three-column table: badge number, figures, unit.** The figures get their
+  own right-aligned column so the ones place lines up down the panel — right-aligning the
+  whole "16,474 m²" string aligns the *unit* and leaves the digits ragged, which is the wrong
+  way round for a column of numbers. The badge number is the only colour in the panel,
+  because it is the one thing that has to be matched against the map.
 - **The legend panel is sized from measured glyph widths**, never a constant. The Building
   Markup legend was once 5px from clipping its longest label, and a legend that silently
   crops a figure is worse than one that's slightly wide.

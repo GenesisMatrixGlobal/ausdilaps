@@ -5,6 +5,13 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { downloadBlob } from "@/components/tools/shared/download";
 import { MIN_POINTS } from "@/lib/kml/standard-markup/measure";
+import { buildMeasureFile, parseMeasureFile } from "@/lib/maps/measure-file";
+import {
+  MAX_MEASUREMENTS,
+  MAX_POINTS,
+  MAX_WIDTH_M,
+  MIN_WIDTH_M,
+} from "./measure-shapes";
 import { parseGoogleMapsUrl } from "@/lib/maps/parse-google-maps-url";
 import type { GoogleMapsTarget } from "@/lib/maps/parse-google-maps-url";
 import { AddressSearch, type PlaceSelection } from "./address-search";
@@ -34,8 +41,54 @@ export function MeasureTab({ active }: { active: boolean }) {
   const [placeLabel, setPlaceLabel] = useState<string | null>(null);
 
   const drawn = state.list.filter((m) => m.points.length >= MIN_POINTS[m.mode]).length;
+  const fileInput = useRef<HTMLInputElement>(null);
 
-  const download = useCallback(async () => {
+  // Plain functions from here down, not useCallback: they are click handlers with nothing
+  // downstream to memoise for, and each reads a ref's .current — which the React compiler
+  // will not accept in a dependency array.
+  /** Names both the .png and the .json off whatever was last searched. */
+  const filenameStem = (fallback: string) =>
+    (placeLabel ?? fallback)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "measurements";
+
+  function save() {
+    const camera = commands.current?.getCamera();
+    const doc = buildMeasureFile({
+      label: placeLabel,
+      bounds: camera?.bounds ?? null,
+      mapType: camera?.mapType ?? null,
+      measurements: state.listRef.current,
+    });
+    setNote(null);
+    downloadBlob(JSON.stringify(doc, null, 2), `${filenameStem("measurements")}.json`, "application/json");
+  }
+
+  async function open(file: File) {
+      const result = parseMeasureFile(await file.text(), {
+        maxMeasurements: MAX_MEASUREMENTS,
+        maxPoints: MAX_POINTS,
+        minWidth: MIN_WIDTH_M,
+        maxWidth: MAX_WIDTH_M,
+      });
+      if (!result.ok) {
+        setNote(result.error);
+        return;
+      }
+      state.replaceAll(result.file.measurements);
+      if (result.file.label) setPlaceLabel(result.file.label);
+      // Land back on the frame it was drawn on, so the shapes aren't off-screen.
+      if (result.file.bounds) commands.current?.fit(result.file.bounds);
+    setNote(
+      result.skipped > 0
+        ? `Opened ${result.file.measurements.length} measurement(s); ${result.skipped} couldn't be read and were skipped.`
+        : null
+    );
+  }
+
+  async function download() {
     const camera = commands.current?.getCamera();
     if (!camera) {
       setNote("The map isn't ready yet.");
@@ -73,19 +126,13 @@ export function MeasureTab({ active }: { active: boolean }) {
       const fallback = `${((camera.bounds.north + camera.bounds.south) / 2).toFixed(5)}-${(
         (camera.bounds.east + camera.bounds.west) / 2
       ).toFixed(5)}`;
-      const slug =
-        (placeLabel ?? fallback)
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "")
-          .slice(0, 60) || "measurements";
-      downloadBlob(bytes, `${slug}-measurements.png`, "image/png");
+      downloadBlob(bytes, `${filenameStem(fallback)}-measurements.png`, "image/png");
     } catch (e) {
       setNote((e as Error).message);
     } finally {
       setExporting(false);
     }
-  }, [placeLabel, state.listRef]);
+  }
 
   const goToTarget = useCallback((target: GoogleMapsTarget): boolean | string => {
     if (target.kind === "coords") {
@@ -168,15 +215,47 @@ export function MeasureTab({ active }: { active: boolean }) {
         {/* mt-6 clears the label line above the input, so the button's top edge lines up
             with the input's rather than drifting every time AddressSearch shows its own
             "Searching…" line underneath. */}
-        <button
-          type="button"
-          onClick={download}
-          disabled={exporting || drawn === 0}
-          title={drawn === 0 ? "Draw a measurement first" : "Download the map, shapes and areas as a PNG"}
-          className={cn(buttonVariants({ variant: "accent", size: "sm" }), "mt-6 shrink-0")}
-        >
-          {exporting ? "Rendering…" : "Download .png"}
-        </button>
+        <div className="mt-6 flex shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={download}
+            disabled={exporting || drawn === 0}
+            title={drawn === 0 ? "Draw a measurement first" : "Download the map, shapes and areas as a PNG"}
+            className={cn(buttonVariants({ variant: "accent", size: "sm" }))}
+          >
+            {exporting ? "Rendering…" : "Download .png"}
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={state.list.length === 0}
+            title="Save the measurements so they can be reopened and adjusted"
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+          >
+            Save .json
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInput.current?.click()}
+            title="Reopen a saved measurement set"
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+          >
+            Open .json
+          </button>
+          {/* Cleared after every pick, so choosing the same file twice in a row still
+              fires a change event. */}
+          <input
+            ref={fileInput}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void open(file);
+            }}
+          />
+        </div>
       </div>
       {note && <p className="mt-2 text-xs text-ad-orange">{note}</p>}
 

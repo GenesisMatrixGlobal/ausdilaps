@@ -40,6 +40,7 @@ Residential exported markup agree on the same outline.
 | Navigate | Type an address or suburb, or paste a Google Maps URL / a `-27.4698, 153.0251` pair. |
 | More screen | The map's own fullscreen button, top right. |
 | Export | **Download .png** — the frame you're looking at, every shape, a north arrow, and a compact legend: each badge number, its area, and the total. |
+| Save / reopen | **Save .json** writes the measurements plus the frame they were drawn on. **Open .json** restores them and flies back to that frame, so a set can be adjusted instead of redrawn. |
 
 **Line vs area.** A line is a ribbon centred on the points, half the width either side — a
 frontage, kerb or footpath; its area is the ribbon, and it also reports centreline length.
@@ -130,6 +131,7 @@ tab switch.
 | `app/api/maps/resolve-link/route.ts` | Resolves `maps.app.goo.gl` share links. |
 | `lib/maps/measure-export.ts` | The PNG render — Static Maps + sharp composite. |
 | `app/api/maps/measure-export/route.ts` | The export endpoint. |
+| `lib/maps/measure-file.ts` | The .json save format, and a defensive parser for reading one back. |
 
 ---
 
@@ -235,4 +237,26 @@ Consequences worth knowing:
 
 ## Not built, on purpose
 
-- **No persistence.** Nothing is saved. Measurements survive a tab switch, not a reload.
+- **No automatic persistence.** Nothing is written to a database or restored on reload —
+  saving is an explicit **Save .json** to the operator's own disk. Deliberate: these are
+  scratch measurements taken while scoping, and a silently-restored set from last week is a
+  worse default than an empty map. Measurements do survive a tab switch within a session.
+
+## The .json save file
+
+`lib/maps/measure-file.ts`. `{ kind, version, savedAt, label, bounds, mapType, measurements }`,
+where each measurement is just `{ mode, widthMetres, points }`.
+
+- **Only geometry is stored — never a derived area or length.** A stored figure is a second
+  source of truth that silently disagrees with `measureShape()` the moment the maths
+  improves. Areas are always recomputed on open.
+- **Ids are regenerated on open**, not trusted from the file: a duplicated id would collide
+  React keys and the map's handle map.
+- **`kind` is checked before anything else**, so a stray .json picked out of a folder is
+  rejected with a useful message instead of loading as an empty set. A file from a *newer*
+  version is refused rather than half-read.
+- **A bad field drops its own shape, not the whole set** — the parser is reading a file off
+  someone's disk, possibly hand-edited. It reports how many it skipped. An out-of-range
+  width is clamped rather than dropped, because it still describes a real ribbon.
+- **Bump `version` only for a breaking change, and keep reading the old one.** A saved file
+  is someone's work; a version bump that orphans it is a data-loss bug.

@@ -54,6 +54,9 @@ export interface MeasureState {
   setMode: (id: string, mode: ShapeMode) => void;
   setWidth: (id: string, widthMetres: number) => void;
   reset: () => void;
+  /** Swaps the whole list — the Open .json path. Ids are regenerated rather than trusted
+   *  from the file: a duplicate id would collide React keys and the map's handle map. */
+  replaceAll: (incoming: Measurable[]) => void;
   /** Live list for anything that has to decide synchronously inside a map event. */
   listRef: { readonly current: Measurement[] };
   activeIdRef: { readonly current: string | null };
@@ -149,6 +152,23 @@ export function useMeasurements(): MeasureState {
     select(null);
   }, [select, write]);
 
+  const replaceAll = useCallback(
+    (incoming: Measurable[]) => {
+      write(() =>
+        incoming.slice(0, MAX_MEASUREMENTS).map((m) => ({
+          id: crypto.randomUUID(),
+          mode: m.mode,
+          widthMetres: m.widthMetres,
+          points: m.points.slice(0, MAX_POINTS),
+        }))
+      );
+      // Nothing selected, so the first map click starts a NEW measurement rather than
+      // silently extending whichever one happened to be first in the file.
+      select(null);
+    },
+    [select, write]
+  );
+
   const setMode = useCallback(
     (id: string, mode: ShapeMode) => {
       setDefaultMode(mode);
@@ -194,6 +214,7 @@ export function useMeasurements(): MeasureState {
       [update]
     ),
     reset,
+    replaceAll,
     listRef,
     activeIdRef,
   };

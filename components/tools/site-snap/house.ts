@@ -17,14 +17,26 @@
 
 /** Logical pixels per tile. The canvas is GRID.w x GRID.h tiles at this size. */
 export const TILE = 16;
-export const GRID = { w: 32, h: 18 } as const;
+/**
+ * 36 wide is a ceiling, not a preference: the tool column is ~1176px, so a canvas wider than
+ * 588 logical pixels can no longer be scaled by a whole factor of 2 and drops to 1x. Every
+ * column added to the layout has to come out of another.
+ *
+ * There is a one-cell margin of open ground all round, so the house sits on a lawn instead of
+ * being framed by its own outer wall.
+ */
+export const GRID = { w: 36, h: 21 } as const;
 
 export type Side = "n" | "e" | "s" | "w";
 export const SIDES: Side[] = ["n", "e", "s", "w"];
 
+/** An outdoor area is bounded by fences, not walls — it draws and reads differently. */
+export type RoomKind = "room" | "outdoor";
+
 type RoomDef = {
   id: string;
   label: string;
+  kind: RoomKind;
   /** Interior cells: x..x+w-1, y..y+h-1. Everything unclaimed is wall. */
   x: number;
   y: number;
@@ -33,43 +45,54 @@ type RoomDef = {
 };
 
 /**
- * Six rooms hung off a central hall. Every room is a spur off the spine, so the order you
- * visit them in genuinely matters — that routing decision is most of the game.
+ * A more house-shaped plan than the first pass, which was three equal boxes over two equal
+ * boxes and read as a spreadsheet. Rooms now vary the way real ones do — a small bathroom
+ * off the hall, a big living room opening onto the yard, a kitchen that isn't the same size
+ * as anything else — and the run finishes outside.
  *
- * Sizes vary deliberately. The living room is forgiving and the bathroom is tight, so the
- * 24 shots don't all feel like the same shot.
+ * The BACKYARD is a genuine capture target, not scenery. Photographing boundary fences and
+ * external elevations is a real part of a dilapidation survey, so the last four shots of a
+ * run being outdoors is the most true-to-life thing in the game.
  */
 const ROOM_DEFS: RoomDef[] = [
-  { id: "bed1", label: "Bedroom 1", x: 1, y: 1, w: 10, h: 6 },
-  { id: "bath", label: "Bathroom", x: 12, y: 1, w: 7, h: 6 },
-  { id: "bed2", label: "Bedroom 2", x: 20, y: 1, w: 11, h: 6 },
-  { id: "hall", label: "Hallway", x: 1, y: 8, w: 30, h: 3 },
-  { id: "kitchen", label: "Kitchen", x: 1, y: 12, w: 13, h: 5 },
-  { id: "living", label: "Living Room", x: 15, y: 12, w: 16, h: 5 },
+  { id: "bed1", label: "Bedroom 1", kind: "room", x: 2, y: 2, w: 8, h: 6 },
+  { id: "bath", label: "Bathroom", kind: "room", x: 11, y: 2, w: 5, h: 6 },
+  { id: "bed2", label: "Bedroom 2", kind: "room", x: 17, y: 2, w: 8, h: 6 },
+  { id: "hall", label: "Hallway", kind: "room", x: 2, y: 9, w: 23, h: 3 },
+  { id: "kitchen", label: "Kitchen", kind: "room", x: 2, y: 13, w: 9, h: 6 },
+  { id: "living", label: "Living Room", kind: "room", x: 12, y: 13, w: 13, h: 6 },
+  { id: "yard", label: "Backyard", kind: "outdoor", x: 27, y: 4, w: 7, h: 13 },
 ];
 
 /**
  * Wall cells carved back out into doorways. TWO tiles wide, not one: the player box is 0.6
  * tiles, and a one-tile opening leaves 0.2 of clearance either side — passable, but it feels
- * like threading a needle and players blame the game rather than themselves. Nobody ever
- * notices a generous doorway.
+ * like threading a needle and players blame the game rather than themselves.
+ *
+ * The back door needs FOUR cells because the house's east wall (x=26) and the yard fence
+ * (x=27) are adjacent columns, so the opening has to pass through both.
  */
 const DOORWAYS: Array<{ x: number; y: number }> = [
-  { x: 5, y: 7 },
-  { x: 6, y: 7 }, // bed1 -> hall
-  { x: 15, y: 7 },
-  { x: 16, y: 7 }, // bath -> hall
-  { x: 25, y: 7 },
-  { x: 26, y: 7 }, // bed2 -> hall
-  { x: 6, y: 11 },
-  { x: 7, y: 11 }, // kitchen -> hall
-  { x: 22, y: 11 },
-  { x: 23, y: 11 }, // living -> hall
+  { x: 5, y: 8 },
+  { x: 6, y: 8 }, // bed1 -> hall
+  { x: 13, y: 8 },
+  { x: 14, y: 8 }, // bath -> hall
+  { x: 20, y: 8 },
+  { x: 21, y: 8 }, // bed2 -> hall
+  { x: 5, y: 12 },
+  { x: 6, y: 12 }, // kitchen -> hall
+  { x: 18, y: 12 },
+  { x: 19, y: 12 }, // living -> hall
+  { x: 25, y: 14 },
+  { x: 26, y: 14 },
+  { x: 25, y: 15 },
+  { x: 26, y: 15 }, // living -> backyard
 ];
 
 export type Room = {
   id: string;
   label: string;
+  kind: RoomKind;
   x: number;
   y: number;
   w: number;
@@ -127,6 +150,38 @@ export function isDoorway(cx: number, cy: number): boolean {
   return DOOR_KEYS.has(`${cx},${cy}`);
 }
 
+/**
+ * Is this solid cell actual built structure, or just open ground beyond the property?
+ *
+ * Everything unclaimed by a room is SOLID, which is right for collision and wrong for
+ * drawing: without this the one-cell margin around the layout renders as cream wall and the
+ * house looks embedded in a giant block rather than sitting on a lawn.
+ */
+export function isStructural(cx: number, cy: number): boolean {
+  if (!isSolid(cx, cy)) return false;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const x = cx + dx;
+      const y = cy + dy;
+      if (x < 0 || y < 0 || x >= GRID.w || y >= GRID.h) continue;
+      if (OWNER[y][x] !== null) return true;
+    }
+  }
+  return false;
+}
+
+/** Is this wall cell part of the yard's boundary rather than the building? */
+export function isFenceCell(cx: number, cy: number): boolean {
+  const yard = room("yard");
+  return (
+    cx >= yard.x - 1 &&
+    cx <= yard.x + yard.w &&
+    cy >= yard.y - 1 &&
+    cy <= yard.y + yard.h &&
+    isSolid(cx, cy)
+  );
+}
+
 export type Wall = {
   /** `${roomId}:${side}` — stable, and readable in a debug dump. */
   id: string;
@@ -144,9 +199,9 @@ export const WALLS: Wall[] = ROOMS.flatMap((r) =>
 export const TOTAL_WALLS = WALLS.length;
 
 /** Where the player starts — the middle of the hall. */
-export const SPAWN = { x: 16, y: 9.5 } as const;
+export const SPAWN = { x: 13.5, y: 10.5 } as const;
 
-/** Every walkable cell, for the cat's wander target and the sim's reachability check. */
+/** Every walkable cell, for retreat targets and the sim's reachability check. */
 export function walkableCells(): Array<{ x: number; y: number }> {
   const out: Array<{ x: number; y: number }> = [];
   for (let y = 0; y < GRID.h; y++) {
@@ -162,7 +217,7 @@ export type Cell = { x: number; y: number };
  * Shortest walkable path between two cells, as a list of cells including both ends.
  * Returns null if there is no route (which the level checks say cannot happen).
  *
- * Breadth-first over 576 cells — trivial to run, but the chasers still only re-plan a few
+ * Breadth-first over the grid — trivial to run, but the chasers still only re-plan a few
  * times a second rather than every frame. The alternative, homing straight at the player and
  * sliding along whatever it hits, leaves a cat wedged against a bedroom wall while the player
  * works two rooms away: a hazard that cannot reach you is just scenery.

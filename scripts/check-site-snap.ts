@@ -113,7 +113,14 @@ for (const r of ROOMS) {
   );
 }
 
-check("24 capture targets", TOTAL_WALLS === 24, `got ${TOTAL_WALLS}`);
+// Derived, not a magic number: the count changes legitimately whenever a room is added, and
+// an assertion that has to be hand-edited after every layout change is one that gets muted.
+check(
+  `${TOTAL_WALLS} capture targets = ${ROOMS.length} rooms x 4`,
+  TOTAL_WALLS === ROOMS.length * 4,
+  `got ${TOTAL_WALLS} for ${ROOMS.length} rooms`
+);
+check("the run finishes outdoors", ROOMS.some((r) => r.kind === "outdoor"));
 
 // ── The bot ─────────────────────────────────────────────────────────────
 

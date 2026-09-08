@@ -381,8 +381,8 @@ export function SiteSnapTool() {
               <p className="font-heading text-2xl">Site Snap</p>
               <div className="max-w-md space-y-1.5 text-sm text-white/75">
                 <p>
-                  Photograph all {TOTAL_WALLS} walls — four in every room — before the clock
-                  runs out.
+                  Photograph all {TOTAL_WALLS} walls — four in every room, fences in the
+                  backyard included — before the clock runs out.
                 </p>
                 <p>
                   <b className="text-white">Move</b> WASD or arrows ·{" "}

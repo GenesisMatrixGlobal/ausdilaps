@@ -84,7 +84,7 @@ const STILL_SPEED = 0.25;
 const TURN_TIME = 0.12;
 
 /** One run, fixed. Ends here or on completion, whichever comes first. */
-export const RUN_SECONDS = 60;
+export const RUN_SECONDS = 75;
 /**
  * Points per whole second left on the clock — paid ONLY on a complete survey.
  *
@@ -102,7 +102,16 @@ const DEFECT_MULTIPLIER = 2;
 
 /** Minimum gap between shots. Kept short: the cooldown is dead time during which focus is
  *  building for free, so a long one hands the rusher most of the quality curve for nothing. */
+/** Minimum gap between shots. Kept short: the cooldown is dead time during which focus is
+ *  building for free, so a long one hands the rusher most of the quality curve for nothing. */
 const SHUTTER_COOLDOWN = 0.15;
+
+/** How long the shutter flash runs. Long enough to read as a camera going off rather than a
+ *  dropped frame — the first pass was 0.09s, which at 60fps is five frames and easy to miss
+ *  entirely while you are looking at the wall rather than at yourself. */
+const FLASH_TIME = 0.26;
+/** The refused-press pulse. Shorter and duller than a real flash, on purpose. */
+const DUD_TIME = 0.2;
 
 // ── Hazards ─────────────────────────────────────────────────────────────
 //
@@ -136,8 +145,9 @@ const CAT_FRAME_HALF_WIDTH = 1.2;
 const CAT_IN_SHOT_FACTOR = 0.4;
 
 const TODDLER_COUNT = 2;
-/** Toddlers are slow. They get you by being underfoot, not by outrunning you. */
-const TODDLER_SPEED = 2.1;
+/** Toddlers are slow — they get you by being underfoot, not by outrunning you. Slower than
+ *  the first pass, where two of them converging could hound you across a room. */
+const TODDLER_SPEED = 1.55;
 /** Trips only fire inside this AND only while you are actually moving. */
 const TODDLER_TRIP_RADIUS = 0.62;
 /** Flat on your back: no moving, no shooting, no focus. */
@@ -195,7 +205,13 @@ export type GameState = {
   grace: number;
   tangles: number;
   trips: number;
+  /** Seconds left on the shutter flash. Drives the white blowout, the burst ring and shake. */
   flash: number;
+  /** Where the flash went off, so the burst ring stays put if the player walks on. */
+  flashX: number;
+  flashY: number;
+  /** A refused press — a dull red pulse, so hitting space NEVER looks like nothing happened. */
+  dud: number;
   toasts: Toast[];
   done: boolean;
   outcome: Outcome | null;
@@ -251,6 +267,9 @@ export function newGame(rand: () => number = Math.random): GameState {
     tangles: 0,
     trips: 0,
     flash: 0,
+    flashX: SPAWN.x,
+    flashY: SPAWN.y,
+    dud: 0,
     toasts: [],
     done: false,
     outcome: null,
@@ -525,6 +544,7 @@ export function step(
 
   state.elapsed += dt;
   state.flash = Math.max(0, state.flash - dt);
+  state.dud = Math.max(0, state.dud - dt);
   state.shutterCooldown = Math.max(0, state.shutterCooldown - dt);
   state.grace = Math.max(0, state.grace - dt);
 
@@ -655,7 +675,9 @@ export function attemptCapture(state: GameState): CaptureResult {
   if (improved) state.captured[wallId] = quality;
 
   state.shots++;
-  state.flash = 0.09;
+  state.flash = FLASH_TIME;
+  state.flashX = state.x;
+  state.flashY = state.y;
   // Taking the shot spends the steadiness. See FOCUS_TIME.
   state.focus = 0;
   state.toasts.push({
@@ -670,6 +692,10 @@ export function attemptCapture(state: GameState): CaptureResult {
 }
 
 export function reject(state: GameState, reason: string): void {
+  // A refused press must still LOOK like a press. Without this, pressing space out of
+  // position read as an unresponsive control rather than a rejected shot, and players
+  // pressed harder instead of moving.
+  state.dud = DUD_TIME;
   state.toasts.push({ text: reason, kind: "bad", x: state.x, y: state.y - 0.9, age: 0 });
 }
 

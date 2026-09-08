@@ -253,6 +253,18 @@ function badgesSvg(
 const COMPASS_BLUE = "46688a"; // ad-steel — the AusDilaps brand accent
 
 /**
+ * How much bigger than its natural size the legend and north arrow are drawn.
+ *
+ * These are read on a ~1400px-wide export, often printed inside a report, and at 1x the key was
+ * a postage stamp in the corner. NOT tied to the image width on purpose: the export's dimensions
+ * follow the operator's viewport aspect through the tiling planner, so a proportional rule would
+ * make the key a different size on every drawing of the same job.
+ */
+const OVERLAY_SCALE = 2;
+/** Inset from the image edge, in FINAL pixels — so it is unaffected by OVERLAY_SCALE. */
+const MARGIN = 20;
+
+/**
  * The colour key rows, in fixed order, for the colours that are actually ON this drawing.
  *
  * A key that explains a colour the reader cannot see is worse than no key: on a markup that is
@@ -287,33 +299,44 @@ function colourKeys(shown: { red: boolean; blue: boolean; orange: boolean }): [s
  * Sized from real glyph widths and grown from the row count. The version before last hardcoded
  * `height = 106` for its three fixed rows, which is exactly the bug that pattern prevents — and
  * the row count is no longer fixed, since a colour absent from the drawing is absent here too.
+ *
+ * Drawn at its natural size around the origin and then scaled as a whole GROUP, rather than by
+ * multiplying every coordinate through: the labels are pre-baked outlines whose glyph size is
+ * inside the path data, so there is no font size here to turn up. Scaling the group takes the
+ * panel, its corner radius, its border and the text together, which is the only way they stay in
+ * proportion to each other.
  */
 function legendSvg(keys: [string, string][]): string {
   if (keys.length === 0) return "";
 
-  const x = 20;
-  const y = 20;
   const KEY_ROW_HEIGHT = 30;
-
   const width = PANEL_PAD * 2 + Math.max(0, ...keys.map(([, label]) => LEGEND_LABEL_WIDTHS[label] ?? 0));
   const height = PANEL_PAD * 2 + keys.length * KEY_ROW_HEIGHT;
 
-  return [
-    panelRect(x, y, width, height),
+  const inner = [
+    panelRect(0, 0, width, height),
     ...keys.map(
       ([color, label], i) =>
-        `<path transform="translate(${x + PANEL_PAD}, ${y + PANEL_PAD + 22 + i * KEY_ROW_HEIGHT})" d="${LEGEND_LABEL_PATHS[label]}" fill="#${color}" />`
+        `<path transform="translate(${PANEL_PAD}, ${PANEL_PAD + 22 + i * KEY_ROW_HEIGHT})" d="${LEGEND_LABEL_PATHS[label]}" fill="#${color}" />`
     ),
-  ].join("\n    ");
+  ].join("\n      ");
+
+  return `<g transform="translate(${MARGIN}, ${MARGIN}) scale(${OVERLAY_SCALE})">
+      ${inner}
+    </g>`;
 }
 
 function northArrowSvg(nativeSize: number): string {
   const r = 32;
-  const cx = nativeSize - 20 - r;
-  const cy = 20 + r;
-  return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="white" fill-opacity="0.95" stroke="#${COMPASS_BLUE}" stroke-width="2.5" />
-    <polygon points="${cx},${cy - 18} ${cx - 10},${cy - 2} ${cx + 10},${cy - 2}" fill="#${COMPASS_BLUE}" />
-    <path transform="translate(${cx}, ${cy + 18})" d="${COMPASS_N_PATH}" fill="#${COMPASS_BLUE}" />`;
+  // Scaled with the legend so the two corners look like they belong to the same drawing. Placed
+  // by its scaled footprint, or it would run off the right edge.
+  const cx = (nativeSize - MARGIN) / OVERLAY_SCALE - r;
+  const cy = MARGIN / OVERLAY_SCALE + r;
+  return `<g transform="scale(${OVERLAY_SCALE})">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="white" fill-opacity="0.95" stroke="#${COMPASS_BLUE}" stroke-width="2.5" />
+      <polygon points="${cx},${cy - 18} ${cx - 10},${cy - 2} ${cx + 10},${cy - 2}" fill="#${COMPASS_BLUE}" />
+      <path transform="translate(${cx}, ${cy + 18})" d="${COMPASS_N_PATH}" fill="#${COMPASS_BLUE}" />
+    </g>`;
 }
 
 export async function renderStandardMarkupImage(input: RenderMapInput): Promise<RenderMapResult> {

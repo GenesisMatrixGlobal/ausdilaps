@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { SyncToSalesforce } from "@/components/tools/shared/sync-to-salesforce";
@@ -11,6 +11,7 @@ import {
   type BuildingMarkupFile,
 } from "@/lib/maps/building-markup-file";
 import { AddressSearch, type PlaceSelection } from "./address-search";
+import { parseGoogleMapsUrl, type GoogleMapsTarget } from "@/lib/maps/parse-google-maps-url";
 import { ShapePanel } from "./shape-panel";
 import {
   useShapes,
@@ -97,6 +98,9 @@ export function ResidentialMarkupTab() {
   const [manualEntry, setManualEntry] = useState(false);
   const [parsedSummary, setParsedSummary] = useState<string | null>(null);
   const [addressPoint, setAddressPoint] = useState<LatLng | null>(null);
+  /** Progress and advice for a pasted link. Separate from addressError, which is orange and
+   *  disables Generate — neither is right for "following that share link…". */
+  const [addressNote, setAddressNote] = useState<string | null>(null);
   const [addressError, setAddressError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -311,6 +315,7 @@ export function ResidentialMarkupTab() {
     // Nothing else uses it: the cadastre lookup goes by address text and the map frames itself
     // from the resolved rings, so a Places centroid has no say in either.
     setAddressPoint(parsed.location);
+    setAddressNote(null);
     setStreet(parsed.street);
     setSuburb(parsed.suburb);
     setPostcode(parsed.postcode);
@@ -325,6 +330,79 @@ export function ResidentialMarkupTab() {
       setAddressError(`This tool doesn't support ${parsed.state || "that state"} yet — enter the address manually.`);
     }
   }
+
+  /**
+   * A pasted Google Maps link or `lat, lng` pair, handled the same way the Measure tab handles
+   * one — except this tab needs an ADDRESS, not just a coordinate: the cadastre lookup is by
+   * street/suburb/state. So a coordinate is reverse-geocoded and then flows through
+   * handleAddressSelect exactly as a Places pick would.
+   *
+   * A place NAME is handed straight back as a string, which tells AddressSearch to search it
+   * instead — Places parses the components properly and costs nothing extra.
+   *
+   * ⚠️ The pasted point is kept for Street View even when the reverse geocode fails. "Look at
+   * where this link points" is the one thing a bare coordinate can always deliver, and losing it
+   * because Google had no street address for a paddock would be the wrong trade.
+   */
+  const applyTarget = useCallback(async (target: GoogleMapsTarget): Promise<boolean | string> => {
+    if (target.kind === "query") return target.query;
+
+    if (target.kind === "shortlink") {
+      // maps.app.goo.gl — only a redirect knows where it points, and the browser can't read a
+      // cross-origin Location header. Same server hop the Measure tab makes.
+      setAddressNote("Following that share link…");
+      const res = await fetch("/api/maps/resolve-link", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: target.url }),
+      });
+      const json = (await res.json().catch(() => null)) as
+        | { ok: boolean; target?: GoogleMapsTarget; error?: string }
+        | null;
+      if (!json?.ok || !json.target) {
+        setAddressNote(null);
+        setAddressError(json?.error ?? "Couldn't resolve that share link.");
+        return true;
+      }
+      return applyTarget(json.target);
+    }
+
+    const point = { lat: target.lat, lng: target.lng };
+    setAddressPoint(point);
+    setAddressNote("Looking up that location…");
+    const res = await fetch("/api/maps/reverse-geocode", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(point),
+    });
+    const json = (await res.json().catch(() => null)) as
+      | ({ ok: true } & PlaceSelection)
+      | { ok: false; error?: string }
+      | null;
+    if (!json?.ok) {
+      setAddressNote(null);
+      setAddressError(
+        `${json && "error" in json && json.error ? json.error : "Couldn't read an address from that link."} Street View still works from the pasted location.`
+      );
+      return true;
+    }
+    handleAddressSelect(json);
+    return true;
+  }, []);
+
+  const handlePaste = useCallback(
+    async (text: string): Promise<boolean | string> => {
+      const target = parseGoogleMapsUrl(text);
+      setAddressNote(null);
+      setAddressError(null);
+      if (!target) {
+        setAddressError("That doesn't look like a Google Maps link or a coordinate pair.");
+        return true;
+      }
+      return applyTarget(target);
+    },
+    [applyTarget]
+  );
 
   async function generate() {
     setError(null);
@@ -546,10 +624,15 @@ export function ResidentialMarkupTab() {
         {!manualEntry ? (
           <div className="sm:col-span-2">
             <p className="text-sm font-medium text-ad-ink">Address</p>
-            <AddressSearch onSelect={handleAddressSelect} />
+            <AddressSearch
+              onSelect={handleAddressSelect}
+              onPastedLocation={handlePaste}
+              placeholder="Start typing an address, or paste a Google Maps link…"
+            />
             {parsedSummary && !addressError && (
               <p className="mt-1 text-xs text-ad-muted">{parsedSummary}</p>
             )}
+            {addressNote && <p className="mt-1 text-xs text-ad-muted">{addressNote}</p>}
             {addressError && <p className="mt-1 text-xs text-ad-orange">{addressError}</p>}
             <button
               type="button"

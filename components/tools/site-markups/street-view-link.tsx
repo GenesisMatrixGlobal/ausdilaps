@@ -11,17 +11,35 @@ import { cn } from "@/lib/utils";
 import { streetViewUrl } from "@/lib/maps/street-view";
 import type { LatLng } from "@/lib/kml/types";
 
-function EyeIcon({ size = 14 }: { size?: number }) {
+/** Google's pegman amber. */
+const PEGMAN_YELLOW = "#FDBE02";
+
+/**
+ * Google's pegman, in Google's yellow.
+ *
+ * Hard-coded colours rather than `currentColor`: this is a recognised third-party mark, and the
+ * whole reason to draw a little yellow figure instead of a generic glyph is that an estimator
+ * already knows what it does. It therefore does NOT tint on hover — the surrounding button
+ * does that instead.
+ *
+ * The dark visor is what makes it read as a person at 14px; without it the silhouette is just a
+ * yellow blob.
+ */
+function PegmanIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden className="shrink-0">
+    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden className="shrink-0">
+      <circle cx="8" cy="3.5" r="2.8" fill={PEGMAN_YELLOW} />
       <path
-        d="M0.9 7C2.4 4.4 4.5 3.1 7 3.1s4.6 1.3 6.1 3.9c-1.5 2.6-3.6 3.9-6.1 3.9S2.4 9.6 0.9 7z"
+        d="M5.3 3.7h5.4"
+        stroke="#33373b"
+        strokeWidth="1.5"
+        strokeLinecap="round"
         fill="none"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinejoin="round"
       />
-      <circle cx="7" cy="7" r="1.7" fill="currentColor" />
+      {/* Shoulders wide, torso tapering — the arms-out stance is most of the recognition. */}
+      <path d="M3.3 11.9V10.2C3.3 7.7 5.4 6.1 8 6.1s4.7 1.6 4.7 4.1v1.8z" fill={PEGMAN_YELLOW} />
+      <rect x="5.2" y="11.5" width="2.1" height="3.6" rx="1" fill={PEGMAN_YELLOW} />
+      <rect x="8.7" y="11.5" width="2.1" height="3.6" rx="1" fill={PEGMAN_YELLOW} />
     </svg>
   );
 }
@@ -54,7 +72,7 @@ export function StreetViewLink({
 }) {
   const content = (
     <>
-      <EyeIcon size={iconSize} />
+      <PegmanIcon size={iconSize} />
       {children}
     </>
   );

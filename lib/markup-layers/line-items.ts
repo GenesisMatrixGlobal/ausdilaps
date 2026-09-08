@@ -54,7 +54,11 @@ export type LineItemDrafts = Record<string, Partial<LineItemDraft>>;
 export function defaultDraft(layer: MarkupLayer): LineItemDraft {
   const area = layer.areaSqm && layer.areaSqm > 0 ? String(Math.round(layer.areaSqm)) : "";
   return {
-    street: layer.street ?? "",
+    // An orange shape is council / external infrastructure by definition — that is what the
+    // colour MEANS on these markups, and it is what the operator was typing into this cell by
+    // hand every time. A lot or the subject has a real address instead, and a red or blue shape
+    // is part of the property, so neither gets a guess.
+    street: layer.street ?? (layer.color === "orange" ? "Council assets" : ""),
     suburb: layer.suburb ?? "",
     product: PRODUCT_BY_COLOR[layer.color],
     // Empty means "follow the product", which is now always seeded — so a row's asset type is

@@ -281,14 +281,28 @@ export interface LegendRow {
  * previous version hardcoded `height = 106` for its three fixed rows, which is exactly the bug
  * that pattern prevents.
  */
-function legendSvg(rows: LegendRow[]): string {
+/**
+ * The colour key rows, in fixed order, for the colours that are actually ON this drawing.
+ *
+ * A key that explains a colour the reader cannot see is worse than no key: on a markup that is
+ * only council infrastructure it invited the question "where is the project site?". Order is
+ * fixed rather than sorted so the same colour is always in the same place across a set of
+ * drawings for one job.
+ *
+ * The labels are the only three strings overlay-paths.ts has pre-baked glyphs for, so this may
+ * filter them but must never invent one.
+ */
+function colourKeys(shown: { red: boolean; blue: boolean; orange: boolean }): [string, string][] {
+  const keys: [string, string][] = [];
+  if (shown.red) keys.push([SITE_RED, "Project Site"]);
+  if (shown.blue) keys.push([NEIGHBOUR_FILL, "Neighbouring Assets"]);
+  if (shown.orange) keys.push([SHAPE_COLORS.orange, "Council / External Assets"]);
+  return keys;
+}
+
+function legendSvg(rows: LegendRow[], keys: [string, string][]): string {
   const x = 20;
   const y = 20;
-  const keys: [string, string][] = [
-    [SITE_RED, "Project Site"],
-    [NEIGHBOUR_FILL, "Neighbouring Assets"],
-    [SHAPE_COLORS.orange, "Council / External Assets"],
-  ];
   const KEY_ROW_HEIGHT = 30;
 
   const items = rows.map((r) => ({
@@ -302,7 +316,7 @@ function legendSvg(rows: LegendRow[]): string {
   const digitsColumn = Math.max(0, ...items.map((r) => textWidth(r.digits, ROW_SIZE)));
   const unitColumn = Math.max(0, ...items.map((r) => widthWithSuper(r.unit, ROW_SIZE)));
 
-  const keysWidth = Math.max(...keys.map(([, label]) => LEGEND_LABEL_WIDTHS[label] ?? 0));
+  const keysWidth = Math.max(0, ...keys.map(([, label]) => LEGEND_LABEL_WIDTHS[label] ?? 0));
   const itemsWidth =
     items.length === 0
       ? 0
@@ -330,10 +344,12 @@ function legendSvg(rows: LegendRow[]): string {
 
   if (items.length === 0) return out.join("\n    ");
 
-  const ruleY = y + PANEL_PAD + keysHeight + TOTAL_GAP / 2;
-  out.push(
-    `<line x1="${x + PANEL_PAD}" y1="${ruleY.toFixed(1)}" x2="${(x + width - PANEL_PAD).toFixed(1)}" y2="${ruleY.toFixed(1)}" stroke="${HAIRLINE}" stroke-width="1" />`
-  );
+  if (keysHeight > 0) {
+    const ruleY = y + PANEL_PAD + keysHeight + TOTAL_GAP / 2;
+    out.push(
+      `<line x1="${x + PANEL_PAD}" y1="${ruleY.toFixed(1)}" x2="${(x + width - PANEL_PAD).toFixed(1)}" y2="${ruleY.toFixed(1)}" stroke="${HAIRLINE}" stroke-width="1" />`
+    );
+  }
 
   let baseline = y + PANEL_PAD + keysHeight + TOTAL_GAP + ROW_SIZE;
   for (const r of items) {
@@ -440,6 +456,15 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
       })),
   ];
 
+  // What colours are actually on the drawing. A colour counts whether it arrived as cadastre
+  // geometry or as a hand-drawn shape: red is the subject boundary or a redrawn site, blue is a
+  // detected lot or a shape inside the property, orange is only ever a drawn shape.
+  const keys = colourKeys({
+    red: !hideSubject || drawnShapes.some((x) => x.shape.color === "red"),
+    blue: kept.length > 0 || drawnShapes.some((x) => x.shape.color === "blue"),
+    orange: drawnShapes.some((x) => x.shape.color === "orange"),
+  });
+
   // The legend lists ONLY the quote line items, in item order.
   //
   // Sorted numerically by the number rather than left in "site, lots, shapes" order: with lots
@@ -482,7 +507,7 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
   const overlay = Buffer.from(
     `<svg width="${pxWidth}" height="${pxHeight}" xmlns="http://www.w3.org/2000/svg">
     ${badgesSvg(badges, plan.center, plan.zoom, plan.width, plan.height)}
-    ${legendSvg(legendRows)}
+    ${legendSvg(legendRows, keys)}
     ${northArrowSvg(pxWidth)}
   </svg>`
   );

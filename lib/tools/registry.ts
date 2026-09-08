@@ -112,6 +112,17 @@ export const TOOLS: ToolDefinition[] = [
       import("@/components/tools/kml-builder").then((m) => m.KmlBuilderTool)
     ),
   },
+  {
+    slug: "site-snap",
+    code: "SNP",
+    title: "Site Snap",
+    description:
+      "A two-minute pixel photo survey \u2014 walk the house, shoot every wall from the room centre, beat the clock without wrecking the quality.",
+    departments: ["accounts"],
+    Component: dynamic(() =>
+      import("@/components/tools/site-snap").then((m) => m.SiteSnapTool)
+    ),
+  },
 ];
 
 export function getTool(slug: string): ToolDefinition | undefined {

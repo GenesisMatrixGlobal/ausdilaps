@@ -10,7 +10,7 @@ import {
   parseBuildingMarkupFile,
   type BuildingMarkupFile,
 } from "@/lib/maps/building-markup-file";
-import { AddressSearch, type ParsedAddress } from "./address-search";
+import { AddressSearch, type PlaceSelection } from "./address-search";
 import { ShapePanel } from "./shape-panel";
 import {
   useShapes,
@@ -22,7 +22,8 @@ import {
 import { MarkupMap, type MarkupMapCommands } from "./markup-map";
 import { NEIGHBOUR_FILL, SITE_RED } from "@/lib/kml/standard-markup/style";
 import { LineItemsTable } from "./line-items-table";
-import { SUBJECT_KEY, layersFrom, lotKey, shapeKey } from "@/lib/markup-layers/plan";
+import { StreetViewLink } from "./street-view-link";
+import { SUBJECT_KEY, layerAnchor, layersFrom, lotKey, shapeKey } from "@/lib/markup-layers/plan";
 import { itemNumbers, rowsFrom, type LineItemDraft, type LineItemDrafts } from "@/lib/markup-layers/line-items";
 import type { MarkupLayer } from "@/lib/markup-layers/types";
 import { formatArea } from "@/lib/kml/standard-markup/measure";
@@ -95,6 +96,7 @@ export function ResidentialMarkupTab() {
   const [state, setState] = useState<SupportedState>("QLD");
   const [manualEntry, setManualEntry] = useState(false);
   const [parsedSummary, setParsedSummary] = useState<string | null>(null);
+  const [addressPoint, setAddressPoint] = useState<LatLng | null>(null);
   const [addressError, setAddressError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -231,6 +233,12 @@ export function ResidentialMarkupTab() {
   const rows = rowsFrom(layers, lineDrafts, deselected);
   const numbers = itemNumbers(rows);
 
+  // Street View's target for the markup as a whole. The resolved parcel wins — it is the actual
+  // title boundary rather than a geocoder's guess — but the Places point covers the gap before
+  // Generate, so the address can be looked at the moment it is typed.
+  const subjectLayer = layers.find((l) => l.kind === "subject");
+  const sitePoint = (subjectLayer ? layerAnchor(subjectLayer) : null) ?? addressPoint;
+
   function saveJson() {
     const doc = saveFileJson();
     if (!doc) return;
@@ -298,7 +306,11 @@ export function ResidentialMarkupTab() {
     setFitRequest({ key: crypto.randomUUID(), rings: rings.filter((r) => r.length >= 3) });
   }
 
-  function handleAddressSelect(parsed: ParsedAddress) {
+  function handleAddressSelect(parsed: PlaceSelection) {
+    // Kept only so Street View can be opened on the typed address before a snapshot exists.
+    // Nothing else uses it: the cadastre lookup goes by address text and the map frames itself
+    // from the resolved rings, so a Places centroid has no say in either.
+    setAddressPoint(parsed.location);
     setStreet(parsed.street);
     setSuburb(parsed.suburb);
     setPostcode(parsed.postcode);
@@ -645,6 +657,16 @@ export function ResidentialMarkupTab() {
         >
           Open .json
         </button>
+        {/* Markup level, for the site itself. Live as soon as an address is picked — the sheet's
+            per-row links cover the adjoining lots. */}
+        <StreetViewLink
+          at={sitePoint}
+          label={street.trim() || "the project site"}
+          className={cn(buttonVariants({ variant: "outline", size: "md" }), "gap-1.5")}
+          iconSize={15}
+        >
+          Street View
+        </StreetViewLink>
         {/* Cleared after every pick, so choosing the same file twice still fires. */}
         <input
           ref={fileInput}

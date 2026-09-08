@@ -15,6 +15,8 @@ import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { SHAPE_COLORS } from "@/lib/kml/standard-markup/style";
 import { AssetTypeSelect } from "./asset-type-select";
+import { StreetViewLink } from "./street-view-link";
+import { layerAnchor } from "@/lib/markup-layers/plan";
 import { PRODUCTS } from "@/lib/markup-layers/salesforce-picklists";
 import {
   assetTypeFor,
@@ -235,12 +237,24 @@ export function LineItemsTable({
                 </td>
 
                 <td className={CELL}>
-                  <Text
-                    value={row.values.street}
-                    onChange={(v) => onChange(row.key, "street", v)}
-                    label="Street"
-                    placeholder="—"
-                  />
+                  {/* The Street View link lives IN this cell rather than in a column of its
+                      own: a twelfth column costs width the table hasn't got and a header word
+                      to name it. Aimed from the layer's geometry, not from the text beside it,
+                      so it works on a shape the operator has named "Council Assets". */}
+                  <span className="flex items-center focus-within:bg-ad-steel/10">
+                    <Text
+                      value={row.values.street}
+                      onChange={(v) => onChange(row.key, "street", v)}
+                      label="Street"
+                      placeholder="—"
+                    />
+                    <StreetViewLink
+                      at={layerAnchor(row.layer)}
+                      label={row.values.street || `${row.layer.label} ${row.number ?? ""}`.trim()}
+                      tabbable={false}
+                      className="mr-1 shrink-0 rounded p-1 text-ad-muted hover:bg-ad-border/30 hover:text-ad-steel"
+                    />
+                  </span>
                 </td>
                 <td className={CELL}>
                   <Text

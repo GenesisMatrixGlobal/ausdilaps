@@ -10,9 +10,10 @@
 // finalised in Salesforce. Keeping a second pricing model here would guarantee the two
 // disagreed. What remains is the flattener and the join keys.
 
-import { MIN_POINTS, measureShape } from "@/lib/kml/standard-markup/measure";
+import { MIN_POINTS, badgeAnchor, measureShape, ringAnchor } from "@/lib/kml/standard-markup/measure";
 import { lotPlanFromId } from "@/lib/kml/standard-markup/parcels/parcel-id";
 import type { BuildingMarkupFile, SavedMarkupShape } from "@/lib/maps/building-markup-file";
+import type { LatLng } from "@/lib/kml/types";
 import type { MarkupLayer } from "./types";
 
 /**
@@ -50,6 +51,24 @@ function fingerprintShape(shape: SavedMarkupShape): string {
 export const SUBJECT_KEY = "subject";
 export const lotKey = (id: string) => `lot:${id}`;
 export const shapeKey = (shape: SavedMarkupShape) => `shape:${shape.id ?? fingerprintShape(shape)}`;
+
+/**
+ * Where on the ground a layer IS — the point to drop a pin on, or aim a Street View camera at.
+ *
+ * Exactly the derivation the numbered map bubbles use (markup-map.tsx), exported here so the
+ * sheet and the map can never pick different points for the same layer. `mode` is non-null only
+ * on drawn shapes; the subject and the detected lots are bare rings.
+ *
+ * ⚠️ Not centroidOf(): that is the vertex average, which sits in the notch of any concave
+ * outline. An L-shaped lot put its pin on the neighbour that way.
+ *
+ * Null for a layer with too little geometry to have a centre — a shape with one point.
+ */
+export function layerAnchor(layer: MarkupLayer): LatLng | null {
+  return layer.mode
+    ? badgeAnchor({ points: layer.points, mode: layer.mode, widthMetres: layer.widthMetres ?? 0 })
+    : ringAnchor(layer.points);
+}
 
 /** Flattens a save file into the list of things that could be priced, in the order an
  *  operator reads them: the site, then the detected lots, then the drawn shapes. */

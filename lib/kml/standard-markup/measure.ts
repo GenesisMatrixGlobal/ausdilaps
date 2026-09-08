@@ -1,5 +1,5 @@
 import type { LatLng } from "@/lib/kml/types";
-import { bufferLineToPolygon, closeRing, pathLengthMetres, ringAreaSqm } from "./geometry";
+import { bufferLineToPolygon, closeRing, pathLengthMetres, pointInRing, ringAreaSqm } from "./geometry";
 
 /**
  * The pure measurement layer, shared by the Residential Mark Up tab (which measures shapes
@@ -124,4 +124,82 @@ function segmentsCross(p1: LatLng, p2: LatLng, p3: LatLng, p4: LatLng): boolean 
   const d3 = cross(p1, p2, p3);
   const d4 = cross(p1, p2, p4);
   return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+}
+
+/**
+ * Where a numbered badge belongs for a bare ring (a cadastre lot, or an area shape).
+ *
+ * NOT the vertex-average centroid, which is what this used to be. That average sits outside
+ * any concave outline — an L-shaped lot puts it in the notch — so the pin ended up floating
+ * over the neighbour instead of the thing it names.
+ *
+ * Tries the true area centroid, then, if that is outside, walks in from it towards each vertex
+ * and takes the first point that is genuinely inside. Cheap (rings here are tens of vertices at
+ * most) and it lands near the middle rather than on an edge.
+ */
+export function ringAnchor(ring: LatLng[]): LatLng | null {
+  if (ring.length < 3) return null;
+  const closed = closeRing(ring);
+  // Standard area-weighted polygon centroid (the shoelace), computed RELATIVE TO ring[0].
+  //
+  // The offset is not tidiness, it is required. Run raw, the cross products are ~144.877 x
+  // -37.84 = -5482 while the signal in them is ~1e-9, so double precision cancels almost all of
+  // it away and the answer is noise. Verified: two ordinary rectangular Newport lots reported a
+  // centroid outside themselves until the coordinates were localised.
+  const ox = closed[0].lng;
+  const oy = closed[0].lat;
+  let twiceArea = 0;
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0; i < closed.length - 1; i++) {
+    const ax = closed[i].lng - ox;
+    const ay = closed[i].lat - oy;
+    const bx = closed[i + 1].lng - ox;
+    const by = closed[i + 1].lat - oy;
+    const cross = ax * by - bx * ay;
+    twiceArea += cross;
+    cx += (ax + bx) * cross;
+    cy += (ay + by) * cross;
+  }
+  // A degenerate ring (every point collinear) has no centroid to speak of.
+  const centroid =
+    Math.abs(twiceArea) < 1e-18
+      ? { lat: oy, lng: ox }
+      : { lat: oy + cy / (3 * twiceArea), lng: ox + cx / (3 * twiceArea) };
+
+  if (pointInRing(centroid, ring)) return centroid;
+  for (const v of ring) {
+    const mid = { lat: (centroid.lat + v.lat) / 2, lng: (centroid.lng + v.lng) / 2 };
+    if (pointInRing(mid, ring)) return mid;
+  }
+  return centroid;
+}
+
+/**
+ * Where a numbered badge belongs for a shape.
+ *
+ * A LINE's badge goes on its CENTRELINE, at the half-way point by length — which is inside the
+ * buffered ribbon by construction, because the ribbon is centred on that line. Using the
+ * ribbon's centroid instead put the badge off the shape entirely on any bend: an L-shaped road
+ * frontage at Newport landed its pin on the neighbouring lot, because the centroid of an L sits
+ * in the notch.
+ */
+export function badgeAnchor(shape: Measurable): LatLng | null {
+  if (shape.points.length < MIN_POINTS[shape.mode]) return null;
+  if (shape.mode === "area") return ringAnchor(closeRing(shape.points));
+
+  const total = pathLengthMetres(shape.points);
+  if (total === 0) return shape.points[0];
+  let walked = 0;
+  for (let i = 0; i < shape.points.length - 1; i++) {
+    const a = shape.points[i];
+    const b = shape.points[i + 1];
+    const seg = pathLengthMetres([a, b]);
+    if (walked + seg >= total / 2) {
+      const t = seg === 0 ? 0 : (total / 2 - walked) / seg;
+      return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+    }
+    walked += seg;
+  }
+  return shape.points[shape.points.length - 1];
 }

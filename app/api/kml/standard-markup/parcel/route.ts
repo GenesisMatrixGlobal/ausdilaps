@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isStaff } from "@/lib/auth/is-staff";
+import { fetchLotAddresses } from "@/lib/kml/standard-markup/parcels/addresses";
 import { parcelAtPoint } from "@/lib/kml/standard-markup/parcel-at-point";
 import { parcelAtPointRequestSchema } from "@/lib/kml/standard-markup/schema";
 
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { lat, lng, state } = parsed.data;
+  const { lat, lng, state, street, suburb } = parsed.data;
   try {
     const parcel = await parcelAtPoint(state, { lat, lng });
     if (!parcel) {
@@ -37,11 +38,30 @@ export async function POST(req: NextRequest) {
       // rather than showing a failure.
       return NextResponse.json({ ok: true, parcel: null });
     }
+    // Same address lookup the address pipeline does, so a manually picked lot isn't the one
+    // blank row on the sheet. Cannot throw, and is skipped entirely without an address to
+    // anchor it — see parcels/addresses.ts.
+    const addresses =
+      street || suburb
+        ? await fetchLotAddresses(state, [{ idKey: parcel.idKey, ring: parcel.ring }], {
+            street: street ?? "",
+            suburb: suburb ?? "",
+          })
+        : null;
+    const addr = addresses?.byIdKey.get(parcel.idKey) ?? null;
+
     // Road reserves and easements come back labelled rather than dropped, so the caller
     // can explain what was clicked instead of claiming there's nothing there.
     return NextResponse.json({
       ok: true,
-      parcel: { idKey: parcel.idKey, ring: parcel.ring, areaSqm: parcel.areaSqm, kind: parcel.kind },
+      parcel: {
+        idKey: parcel.idKey,
+        ring: parcel.ring,
+        areaSqm: parcel.areaSqm,
+        kind: parcel.kind,
+        street: addr?.street ?? null,
+        suburb: addr?.suburb ?? null,
+      },
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 502 });

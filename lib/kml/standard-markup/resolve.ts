@@ -3,6 +3,8 @@
 
 import type { LatLng } from "@/lib/kml/types";
 import { identifySubjectAndNeighbours } from "./neighbours";
+import { fetchLotAddresses, type LotAddress } from "./parcels/addresses";
+import { isPropertyFallbackId, lotPlanFromId } from "./parcels/parcel-id";
 import { fetchParcelsNsw } from "./parcels/nsw";
 import { fetchParcelsQld } from "./parcels/qld";
 import type { ParcelQueryResult } from "./parcels/types";
@@ -16,11 +18,24 @@ export interface StandardMarkupNeighbour {
   id: string;
   ring: LatLng[];
   areaSqm: number | null;
+  /** From the state's own address layer — see parcels/addresses.ts. Null when the layer had
+   *  nothing for this lot, or the lookup failed; the sheet then shows an empty, editable cell.
+   *  Never a reason for the markup to fail. */
+  street: string | null;
+  suburb: string | null;
 }
 
 export interface StandardMarkupResult {
   status: StandardMarkupStatus;
   subjectRing: LatLng[];
+  /** The subject parcel's own lot/plan and area.
+   *
+   *  Both were already computed and thrown away here — `subject` is a full ParcelFeature
+   *  carrying `idKey` and an `areaSqm` from the same ringAreaSqm pass every neighbour gets,
+   *  and only its ring was returned. Needed so the site can be a priced layer like any
+   *  other, and so the panel can show its size the way it shows a lot's. */
+  subjectLotPlan: string | null;
+  subjectAreaSqm: number | null;
   neighbours: StandardMarkupNeighbour[];
   matchedAddress: string | null;
   flags: string[];
@@ -36,7 +51,15 @@ const PARCEL_PROVIDERS: Record<
 };
 
 function emptyResult(status: StandardMarkupStatus, matchedAddress: string | null, flags: string[]): StandardMarkupResult {
-  return { status, subjectRing: [], neighbours: [], matchedAddress, flags };
+  return {
+    status,
+    subjectRing: [],
+    subjectLotPlan: null,
+    subjectAreaSqm: null,
+    neighbours: [],
+    matchedAddress,
+    flags,
+  };
 }
 
 /** A parcel's own idKey can be blank if the source cadastre had no plan/lot attributes
@@ -48,7 +71,8 @@ function emptyResult(status: StandardMarkupStatus, matchedAddress: string | null
  *  single parcel. A state cadastre handing back the same identifier for two distinct lots
  *  is a data question we can't settle here, so collisions are suffixed rather than trusted. */
 function toStandardMarkupNeighbours(
-  neighbours: { idKey: string; ring: LatLng[]; areaSqm: number | null }[]
+  neighbours: { idKey: string; ring: LatLng[]; areaSqm: number | null }[],
+  addresses: Map<string, LotAddress>
 ): StandardMarkupNeighbour[] {
   const used = new Set<string>();
   return neighbours.map((n, i) => {
@@ -56,7 +80,16 @@ function toStandardMarkupNeighbours(
     let id = base;
     for (let dup = 2; used.has(id); dup++) id = `${base}#${dup}`;
     used.add(id);
-    return { id, ring: n.ring, areaSqm: n.areaSqm };
+    // Looked up on the raw idKey, not `id` — the "#2" suffix is invented here to keep the
+    // client's checkbox set unique, and the address layer has never heard of it.
+    const addr = addresses.get(n.idKey);
+    return {
+      id,
+      ring: n.ring,
+      areaSqm: n.areaSqm,
+      street: addr?.street ?? null,
+      suburb: addr?.suburb ?? null,
+    };
   });
 }
 
@@ -87,11 +120,31 @@ export async function resolveStandardMarkup(
   }
   const { subject, neighbours, flags } = subjectAndNeighbours;
 
+  // A third round trip, after identifySubjectAndNeighbours because NSW and VIC join on the
+  // rings, and before toStandardMarkupNeighbours because that is where duplicate idKeys get
+  // their "#2". Cannot throw — see parcels/addresses.ts.
+  const lotAddresses = await fetchLotAddresses(
+    state,
+    neighbours.map((n) => ({ idKey: n.idKey, ring: n.ring })),
+    { street: addr.street, suburb: addr.suburb }
+  );
+
+  // Said out loud, because the outlines on screen are then property boundaries rather than
+  // titled parcels and there is no lot/plan to print — see parcels/vic.ts.
+  const fallbackFlags = [subject, ...neighbours].some((p) => isPropertyFallbackId(p.idKey))
+    ? [
+        "VIC's parcel cadastre was unavailable — these are PROPERTY boundaries from Vicmap Property, " +
+          "and lot/plan references aren't available. Check the outlines before quoting.",
+      ]
+    : [];
+
   return {
     status: "ok",
     subjectRing: subject.ring,
-    neighbours: toStandardMarkupNeighbours(neighbours),
+    subjectLotPlan: lotPlanFromId(subject.idKey),
+    subjectAreaSqm: subject.areaSqm,
+    neighbours: toStandardMarkupNeighbours(neighbours, lotAddresses.byIdKey),
     matchedAddress: parcelResult.matchedAddress,
-    flags,
+    flags: [...flags, ...fallbackFlags, ...lotAddresses.flags],
   };
 }

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isStaff } from "@/lib/auth/is-staff";
-import { GoogleMapsConfigError, numberNeighbours, renderStandardMarkupImage } from "@/lib/kml/standard-markup/render-image";
 import { resolveStandardMarkup, type StandardMarkupStatus } from "@/lib/kml/standard-markup/resolve";
 import { standardMarkupRequestSchema } from "@/lib/kml/standard-markup/schema";
 
@@ -27,7 +26,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { street, suburb, postcode, state, mapType, zoomAdjust } = parsed.data;
+  const { street, suburb, postcode, state, mapType } = parsed.data;
 
   let resolved;
   try {
@@ -40,48 +39,27 @@ export async function POST(req: NextRequest) {
     const messages: Record<Exclude<StandardMarkupStatus, "ok">, string> = {
       not_found: `Couldn't find "${street}, ${suburb}" — check the spelling, or add a postcode.`,
       no_parcel: `Found the address but no titled parcel there — measure manually.`,
-      error: "Something went wrong looking up that address.",
+      // Deliberately does NOT blame the address. This status means the state's cadastre
+      // service failed, and the old wording ("Something went wrong looking up that address")
+      // sent operators off to re-check a spelling that was already correct.
+      error: "The state cadastre lookup failed — this is the government service, not your address. Try again shortly, or measure manually.",
     };
     const detail = resolved.flags.length > 0 ? ` (${resolved.flags.join("; ")})` : "";
     return NextResponse.json({ ok: false, error: `${messages[resolved.status]}${detail}` }, { status: 404 });
   }
 
-  const neighbours = numberNeighbours(resolved.neighbours);
-
-  try {
-    const rendered = await renderStandardMarkupImage({
-      subjectRing: resolved.subjectRing,
-      neighbours,
-      mapType,
-      zoomAdjust,
-      // Basemap only — the client's overlay draws every vector (site, lots, bubbles,
-      // shapes). Baking them here too painted each one twice: two 50% fills compound to
-      // 75%, so the first image came out visibly heavier than the export and than
-      // anything drawn afterwards, and unticking a lot left the baked copy behind. The
-      // ring is still passed because it anchors the frame; `hideSubject` stops it being
-      // drawn. Same request shape as the re-render path in residential-tab.tsx.
-      hideSubject: true,
-      hideNeighbours: true,
-    });
-    return NextResponse.json({
-      ok: true,
-      image: rendered.imageBase64,
-      subjectRing: resolved.subjectRing,
-      neighbours,
-      matchedAddress: resolved.matchedAddress,
-      mapType,
-      zoomAdjust,
-      flags: [...resolved.flags, ...rendered.flags],
-      center: rendered.center,
-      zoom: rendered.zoom,
-      fitZoom: rendered.fitZoom,
-      imageSizePx: rendered.imageSizePx,
-      scale: rendered.scale,
-    });
-  } catch (e) {
-    if (e instanceof GoogleMapsConfigError) {
-      return NextResponse.json({ ok: false, error: e.message }, { status: 501 });
-    }
-    return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });
-  }
+  // No image, and no numbering. The tab renders a live Maps JS map, so Generate returns geometry
+  // only — which removes a billed Static Maps call from every snapshot. Numbers are quote item
+  // numbers now, derived from the sheet's tick state on the client (see rowsFrom), so assigning
+  // them here would only create a second series that went stale on the first untick.
+  return NextResponse.json({
+    ok: true,
+    subjectRing: resolved.subjectRing,
+    subjectLotPlan: resolved.subjectLotPlan,
+    subjectAreaSqm: resolved.subjectAreaSqm,
+    neighbours: resolved.neighbours,
+    matchedAddress: resolved.matchedAddress,
+    mapType,
+    flags: resolved.flags,
+  });
 }

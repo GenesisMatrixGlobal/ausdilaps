@@ -5,6 +5,7 @@
 import type { LatLng } from "@/lib/kml/types";
 import { geocodeNsw } from "@/lib/property-sizing/nsw";
 import { envelopeAroundPoint, ringAreaSqm } from "../geometry";
+import { assertNoArcgisError } from "@/lib/arcgis";
 import { describeFetchError } from "./describe-fetch-error";
 import type { ParcelFeature, ParcelQueryResult } from "./types";
 
@@ -73,6 +74,10 @@ export async function fetchParcelsNearPointNsw(
   } catch (e) {
     throw new Error(`NSW parcel query ${describeFetchError(e, Date.now() - parcelStart)}`);
   }
+
+  // Before trusting an empty `features` — see lib/arcgis.ts. An outage must not be reported
+  // to the operator as "no titled parcel at this address".
+  assertNoArcgisError(c, "The NSW cadastre service");
 
   return (c.features ?? [])
     .map((f) => {

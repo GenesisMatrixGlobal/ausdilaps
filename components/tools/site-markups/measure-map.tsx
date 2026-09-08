@@ -12,7 +12,13 @@ import {
   ringSelfIntersects,
   type ShapeMode,
 } from "@/lib/kml/standard-markup/measure";
-import { MapsKeyMissingError, loadGoogleMaps } from "@/lib/maps/loader";
+import {
+  MAPS_AUTH_FAILURE_MESSAGE,
+  MapsKeyMissingError,
+  loadGoogleMaps,
+  mapsAuthFailed,
+  onMapsAuthFailure,
+} from "@/lib/maps/loader";
 import { createMeasureLabel, type MeasureLabel } from "./measure-label";
 import { MAX_POINTS, type MeasureState } from "./measure-shapes";
 
@@ -193,7 +199,12 @@ export function MeasureMap({
   // State, not a ref: the effects below have to re-run once the map exists, and a ref
   // mutation wouldn't re-render. Same reasoning as ToolFrame's portal slot.
   const [map, setMap] = useState<google.maps.Map | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Initialised from the sticky flag rather than set in an effect: the rejection may have
+  // landed before this component existed, and a synchronous setState in an effect body is
+  // both a cascading render and a React-compiler lint error.
+  const [error, setError] = useState<string | null>(() =>
+    mapsAuthFailed() ? MAPS_AUTH_FAILURE_MESSAGE : null
+  );
   const handlesRef = useRef<Map<string, Handles>>(new Map());
 
   // Live props for the imperative handlers, which are attached once and would otherwise
@@ -297,7 +308,15 @@ export function MeasureMap({
         mode === "area"
           ? new google.maps.Polygon({
               ...shared,
-              paths: path,
+              // `[path]`, not `path` — a ONE-ring LatLng[][] rather than a bare LatLng[].
+              //
+              // Google treats a bare empty array as "no rings at all", so getPaths() comes
+              // back empty and getPath() (which is getPaths().getAt(0)) returns UNDEFINED —
+              // and the very next line, mvc.addListener(), throws "Cannot read properties of
+              // undefined". Hit for real: add a shape, switch it to Area before placing any
+              // points, and the whole tool white-screened. Wrapping guarantees exactly one
+              // ring, empty or not, so the MVCArray the one-way rule depends on always exists.
+              paths: [path],
               geodesic: false,
               strokeColor: SHAPE_COLOR,
               strokeWeight: 2,
@@ -451,6 +470,10 @@ export function MeasureMap({
       setMap(null);
     };
   }, []);
+
+  // A rejected key resolves the loader and returns a Map object, then never paints — so the
+  // rejection has to be subscribed to separately or the operator just gets a blank grey box.
+  useEffect(() => onMapsAuthFailure(() => setError(MAPS_AUTH_FAILURE_MESSAGE)), []);
 
   // Teardown of the overlays lives in its own effect so a signature change can never
   // accidentally nuke everything.
@@ -627,7 +650,7 @@ export function MeasureMap({
   return (
     <div className="relative h-full w-full overflow-hidden rounded-xl border border-ad-border bg-ad-surface">
       <div ref={containerRef} className="h-full w-full" />
-      {!map && (
+      {(!map || error) && (
         <div className="absolute inset-0 flex items-center justify-center p-6">
           {error ? (
             <p className="max-w-md rounded-lg border border-ad-orange/40 bg-white p-4 text-sm text-ad-ink">

@@ -12,6 +12,7 @@
 
 import type { LotResult } from "./types";
 import { geocodeViaGoogle } from "./google-geocode";
+import { arcgisErrorMessage } from "@/lib/arcgis";
 
 const CADASTRE_URL = "https://maps.six.nsw.gov.au/arcgis/rest/services/sixmaps/Boundaries/MapServer/15/query";
 
@@ -72,6 +73,13 @@ export async function lookupNsw(addr: { street: string; suburb: string; postcode
         `&spatialRel=esriSpatialRelIntersects&outFields=lotidstring,planlabel,planlotarea,shape_Area` +
         `&returnGeometry=true&outSR=4326&f=json`
     );
+    // An ArcGIS failure arrives as HTTP 200 with an `error` body and no `features`, which
+    // read here as "no titled parcel at this point" — blaming the address for an outage.
+    // See lib/arcgis.ts.
+    const arcgisError = arcgisErrorMessage(c);
+    if (arcgisError) {
+      return { status: "error", flags: [`The NSW cadastre service rejected the query: ${arcgisError}`] };
+    }
     const feat = c.features?.[0];
     const attrs = feat?.attributes;
     const area = attrs?.planlotarea ?? attrs?.shape_Area;

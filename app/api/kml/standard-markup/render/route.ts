@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { subjectRing, neighbours, mapType, zoomAdjust, excludeIds, hideSubject, hideNeighbours, frame } =
+  const { subjectRing, subjectStreet, subjectAreaSqm, subjectLabel, neighbours, mapType, bounds, excludeIds, hideSubject } =
     parsed.data;
   // `councilAssets` is the pre-rename field name, read only as a fallback so a tab that
   // was open across the rename deploy keeps rendering instead of silently dropping the
@@ -39,24 +39,22 @@ export async function POST(req: NextRequest) {
   try {
     const rendered = await renderStandardMarkupImage({
       subjectRing,
+      subjectStreet,
+      subjectAreaSqm,
+      subjectLabel,
       neighbours,
       mapType,
-      zoomAdjust,
+      bounds,
       excludeIds,
       hideSubject,
-      hideNeighbours,
-      frame,
       shapes,
     });
     return NextResponse.json({
       ok: true,
       image: rendered.imageBase64,
       flags: rendered.flags,
-      center: rendered.center,
-      zoom: rendered.zoom,
-      imageSizePx: rendered.imageSizePx,
-      scale: rendered.scale,
-      fitZoom: rendered.fitZoom,
+      widthPx: rendered.widthPx,
+      heightPx: rendered.heightPx,
     });
   } catch (e) {
     if (e instanceof GoogleMapsConfigError) {

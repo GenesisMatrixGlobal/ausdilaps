@@ -36,6 +36,47 @@ export class MapsKeyMissingError extends Error {
   }
 }
 
+/**
+ * What to show when Google rejects the key for this page's URL.
+ *
+ * This failure is invisible without special handling, which is why it gets its own path: the
+ * SCRIPT loads fine (main.js, poly.js and overlay.js all arrive, and `google.maps` exists), so
+ * loadGoogleMaps() resolves and `new google.maps.Map()` returns an object — and then the map
+ * simply never paints. All you get is a console error and a blank grey box. Google's only hook
+ * for it is the `gm_authFailure` global, below.
+ */
+export const MAPS_AUTH_FAILURE_MESSAGE =
+  "Google rejected the Maps key for this address. Add this page's origin to the key's HTTP " +
+  "referrer list in Google Cloud Console (Credentials → the browser key → Application " +
+  "restrictions) — the browser console names the exact URL to authorise.";
+
+let authFailed = false;
+const authListeners = new Set<() => void>();
+
+/** True once Google has rejected the key. Sticky: the failure is a configuration fact, not a
+ *  transient one, and a component mounting later still needs to know. */
+export function mapsAuthFailed(): boolean {
+  return authFailed;
+}
+
+/** Subscribe to the rejection. Needed as a subscription rather than a rejected promise
+ *  because the failure arrives AFTER the loader has already resolved. */
+export function onMapsAuthFailure(listener: () => void): () => void {
+  authListeners.add(listener);
+  return () => {
+    authListeners.delete(listener);
+  };
+}
+
+/** Google calls this global — it is the documented and only hook for a key rejection. */
+function installAuthFailureHook(w: Record<string, unknown>) {
+  if (typeof w.gm_authFailure === "function") return;
+  w.gm_authFailure = () => {
+    authFailed = true;
+    for (const listener of authListeners) listener();
+  };
+}
+
 let loading: Promise<typeof google.maps> | null = null;
 
 export function loadGoogleMaps(): Promise<typeof google.maps> {
@@ -46,6 +87,8 @@ export function loadGoogleMaps(): Promise<typeof google.maps> {
       reject(new Error("loadGoogleMaps() is browser-only."));
       return;
     }
+    installAuthFailureHook(window as unknown as Record<string, unknown>);
+
     if (window.google?.maps) {
       resolve(window.google.maps);
       return;

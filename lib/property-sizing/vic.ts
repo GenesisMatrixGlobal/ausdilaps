@@ -19,6 +19,7 @@
 
 import type { LotResult } from "./types";
 import { geocodeViaGoogle, type GoogleGeocodeOutcome } from "./google-geocode";
+import { arcgisErrorMessage } from "@/lib/arcgis";
 
 const PARCEL_URL =
   "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Parcel/FeatureServer/0/query";
@@ -109,6 +110,13 @@ export async function lookupVic(addr: { street: string; suburb: string; postcode
         f: "json",
       })
     );
+    // An ArcGIS failure arrives as HTTP 200 with an `error` body and no `features`, which
+    // read here as "no titled parcel at this point" — blaming the address for an outage.
+    // See lib/arcgis.ts.
+    const arcgisError = arcgisErrorMessage(p);
+    if (arcgisError) {
+      return { status: "error", flags: [`The VIC cadastre service rejected the query: ${arcgisError}`] };
+    }
     const feat = p.features?.[0];
     const area = feat?.attributes?.Shape__Area;
     if (!feat || area == null) {

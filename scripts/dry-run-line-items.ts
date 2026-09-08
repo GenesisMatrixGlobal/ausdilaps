@@ -1,0 +1,143 @@
+// Prints the Quote Line Item sheet a saved Building Markup produces. Reads nothing else and
+// writes nothing anywhere — no Salesforce, no Box, no network, no creds.
+//
+//   npx tsx scripts/dry-run-line-items.ts <markup>.json
+//   npx tsx scripts/dry-run-line-items.ts --sample     (a built-in markup, for eyeballing)
+//
+// It renders the SAME rows the tool shows on screen, off the same file and the same
+// rowsFrom() — so if the two ever disagree, one of them is a bug rather than a second opinion.
+
+import { readFileSync } from "node:fs";
+import { buildBuildingMarkupFile, parseBuildingMarkupFile } from "@/lib/maps/building-markup-file";
+import { layersFrom } from "@/lib/markup-layers/plan";
+import { assetTypeFor, rowsFrom } from "@/lib/markup-layers/line-items";
+
+const LIMITS = { maxShapePoints: 20, maxRingPoints: 2000, minWidth: 5, maxWidth: 30 };
+
+/** A deliberately awkward markup: a subject plus a redrawn red site, a lot with no area, an
+ *  unticked lot, an orange line and area (external), and a blue line (internal). */
+function sampleFile(): string {
+  const c = { lat: -27.3639, lng: 153.0158 };
+  const d = (m: number) => m / 111320;
+  const dl = (m: number) => m / (111320 * Math.cos((c.lat * Math.PI) / 180));
+  const box = (n: number, e: number, dn: number, de: number) => [
+    { lat: c.lat + d(n), lng: c.lng + dl(e) },
+    { lat: c.lat + d(n), lng: c.lng + dl(e + de) },
+    { lat: c.lat + d(n - dn), lng: c.lng + dl(e + de) },
+    { lat: c.lat + d(n - dn), lng: c.lng + dl(e) },
+  ];
+  return JSON.stringify(
+    buildBuildingMarkupFile({
+      address: { street: "12 Albany Creek Road", suburb: "Aspley", postcode: "4034", state: "QLD" },
+      matchedAddress: "12 Albany Creek Rd, Aspley QLD 4034",
+      mapType: "hybrid",
+      subjectRing: box(0, 0, 30, 20),
+      subjectLotPlan: "3RP12345",
+      subjectAreaSqm: 612,
+      neighbours: [
+        { id: "4RP12345", ring: box(0, 22, 30, 20), areaSqm: 598, street: "14 Albany Creek Road", suburb: "Aspley" },
+        { id: "5RP12345", ring: box(0, -22, 30, 20), areaSqm: 1840, street: "10 Albany Creek Road", suburb: "Aspley" },
+        // No address from the layer, and no area from the cadastre — both cells come up blank.
+        { id: "6RP12345", ring: box(34, 0, 30, 20), areaSqm: null },
+      ],
+      frame: { center: c, fitZoom: 19 },
+      zoomAdjust: 1,
+      excludedIds: ["6RP12345"],
+      hideSubject: false,
+      shapes: [
+        // Orange line along the frontage — external.
+        { id: "s1", mode: "line", widthMetres: 10, color: "orange",
+          points: [{ lat: c.lat - d(34), lng: c.lng - dl(30) }, { lat: c.lat - d(34), lng: c.lng + dl(50) }] },
+        // Orange area behind the kerb — external.
+        { id: "s2", mode: "area", widthMetres: 10, color: "orange", points: box(-32, 0, 6, 40) },
+        // Red — a redrawn site boundary. Seeds neither side, like the detected site.
+        { id: "s3", mode: "area", widthMetres: 10, color: "red", points: box(0, 0, 30, 20) },
+        // Blue line — internal.
+        { id: "s4", mode: "line", widthMetres: 5, color: "blue",
+          points: [{ lat: c.lat + d(4), lng: c.lng + dl(22) }, { lat: c.lat - d(26), lng: c.lng + dl(22) }] },
+      ],
+      lineItems: {
+        // One row already priced by hand, to prove the overrides survive a round trip.
+        "lot:4RP12345": { product: "Residential House", internalMetres: "180" },
+      },
+      deselected: ["shape:s3"],
+    }),
+    null,
+    2
+  );
+}
+
+function pad(value: string, width: number): string {
+  // Padded on display WIDTH, not string length — "m²" and "·" are multi-byte and
+  // String.padEnd counts code units, which knocks every later column out by one.
+  const w = [...value].length;
+  return value + " ".repeat(Math.max(0, width - w));
+}
+
+function main() {
+  const arg = process.argv[2];
+  if (!arg) {
+    console.error("usage: dry-run-line-items.ts <markup>.json | --sample");
+    process.exit(2);
+  }
+  const text = arg === "--sample" ? sampleFile() : readFileSync(arg, "utf8");
+
+  const parsed = parseBuildingMarkupFile(text, LIMITS);
+  if (!parsed.ok) {
+    console.error(`Couldn't read that markup: ${parsed.error}`);
+    process.exit(1);
+  }
+  const file = parsed.file;
+
+  console.log(`\n${file.address.street}, ${file.address.suburb} ${file.address.state}`);
+  console.log(
+    `file v${file.version} · saved ${file.savedAt.slice(0, 16).replace("T", " ")} · ` +
+      `${file.neighbours.length} detected lot(s), ${file.shapes.length} shape(s)` +
+      (parsed.skippedShapes ? ` · ${parsed.skippedShapes} unreadable shape(s)` : "")
+  );
+
+  const layers = layersFrom(file);
+  // The operator's own cells and tick state, which the file carries — without them the dry run
+  // prints the defaults and silently disagrees with what the tool is showing on screen.
+  const rows = rowsFrom(layers, file.lineItems ?? {}, new Set(file.deselected ?? []));
+
+  console.log("\nQUOTE LINE ITEMS");
+  console.log(
+    `  ${pad("", 2)}${pad("ITEM", 12)}${pad("STREET", 24)}${pad("SUBURB", 12)}` +
+      `${pad("PRODUCT", 26)}${pad("ASSET TYPE", 26)}${pad("INT m²", 8)}${pad("EXT m²", 8)}` +
+      `${pad("INT $", 7)}${pad("EXT $", 7)}QTY`
+  );
+  for (const r of rows) {
+    const v = r.values;
+    console.log(
+      `  ${pad(r.selected ? "☑" : "☐", 2)}${pad(`${r.number ?? "—"} · ${r.layer.label}`, 12)}${pad(v.street || "—", 24)}` +
+        `${pad(v.suburb || "—", 12)}${pad(v.product || "— none —", 26)}${pad(assetTypeFor(v) || "—", 26)}` +
+        `${pad(v.internalMetres || "—", 8)}${pad(v.externalMetres || "—", 8)}` +
+        `${pad(v.internalRate, 7)}${pad(v.externalRate, 7)}${v.quantity}`
+    );
+  }
+
+  const excluded = layers.filter((l) => !l.included);
+  if (excluded.length > 0) {
+    console.log("\nNOT ON THE SHEET");
+    for (const l of excluded) {
+      console.log(
+        `  ${pad(l.label, 14)}${l.kind === "shape" ? "not enough points to measure" : "unticked on the markup"}`
+      );
+    }
+  }
+
+  const noProduct = rows.filter((r) => r.selected && !r.values.product);
+  const noMeasure = rows.filter((r) => r.selected && !r.values.internalMetres && !r.values.externalMetres);
+  if (noProduct.length > 0 || noMeasure.length > 0) {
+    console.log("\nNEEDS A LOOK");
+    for (const r of noProduct) console.log(`  ⚠ ${r.layer.label} is selected with no product chosen`);
+    for (const r of noMeasure) console.log(`  ⚠ ${r.layer.label} is selected with no internal or external m²`);
+  }
+
+  const selected = rows.filter((r) => r.selected).length;
+  console.log(
+    `\n${selected} of ${rows.length} row(s) selected. Nothing was written to Salesforce.\n`
+  );
+}
+main();

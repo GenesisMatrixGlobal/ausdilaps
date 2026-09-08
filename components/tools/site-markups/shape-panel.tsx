@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { StepperRow } from "@/components/ui/stepper-row";
+import type { MarkupMapCommands } from "./markup-map";
 import {
   SHAPE_WIDTH_STEP_M,
   MAX_SHAPES,
@@ -99,7 +100,16 @@ function Measurement({ shape }: { shape: ShapeDraft }) {
   );
 }
 
-export function ShapePanel({ shapes }: { shapes: ShapesState }) {
+export function ShapePanel({
+  shapes,
+  commands,
+}: {
+  shapes: ShapesState;
+  /** The map's imperative handle. Undo and Clear go through it, NOT through `shapes`: the
+   *  overlay owns the geometry, so a React-state write would update the panel's point count
+   *  and leave the outline on the map untouched. */
+  commands: React.RefObject<MarkupMapCommands | null>;
+}) {
   const { shapes: list, activeShapeId, atMax } = shapes;
 
   return (
@@ -249,7 +259,7 @@ export function ShapePanel({ shapes }: { shapes: ShapesState }) {
                       <span className="flex gap-2">
                         <button
                           type="button"
-                          onClick={() => shapes.undoPoint(shape.id)}
+                          onClick={() => commands.current?.undoPoint(shape.id)}
                           disabled={shape.points.length === 0}
                           className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
                         >
@@ -257,7 +267,7 @@ export function ShapePanel({ shapes }: { shapes: ShapesState }) {
                         </button>
                         <button
                           type="button"
-                          onClick={() => shapes.clearPoints(shape.id)}
+                          onClick={() => commands.current?.clearPoints(shape.id)}
                           disabled={shape.points.length === 0}
                           className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
                         >

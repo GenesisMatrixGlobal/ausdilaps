@@ -4,6 +4,7 @@
 // Returns the parcel geometry too, for the building-attributes step.
 
 import type { LotResult } from "./types";
+import { arcgisErrorMessage } from "@/lib/arcgis";
 
 const GEOCODE_URL =
   "https://spatial-gis.information.qld.gov.au/arcgis/rest/services/Location/QldLocator/GeocodeServer/findAddressCandidates";
@@ -71,6 +72,13 @@ export async function lookupQld(addr: { street: string; suburb: string; postcode
         `&spatialRel=esriSpatialRelIntersects&outFields=lot,plan,lotplan,lot_area,locality` +
         `&returnGeometry=true&outSR=4326&f=json`
     );
+    // An ArcGIS failure arrives as HTTP 200 with an `error` body and no `features`, which
+    // read here as "no titled parcel at this point" — blaming the address for an outage.
+    // See lib/arcgis.ts.
+    const arcgisError = arcgisErrorMessage(c);
+    if (arcgisError) {
+      return { status: "error", flags: [`The QLD cadastre service rejected the query: ${arcgisError}`] };
+    }
     const feat = c.features?.[0];
     const attrs = feat?.attributes;
     const area = attrs?.lot_area;

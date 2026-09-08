@@ -6,6 +6,7 @@
 import type { LatLng } from "@/lib/kml/types";
 import { geocodeQld } from "@/lib/property-sizing/qld";
 import { envelopeAroundPoint, ringAreaSqm } from "../geometry";
+import { assertNoArcgisError } from "@/lib/arcgis";
 import { describeFetchError } from "./describe-fetch-error";
 import type { ParcelFeature, ParcelKind, ParcelQueryResult } from "./types";
 
@@ -89,6 +90,9 @@ export async function fetchParcelsNearPointQld(
   } catch (e) {
     throw new Error(`QLD parcel query ${describeFetchError(e, Date.now() - parcelStart)}`);
   }
+  // Before trusting an empty `features` — see lib/arcgis.ts. An outage must not be reported
+  // to the operator as "no titled parcel at this address".
+  assertNoArcgisError(c, "The QLD cadastre service");
 
   return (c.features ?? [])
     .map((f) => ({

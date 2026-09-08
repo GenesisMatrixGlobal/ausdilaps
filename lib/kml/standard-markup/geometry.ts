@@ -45,6 +45,33 @@ export function envelopeAroundPoint(lng: number, lat: number, halfWidthM: number
   return { xmin: lng - lngPad, ymin: lat - latPad, xmax: lng + lngPad, ymax: lat + latPad };
 }
 
+/**
+ * The bounding box of several rings at once, padded.
+ *
+ * Not envelopeAroundPoint(geocodedPoint, 60): the address-layer lookup needs a box that covers
+ * every lot in the markup, and a large or long lot can put its address point well outside a
+ * 60 m box around the geocoded point — which reads as "this lot has no address" rather than as
+ * a too-small query.
+ */
+export function envelopeOfRings(rings: LatLng[][], padMetres: number): Envelope | null {
+  let xmin = Infinity;
+  let ymin = Infinity;
+  let xmax = -Infinity;
+  let ymax = -Infinity;
+  for (const ring of rings) {
+    for (const p of ring) {
+      if (p.lng < xmin) xmin = p.lng;
+      if (p.lng > xmax) xmax = p.lng;
+      if (p.lat < ymin) ymin = p.lat;
+      if (p.lat > ymax) ymax = p.lat;
+    }
+  }
+  if (!Number.isFinite(xmin) || !Number.isFinite(ymin)) return null;
+  const latPad = padMetres / METRES_PER_DEG_LAT;
+  const lngPad = padMetres / metresPerDegLng((ymin + ymax) / 2);
+  return { xmin: xmin - lngPad, ymin: ymin - latPad, xmax: xmax + lngPad, ymax: ymax + latPad };
+}
+
 /** Appends the first point to close the ring, unless it's already closed. */
 export function closeRing(ring: LatLng[]): LatLng[] {
   if (ring.length === 0) return ring;

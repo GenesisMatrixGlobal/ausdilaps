@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { SyncToSalesforce } from "@/components/tools/shared/sync-to-salesforce";
@@ -8,18 +8,25 @@ import { downloadBlob } from "@/components/tools/shared/download";
 import {
   buildBuildingMarkupFile,
   parseBuildingMarkupFile,
+  type BuildingMarkupFile,
 } from "@/lib/maps/building-markup-file";
 import { AddressSearch, type ParsedAddress } from "./address-search";
 import { ShapePanel } from "./shape-panel";
 import {
   useShapes,
+  MIN_POINTS,
   MAX_SHAPE_POINTS,
   MAX_SHAPE_WIDTH_M,
   MIN_SHAPE_WIDTH_M,
 } from "./shapes";
-import { MarkupCanvas, type Projection } from "./markup-canvas";
-import { SITE_RED } from "@/lib/kml/standard-markup/style";
-import { markerLabel } from "@/lib/kml/standard-markup/labels";
+import { MarkupMap, type MarkupMapCommands } from "./markup-map";
+import { NEIGHBOUR_FILL, SITE_RED } from "@/lib/kml/standard-markup/style";
+import { LineItemsTable } from "./line-items-table";
+import { SUBJECT_KEY, layersFrom, lotKey, shapeKey } from "@/lib/markup-layers/plan";
+import { itemNumbers, rowsFrom, type LineItemDraft, type LineItemDrafts } from "@/lib/markup-layers/line-items";
+import type { MarkupLayer } from "@/lib/markup-layers/types";
+import { formatArea } from "@/lib/kml/standard-markup/measure";
+import { lotPlanFromId } from "@/lib/kml/standard-markup/parcels/parcel-id";
 import { pointInRing } from "@/lib/kml/standard-markup/geometry";
 
 const STATES = [
@@ -47,29 +54,22 @@ interface Neighbour {
   id: string;
   ring: LatLng[];
   areaSqm: number | null;
-  label: string;
+  /** From the state's address layer — see lib/kml/standard-markup/parcels/addresses.ts.
+   *  Null when the layer had nothing for this lot, or the lookup failed. */
+  street?: string | null;
+  suburb?: string | null;
 }
 
 interface GenerateResponse {
-  image: string;
   subjectRing: LatLng[];
+  /** The subject parcel's own lot/plan and area. Optional because a markup restored from a
+   *  version-1 save file predates them. */
+  subjectLotPlan?: string | null;
+  subjectAreaSqm?: number | null;
   neighbours: Neighbour[];
   matchedAddress: string | null;
   mapType: MapType;
-  zoomAdjust: number;
   flags: string[];
-  center: LatLng;
-  zoom: number;
-  fitZoom: number;
-  imageSizePx: number;
-  scale: number;
-}
-
-/** The pinned frame. Captured once, by Generate, and sent on every later render so that
- *  nothing the operator does to the geometry can shift the photo under them. */
-interface Frame {
-  center: LatLng;
-  fitZoom: number;
 }
 
 function slugify(value: string): string {
@@ -96,25 +96,92 @@ export function ResidentialMarkupTab() {
   const [manualEntry, setManualEntry] = useState(false);
   const [parsedSummary, setParsedSummary] = useState<string | null>(null);
   const [addressError, setAddressError] = useState<string | null>(null);
-  const [zoomAdjust, setZoomAdjust] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [flags, setFlags] = useState<string[]>([]);
-  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
   // Matches the excludedIds convention: state records what's been REMOVED, so a fresh
   // snapshot starts with everything the lookup found.
   const [hideSubject, setHideSubject] = useState(false);
-  const [projection, setProjection] = useState<Projection | null>(null);
-  const [frame, setFrame] = useState<Frame | null>(null);
+  // The live map. A ref, not state: the only things the tab asks of it are "give me the
+  // camera" (at export time) and "frame this geometry" (after a resolve).
+  const mapRef = useRef<MarkupMapCommands>(null);
+  // "Frame this geometry, once." See MarkupMap's fitRequest prop.
+  const [fitRequest, setFitRequest] = useState<{ key: string; rings: LatLng[][] } | null>(null);
   const [picking, setPicking] = useState(false);
   const [pickBusy, setPickBusy] = useState(false);
   const [pickMessage, setPickMessage] = useState<string | null>(null);
   const shapes = useShapes();
   const fileInput = useRef<HTMLInputElement>(null);
+  // The sheet's cells. Sparse — see lib/markup-layers/line-items.ts.
+  const [lineDrafts, setLineDrafts] = useState<LineItemDrafts>({});
+  // Which rows are NOT going to sync. Records what was de-selected rather than what was
+  // selected, so a newly drawn shape arrives ticked without anything having to remember it —
+  // the same convention as excludedIds and hideSubject above.
+  const [deselected, setDeselected] = useState<Set<string>>(new Set());
+
+  /** How a row in the Detected lots list reads. formatArea() rather than a local template so
+   *  the sidebar, the sheet and the exported legend can't quote the same lot differently. */
+  function lotRowText(name: string, areaSqm: number | null): string {
+    return areaSqm ? `${name} — ${formatArea(areaSqm)}` : name;
+  }
+
+  function lotRowLabel(n: Neighbour): string {
+    return lotRowText(n.street || lotPlanFromId(n.id) || "Lot", n.areaSqm);
+  }
+
+  /** The item number for a layer, or null when it isn't a line item. */
+  const numberFor = (key: string) => numbers.get(key) ?? null;
+
+  /** The numbered bubble, or a blank of the same size so the rows below it don't shift.
+   *
+   *  Nothing without a number gets a bubble — an unticked lot used to keep showing an orange
+   *  badge beside its unchecked box, which read as "item 2" for something deliberately left out
+   *  of the quote. */
+  function rowBadge(key: string, color: string) {
+    const n = numberFor(key);
+    if (n === null) return <span className="h-5 w-5 shrink-0" aria-hidden />;
+    return (
+      <span
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+        style={{ backgroundColor: color }}
+      >
+        {n}
+      </span>
+    );
+  }
+
+  /** The project-site row reads the same way as the lots below it — the red swatch and the
+   *  top position already say which one it is, so spending the text on "Project site" said
+   *  nothing the row wasn't already showing. Uses the TYPED address, not a looked-up one:
+   *  it is the address the job is under, and a corner lot has several valid frontages. */
+  function subjectRowLabel(): string {
+    const name = street.trim() || result?.subjectLotPlan || "Project site";
+    return lotRowText(name, result?.subjectAreaSqm ?? null);
+  }
+
+  const setLineCell = (key: string, field: keyof LineItemDraft, value: string) =>
+    setLineDrafts((prev) => {
+      const row = { ...prev[key], [field]: value };
+      // Changing the product clears any asset-type override on that row. The override was made
+      // against the OLD product; keeping it silently is how a line ends up saying it's a
+      // Standard Internal inspection of an external GPS survey.
+      if (field === "product") delete row.assetType;
+      return { ...prev, [key]: row };
+    });
+
+  const toggleRow = (key: string) =>
+    setDeselected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const toggleAllRows = (select: boolean) =>
+    setDeselected(select ? new Set() : new Set(layers.filter((l) => l.included).map((l) => l.key)));
 
   /** base64 of a UTF-8 string — plain btoa() throws on an accented address. */
   function toBase64(text: string): string {
@@ -127,25 +194,42 @@ export function ResidentialMarkupTab() {
   /** The save file: the RESOLVED geometry, not just the address. Re-resolving on open would
    *  hand back whatever the cadastre says today, which is not the drawing that was signed
    *  off — and would re-pay the geocode and ArcGIS lookup. */
-  function saveFileJson(): string | null {
+  function currentFile(): BuildingMarkupFile | null {
     if (!result) return null;
-    return JSON.stringify(
-      buildBuildingMarkupFile({
-        address: { street, suburb, postcode, state },
-        matchedAddress: result.matchedAddress,
-        mapType: result.mapType,
-        subjectRing: result.subjectRing,
-        neighbours: result.neighbours,
-        frame,
-        zoomAdjust,
-        excludedIds: Array.from(excludedIds),
-        hideSubject,
-        shapes: shapes.payload(),
-      }),
-      null,
-      2
-    );
+    return buildBuildingMarkupFile({
+      address: { street, suburb, postcode, state },
+      matchedAddress: result.matchedAddress,
+      mapType: result.mapType,
+      subjectRing: result.subjectRing,
+      subjectLotPlan: result.subjectLotPlan ?? null,
+      subjectAreaSqm: result.subjectAreaSqm ?? null,
+      neighbours: result.neighbours,
+      excludedIds: Array.from(excludedIds),
+      hideSubject,
+      // Not payload(): that strips the id, and the id is the join key a re-sync needs to
+      // recognise this shape's line item instead of creating a second one.
+      shapes: shapes.shapes
+        .filter((a) => a.points.length >= MIN_POINTS[a.mode])
+        .map(({ id, mode, widthMetres, color, points }) => ({ id, mode, widthMetres, color, points })),
+      lineItems: lineDrafts,
+      deselected: Array.from(deselected),
+    });
   }
+
+  function saveFileJson(): string | null {
+    const file = currentFile();
+    return file ? JSON.stringify(file, null, 2) : null;
+  }
+
+  // The sheet's rows come from the SAME file the tool saves and the offline harness reads, so
+  // what an estimator sees on screen and what scripts/dry-run-line-items.ts prints can never
+  // be two different mappings.
+  const file = currentFile();
+  const layers: MarkupLayer[] = file ? layersFrom(file) : [];
+  // ONE numbering, derived once and shared by the sheet, the sidebar badges, the live map and the
+  // export payload — so all four can never disagree about what item 2 is.
+  const rows = rowsFrom(layers, lineDrafts, deselected);
+  const numbers = itemNumbers(rows);
 
   function saveJson() {
     const doc = saveFileJson();
@@ -177,47 +261,41 @@ export function ResidentialMarkupTab() {
     if (supported) setState(f.address.state as SupportedState);
     setParsedSummary(f.matchedAddress ?? null);
     setAddressError(null);
-    setZoomAdjust(f.zoomAdjust);
     setExcludedIds(new Set(f.excludedIds));
     setHideSubject(f.hideSubject);
-    setFrame(f.frame);
     shapes.replaceAll(f.shapes);
-    // The basemap image itself isn't in the file — it is a few hundred KB of pixels that
-    // /render regenerates exactly from the frame. Setting `result` is what makes the
-    // canvas, the lot list and the shape panel appear; the effect on `result` then fetches
-    // the photo.
+    setLineDrafts(f.lineItems ?? {});
+    setDeselected(new Set(f.deselected ?? []));
     setResult({
-      image: "",
       subjectRing: f.subjectRing,
+      subjectLotPlan: f.subjectLotPlan ?? null,
+      subjectAreaSqm: f.subjectAreaSqm ?? null,
       neighbours: f.neighbours,
       matchedAddress: f.matchedAddress,
       mapType: f.mapType,
-      zoomAdjust: f.zoomAdjust,
       flags: [],
-      center: f.frame?.center ?? f.subjectRing[0],
-      zoom: f.frame?.fitZoom ?? 18,
-      fitZoom: f.frame?.fitZoom ?? 18,
-      // Seeded, never read: the canvas takes its projection from the /render response
-      // below, and nothing reads these two off `result`. Kept only to satisfy the type
-      // rather than duplicating static-map.ts's constants into the client bundle.
-      imageSizePx: 0,
-      scale: 0,
     });
+    // A saved frame is no longer stored or honoured — the map is live, so the operator points
+    // it wherever they want. Frame the geometry the file actually contains instead.
+    frameGeometry(f.subjectRing, f.neighbours, new Set(f.excludedIds));
     setFlags(
       parsed.skippedShapes > 0
         ? [`${parsed.skippedShapes} shape(s) in that file couldn't be read and were skipped`]
         : []
     );
-    // The basemap image is deliberately not in the save file — a few hundred KB of pixels
-    // /render reproduces exactly from the frame, and storing it would let the photo and the
-    // geometry drift apart. Called with the file's own values, not state, which has not
-    // re-rendered yet.
-    await fetchBasemap({
-      subjectRing: f.subjectRing,
-      mapType: f.mapType,
-      zoomAdjust: f.zoomAdjust,
-      frame: f.frame,
-    });
+  }
+
+  /** Asks the map to frame the subject plus every included lot.
+   *
+   *  Called after a resolve and after Open .json — the two moments where new geometry arrives
+   *  that the operator hasn't framed themselves. Never on a checkbox or a shape edit: moving
+   *  the camera under someone mid-edit is exactly the behaviour a live map exists to avoid.
+   *
+   *  A keyed REQUEST rather than a direct call, because on the first snapshot the map is still
+   *  loading when this runs — see the fitRequest prop. */
+  function frameGeometry(subjectRing: LatLng[], neighbours: Neighbour[], excluded: Set<string>) {
+    const rings = [subjectRing, ...neighbours.filter((n) => !excluded.has(n.id)).map((n) => n.ring)];
+    setFitRequest({ key: crypto.randomUUID(), rings: rings.filter((r) => r.length >= 3) });
   }
 
   function handleAddressSelect(parsed: ParsedAddress) {
@@ -248,7 +326,7 @@ export function ResidentialMarkupTab() {
       const res = await fetch("/api/kml/standard-markup", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ street, suburb, postcode: postcode || undefined, state, mapType: MAP_TYPE, zoomAdjust }),
+        body: JSON.stringify({ street, suburb, postcode: postcode || undefined, state, mapType: MAP_TYPE }),
       });
       const json = (await res.json().catch(() => null)) as (GenerateResponse & { ok: boolean; error?: string }) | null;
       if (!res.ok || !json) {
@@ -258,13 +336,11 @@ export function ResidentialMarkupTab() {
       setResult(json);
       setExcludedIds(new Set());
       setHideSubject(false);
+      setLineDrafts({});
+      setDeselected(new Set());
       shapes.reset();
-      setImageDataUrl(`data:image/png;base64,${json.image}`);
       setFlags(json.flags);
-      zoomSettled.current = zoomAdjust;
-      setProjection({ center: json.center, zoom: json.zoom, imageSizePx: json.imageSizePx, scale: json.scale });
-      // The only place the frame is ever set. Every later render reuses it.
-      setFrame({ center: json.center, fitZoom: json.fitZoom });
+      frameGeometry(json.subjectRing, json.neighbours, new Set());
       setPicking(false);
       setPickMessage(null);
     } catch (e) {
@@ -274,68 +350,6 @@ export function ResidentialMarkupTab() {
     }
   }
 
-  /** Refetches the aerial tile. Zoom is the only thing that needs this — every other
-   *  control changes what the overlay draws, which costs nothing. */
-  async function refreshBasemap() {
-    if (!result) return;
-    await fetchBasemap({
-      subjectRing: result.subjectRing,
-      mapType: result.mapType,
-      zoomAdjust,
-      frame,
-    });
-  }
-
-  /** The basemap fetch, taking its inputs explicitly rather than off state.
-   *
-   *  Open .json needs it immediately after setResult(), when the state variables still hold
-   *  the previous markup — and reaching for an effect to wait for the re-render trips the
-   *  "no synchronous setState in an effect" rule for no benefit. */
-  async function fetchBasemap(opts: {
-    subjectRing: LatLng[];
-    mapType: MapType;
-    zoomAdjust: number;
-    frame: Frame | null;
-  }) {
-    setError(null);
-    setRegenerating(true);
-    try {
-      const res = await fetch("/api/kml/standard-markup/render", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          // Every vector — site, lots, bubbles, shapes — is drawn by the overlay now, so
-          // this request fetches only the basemap (plus the composited legend and north
-          // arrow). That is what makes a checkbox instant: unticking a lot changes what
-          // the overlay renders, with no round trip at all. The subject ring is still
-          // sent because it anchors the frame; `hideSubject` stops it being drawn.
-          subjectRing: opts.subjectRing,
-          neighbours: [],
-          mapType: opts.mapType,
-          zoomAdjust: opts.zoomAdjust,
-          hideSubject: true,
-          frame: opts.frame,
-        }),
-      });
-      const json = (await res.json().catch(() => null)) as
-        | { ok: boolean; image?: string; flags?: string[]; error?: string; center?: LatLng; zoom?: number; imageSizePx?: number; scale?: number }
-        | null;
-      if (!res.ok || !json?.image) {
-        setError(json?.error ?? "Something went wrong refreshing the map.");
-        return;
-      }
-      setImageDataUrl(`data:image/png;base64,${json.image}`);
-      setFlags(json.flags ?? []);
-      if (json.center && json.zoom !== undefined && json.imageSizePx !== undefined && json.scale !== undefined) {
-        zoomSettled.current = opts.zoomAdjust;
-      setProjection({ center: json.center, zoom: json.zoom, imageSizePx: json.imageSizePx, scale: json.scale });
-      }
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setRegenerating(false);
-    }
-  }
 
   /** Ids key the exclude-set and the checkboxes, so a duplicate would make two lots
    *  toggle as one — the same rule resolve.ts applies server-side, applied here against
@@ -361,7 +375,7 @@ export function ResidentialMarkupTab() {
     }
     const existing = result.neighbours.find((n) => pointInRing(point, n.ring));
     if (existing) {
-      setPickMessage(`Lot ${existing.label} is already in the list.`);
+      setPickMessage(`${existing.street ?? "That lot"} is already in the list.`);
       return;
     }
 
@@ -370,12 +384,22 @@ export function ResidentialMarkupTab() {
       const res = await fetch("/api/kml/standard-markup/parcel", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ lat: point.lat, lng: point.lng, state }),
+        // The job's address goes along so the route can look the picked lot's own street up:
+        // NSW needs the suburb to split one glued address string, and QLD uses the street to
+        // choose between a corner lot's several frontages.
+        body: JSON.stringify({ lat: point.lat, lng: point.lng, state, street, suburb }),
       });
       const json = (await res.json().catch(() => null)) as
         | {
             ok: boolean;
-            parcel?: { idKey: string; ring: LatLng[]; areaSqm: number | null; kind: "lot" | "road" | "other" } | null;
+            parcel?: {
+              idKey: string;
+              ring: LatLng[];
+              areaSqm: number | null;
+              kind: "lot" | "road" | "other";
+              street?: string | null;
+              suburb?: string | null;
+            } | null;
             error?: string;
           }
         | null;
@@ -399,9 +423,8 @@ export function ResidentialMarkupTab() {
         id: uniqueLotId(json.parcel.idKey, result.neighbours),
         ring: json.parcel.ring,
         areaSqm: json.parcel.areaSqm,
-        // Continues the existing numbering rather than renumbering — a lot's pin must
-        // never change number once the operator has seen it.
-        label: markerLabel(result.neighbours.length),
+        street: json.parcel.street ?? null,
+        suburb: json.parcel.suburb ?? null,
       };
       // No render needed — the overlay draws the new lot and its bubble straight away.
       setResult({ ...result, neighbours: [...result.neighbours, added] });
@@ -411,23 +434,6 @@ export function ResidentialMarkupTab() {
       setPickBusy(false);
     }
   }
-
-  // Zoom is the one control that still needs the server: a different zoom means a
-  // different basemap tile. Debounced so dragging the slider across its range costs one
-  // Static Maps call at the end rather than one per step. Skips the first run so
-  // generating a snapshot doesn't immediately refetch what it just fetched.
-  const zoomSettled = useRef(zoomAdjust);
-  useEffect(() => {
-    if (!result || zoomSettled.current === zoomAdjust) return;
-    const t = setTimeout(() => {
-      zoomSettled.current = zoomAdjust;
-      void refreshBasemap();
-    }, 400);
-    return () => clearTimeout(t);
-    // refreshBasemap closes over current state each render; re-running on zoomAdjust and
-    // result is exactly the intent.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoomAdjust, result]);
 
   function toggleNeighbour(id: string) {
     setExcludedIds((prev) => {
@@ -446,20 +452,47 @@ export function ResidentialMarkupTab() {
   // the one an operator would have downloaded and uploaded by hand.
   async function renderCleanImageBase64(): Promise<string> {
     if (!result) throw new Error("Generate a markup first.");
+    // The live map's own viewport — the export re-renders exactly this frame through Static
+    // Maps, because Maps JS tiles are cross-origin and the live canvas can never be read
+    // back. Bounds rather than centre+zoom: the map's zoom is fractional and Static Maps
+    // takes integers only.
+    const camera = mapRef.current?.getCamera();
+    if (!camera) throw new Error("The map is still loading — try again in a moment.");
     const res = await fetch("/api/kml/standard-markup/render", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         subjectRing: result.subjectRing,
-        neighbours: result.neighbours,
-        mapType: result.mapType,
-        zoomAdjust,
+        // The address the operator typed, for the legend's project-site row — it beats
+        // anything the address layer could offer for a corner lot with several frontages.
+        subjectStreet: street.trim() || null,
+        subjectAreaSqm: result.subjectAreaSqm ?? null,
+        // Item numbers from the SAME rowsFrom() result the sheet renders, so the PNG's bubbles
+        // and legend can't disagree with the sheet. "" means drawn but not a line item.
+        subjectLabel: String(numberFor(SUBJECT_KEY) ?? ""),
+        neighbours: result.neighbours.map((n) => ({
+          ...n,
+          label: String(numberFor(lotKey(n.id)) ?? ""),
+        })),
+        // The map type the operator actually chose, not the one the snapshot was resolved
+        // with — they can switch to Satellite on the live map.
+        mapType: camera.mapType,
+        bounds: camera.bounds,
         excludeIds: Array.from(excludedIds),
         hideSubject,
-        frame,
-        // The export DOES bake the shapes — unlike the on-screen preview above, a .png
-        // has no overlay to draw them.
-        shapes: shapes.payload(),
+        // The export bakes the shapes AND the numbered badges — unlike the live map, a .png has
+        // no overlay to draw them. payload() supplies geometry; the numbers are attached here
+        // from the same source as everything else.
+        shapes: shapes.payload().map((sh) => {
+          const key = shapeKey(sh);
+          return {
+            ...sh,
+            label: String(numberFor(key) ?? ""),
+            // The Street cell the operator typed for this shape — the legend names it that
+            // instead of a generic "Shape".
+            name: rows.find((r) => r.key === key)?.values.street ?? "",
+          };
+        }),
       }),
     });
     const json = (await res.json().catch(() => null)) as { ok: boolean; image?: string; error?: string } | null;
@@ -593,7 +626,7 @@ export function ResidentialMarkupTab() {
         <button
           className={cn(buttonVariants({ variant: "accent", size: "md" }), downloading && "opacity-60")}
           onClick={download}
-          disabled={!imageDataUrl || downloading}
+          disabled={!result || downloading}
         >
           {downloading ? "Preparing…" : "Download .png"}
         </button>
@@ -638,7 +671,7 @@ export function ResidentialMarkupTab() {
             };
           }}
           fallbackName={`${slugify(street)}-${slugify(suburb)}-standard-markup.png`}
-          disabled={!imageDataUrl}
+          disabled={!result}
         />
         {error && <span className="text-sm text-ad-orange">{error}</span>}
       </div>
@@ -654,64 +687,27 @@ export function ResidentialMarkupTab() {
         </div>
       )}
 
-      {imageDataUrl && result && (
+      {result && (
+        <>
         <div className="mt-6 flex flex-col gap-4 xl:flex-row xl:items-start">
-          <MarkupCanvas
-            imageDataUrl={imageDataUrl}
-            alt={`${street} standard markup`}
-            projection={projection}
-            shapes={shapes}
-            lots={result.neighbours.filter((n) => !excludedIds.has(n.id))}
-            subjectRing={result.subjectRing}
-            hideSubject={hideSubject}
-            pickMode={picking}
-            onPick={handlePick}
-            onCancelPick={() => setPicking(false)}
-          />
+          <div className="w-full max-w-4xl">
+            <MarkupMap
+              ref={mapRef}
+              shapes={shapes}
+              subjectRing={result.subjectRing}
+              hideSubject={hideSubject}
+              lots={result.neighbours.filter((n) => !excludedIds.has(n.id))}
+              numbers={numbers}
+              pickMode={picking}
+              onPick={handlePick}
+              fitRequest={fitRequest}
+            />
+          </div>
 
           <div className="w-full max-w-xs space-y-4">
-            {/* First in the column, and deliberately far from the Custom shapes Width
-                slider at the bottom — the two are the same "− slider +" control and were
-                easy to mix up when adjacent. Zoom is also a set-once thing, so it doesn't
-                belong among the controls being worked with repeatedly. */}
-            <div className="rounded-xl border border-ad-border bg-white p-4">
-              <div className="flex items-baseline justify-between gap-2">
-                <p className="text-sm font-medium text-ad-ink">Zoom</p>
-                {/* The only server round trip left in the tool, so it's the only place
-                    that needs a wait indicator. */}
-                {regenerating && <span className="text-xs text-ad-muted">Refreshing…</span>}
-              </div>
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setZoomAdjust((z) => Math.max(-3, z - 1))}
-                  disabled={zoomAdjust <= -3}
-                  aria-label="Zoom out"
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-ad-border text-ad-ink hover:bg-ad-border/20 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  −
-                </button>
-                <input
-                  type="range"
-                  min={-3}
-                  max={3}
-                  step={1}
-                  value={zoomAdjust}
-                  onChange={(e) => setZoomAdjust(Number(e.target.value))}
-                  aria-label="Zoom"
-                  className="w-full"
-                />
-                <button
-                  type="button"
-                  onClick={() => setZoomAdjust((z) => Math.min(3, z + 1))}
-                  disabled={zoomAdjust >= 3}
-                  aria-label="Zoom in"
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-ad-border text-ad-ink hover:bg-ad-border/20 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  +
-                </button>
-              </div>
-            </div>
+            {/* No Zoom control any more. It existed because the basemap was a fixed Static
+                Maps image, so changing zoom meant refetching the photo — the map pans and
+                zooms directly now, and the export follows whatever frame it is left on. */}
 
             {/* Always rendered, unlike before — the project site row lives here, and a
                 property with no detected neighbours still needs it. */}
@@ -732,7 +728,10 @@ export function ResidentialMarkupTab() {
                     className="h-4 w-4 shrink-0 rounded-sm border border-black/10"
                     style={{ backgroundColor: `#${SITE_RED}` }}
                   />
-                  <span>Project site</span>
+                  {rowBadge(SUBJECT_KEY, `#${SITE_RED}`)}
+                  <span className="flex-1 truncate" title={subjectRowLabel()}>
+                    {subjectRowLabel()}
+                  </span>
                 </li>
                 {result.neighbours.map((n) => (
                   <li key={n.id} className="flex items-center gap-2 text-sm text-ad-ink">
@@ -742,10 +741,16 @@ export function ResidentialMarkupTab() {
                       onChange={() => toggleNeighbour(n.id)}
                       className="h-4 w-4 accent-ad-steel"
                     />
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ad-orange text-xs font-semibold text-white">
-                      {n.label}
+                    {rowBadge(lotKey(n.id), `#${NEIGHBOUR_FILL}`)}
+                    {/* The street address, not "Lot 1" — the numbered badge beside it already
+                        ties the row to its pin on the image, so repeating the number as the
+                        label spent the only line of text in the row on something already on
+                        screen. An address is what an estimator recognises. Suburb is left out:
+                        every lot is in the job's suburb and it would push the m² off the row.
+                        Falls back to the lot/plan. */}
+                    <span className="flex-1 truncate" title={lotRowLabel(n)}>
+                      {lotRowLabel(n)}
                     </span>
-                    <span>Lot {n.label}{n.areaSqm ? ` — ${n.areaSqm} m²` : ""}</span>
                   </li>
                 ))}
               </ul>
@@ -775,12 +780,24 @@ export function ResidentialMarkupTab() {
                 <p className="mt-2 text-xs text-ad-orange">{pickMessage}</p>
               )}
             </div>
-            <ShapePanel shapes={shapes} />
+            <ShapePanel shapes={shapes} commands={mapRef} />
 
             {/* No Regenerate button: every edit in this column is live now. Zoom is the
                 only thing that still needs the server, and it refetches itself. */}
           </div>
         </div>
+
+        {/* Full width and BELOW the image, not in the column beside it: pricing is read down
+            a column across every layer, which a max-w-xs sidebar can't show. */}
+        <LineItemsTable
+          layers={layers}
+          drafts={lineDrafts}
+          deselected={deselected}
+          onChange={setLineCell}
+          onToggle={toggleRow}
+          onToggleAll={toggleAllRows}
+        />
+        </>
       )}
     </div>
   );

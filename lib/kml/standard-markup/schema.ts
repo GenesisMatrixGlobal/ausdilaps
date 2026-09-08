@@ -22,6 +22,11 @@ const markupShapeSchema = z.object({
   widthMetres: z.number().min(5).max(30),
   mode: z.enum(["line", "area"]).default("line"),
   color: z.enum(MARKUP_SHAPE_COLORS).default("orange"),
+  /** The quote item number, or "" for a shape that is drawn but is not a line item. Assigned
+   *  client-side from the sheet's tick state, so the PNG and the screen can never disagree. */
+  label: z.string().max(4).default(""),
+  /** What the operator named it on the sheet — the legend uses this rather than "Shape". */
+  name: z.string().max(200).default(""),
 });
 
 export type MarkupShapeInput = z.infer<typeof markupShapeSchema>;
@@ -31,28 +36,44 @@ export type MarkupShapeInput = z.infer<typeof markupShapeSchema>;
  *  Static Maps call, not a repeat of the whole slow lookup pipeline. */
 export const standardMarkupRenderRequestSchema = z.object({
   subjectRing: z.array(latLngSchema).min(3),
+  /** The job's own street, for the legend's project-site row. The operator typed it, so it
+   *  beats anything the address layer could offer for a corner lot with several frontages. */
+  subjectStreet: z.string().max(200).nullish(),
+  /** The site's quote item number, or "" — it is usually drawn to show the client rather than
+   *  billed, so it is normally unnumbered and absent from the legend. */
+  subjectLabel: z.string().max(4).default(""),
+  subjectAreaSqm: z.number().nullish(),
   neighbours: z.array(
     z.object({
       id: z.string(),
       ring: z.array(latLngSchema).min(3),
       areaSqm: z.number().nullable(),
-      label: z.string(),
+      /** The quote item number, or "" for a lot that is drawn but is not a line item. Assigned
+       *  client-side over the ticked sheet rows — see rowsFrom() in lib/markup-layers. */
+      label: z.string().max(4).default(""),
+      /** From the state address layer. Already sent by the client on every render and, until
+       *  the legend needed them, silently stripped here. */
+      street: z.string().max(200).nullish(),
+      suburb: z.string().max(120).nullish(),
     })
   ),
   mapType: z.enum(["satellite", "hybrid", "roadmap"]).default("hybrid"),
-  zoomAdjust: z.number().int().min(-3).max(3).default(0),
   excludeIds: z.array(z.string()).default([]),
-  /** The frame captured from the first Generate. Present on every re-render so the photo
-   *  is pinned: unticking a lot, drawing a shape or adding a lot can no longer refit the
-   *  bounds and shift the map under the operator. `zoomAdjust` still applies on top, so
-   *  the Zoom control is the only thing that moves it. Optional — without it the renderer
-   *  fits to the geometry as it always did. */
-  frame: z
-    .object({ center: latLngSchema, fitZoom: z.number().int().min(1).max(20) })
-    .optional(),
-  /** Drops the blue neighbouring-lot fills while keeping them as frame anchors — the
-   *  on-screen preview, whose overlay draws them itself. */
-  hideNeighbours: z.boolean().default(false),
+  /**
+   * The frame to render: the live map's own viewport.
+   *
+   * Replaced `frame` (centre + integer fitZoom) and `zoomAdjust` when the tab moved to a live
+   * Maps JS map. A live map has FRACTIONAL zoom and Static Maps takes integers only, so a box
+   * is the only unambiguous way to say "render exactly what I was looking at". It also retired
+   * `hideNeighbours`, `subjectAnchors` and `boundsAnchor`, which existed solely to keep a
+   * pinned frame from moving under the operator.
+   */
+  bounds: z.object({
+    south: z.number().min(-90).max(90),
+    west: z.number().min(-180).max(180),
+    north: z.number().min(-90).max(90),
+    east: z.number().min(-180).max(180),
+  }),
   /** Drops the cadastre-derived red project-site boundary, for when it's wrong and the
    *  operator is redrawing it as a red shape instead. The subject ring is still sent and
    *  still anchors the frame — see boundsAnchor in static-map.ts. */
@@ -87,4 +108,9 @@ export const parcelAtPointRequestSchema = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   state: z.enum(["QLD", "NSW", "VIC"]),
+  /** The job's own address, used only to look up the picked lot's street address — NSW needs
+   *  the suburb to split one glued string, and QLD uses the street to choose between a corner
+   *  lot's several frontages. Optional so a caller that doesn't care still works. */
+  street: z.string().max(200).optional(),
+  suburb: z.string().max(120).optional(),
 });

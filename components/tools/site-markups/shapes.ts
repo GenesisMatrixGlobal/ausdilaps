@@ -51,22 +51,37 @@ export interface ShapesState {
   select: (id: string | null) => void;
   /** Appends a point to the active shape, or starts a brand-new shape if none is active. */
   addPoint: (point: LatLng) => void;
-  movePoint: (id: string, index: number, point: LatLng) => void;
-  /** Shifts every point of a shape by a lat/lng delta — the whole-shape drag. */
-  translateShape: (id: string, dLat: number, dLng: number) => void;
+  /** Replaces a shape's whole path. THE mirror write for the live map: every geometry
+   *  mutation happens in Google's own MVCArray and is copied here afterwards, so React never
+   *  pushes geometry back at the overlay. See markup-map.tsx for why the reverse direction
+   *  cannot work.
+   *
+   *  This replaced movePoint (one vertex, by index) and translateShape (a whole-shape drag).
+   *  Neither survives a pannable map: Google owns vertex dragging now, and on a map that pans,
+   *  "drag the fill" and "pan" are the same gesture on adjacent pixels — while translating a
+   *  shape changes neither its area nor its length. */
+  setPoints: (id: string, points: LatLng[]) => void;
   addShape: () => void;
   removeShape: (id: string) => void;
   setMode: (id: string, mode: ShapeMode) => void;
   setColor: (id: string, color: ShapeColor) => void;
   setWidth: (id: string, widthMetres: number) => void;
-  undoPoint: (id: string) => void;
-  clearPoints: (id: string) => void;
+  // No undoPoint/clearPoints here on purpose. They used to write React state directly, which
+  // is a trap now that the overlay owns the geometry: the panel's point count would change and
+  // the outline on the map would not. Both live on MarkupMapCommands instead.
   reset: () => void;
-  /** Swaps the whole list — the Open .json path. Ids are regenerated rather than trusted
-   *  from the file: a duplicate would collide React keys. */
-  replaceAll: (incoming: Omit<MarkupShape, never>[]) => void;
+  /** Swaps the whole list — the Open .json path. A saved id is KEPT when present and
+   *  unique, because it is the join key that stops a re-sync duplicating that shape's Quote
+   *  Line Item; a missing or duplicate one is regenerated, since a collision would make two
+   *  shapes share a React key and toggle as one. */
+  replaceAll: (incoming: (MarkupShape & { id?: string })[]) => void;
   /** Only shapes with enough points to render — what goes over the wire. */
   payload: () => MarkupShape[];
+  /** Synchronous mirrors, for decisions made inside Google's event handlers. A listener can
+   *  fire between renders, so it must not read the state variables — same reasoning as the
+   *  comment on shapesRef below. */
+  listRef: React.RefObject<ShapeDraft[]>;
+  activeIdRef: React.RefObject<string | null>;
 }
 
 function newShape(points: LatLng[] = []): ShapeDraft {
@@ -159,15 +174,20 @@ export function useShapes(): ShapesState {
   }, [write, select]);
 
   const replaceAll = useCallback(
-    (incoming: MarkupShape[]) => {
+    (incoming: (MarkupShape & { id?: string })[]) => {
+      const seen = new Set<string>();
       write(() =>
-        incoming.slice(0, MAX_SHAPES).map((a) => ({
-          id: crypto.randomUUID(),
-          points: a.points.slice(0, MAX_SHAPE_POINTS),
-          widthMetres: a.widthMetres,
-          mode: a.mode,
-          color: a.color,
-        }))
+        incoming.slice(0, MAX_SHAPES).map((a) => {
+          const id = a.id && !seen.has(a.id) ? a.id : crypto.randomUUID();
+          seen.add(id);
+          return {
+            id,
+            points: a.points.slice(0, MAX_SHAPE_POINTS),
+            widthMetres: a.widthMetres,
+            mode: a.mode,
+            color: a.color,
+          };
+        })
       );
       select(null);
     },
@@ -183,17 +203,8 @@ export function useShapes(): ShapesState {
     atMax: shapes.length >= MAX_SHAPES,
     select,
     addPoint,
-    movePoint: useCallback(
-      (id, index, point) =>
-        update(id, (a) => ({ ...a, points: a.points.map((p, i) => (i === index ? point : p)) })),
-      [update]
-    ),
-    translateShape: useCallback(
-      (id, dLat, dLng) =>
-        update(id, (a) => ({
-          ...a,
-          points: a.points.map((p) => ({ lat: p.lat + dLat, lng: p.lng + dLng })),
-        })),
+    setPoints: useCallback(
+      (id, points) => update(id, (a) => ({ ...a, points: points.slice(0, MAX_SHAPE_POINTS) })),
       [update]
     ),
     addShape: useCallback(() => create([]), [create]),
@@ -201,18 +212,22 @@ export function useShapes(): ShapesState {
     setMode: useCallback((id, mode) => update(id, (a) => ({ ...a, mode })), [update]),
     setColor: useCallback((id, color) => update(id, (a) => ({ ...a, color })), [update]),
     setWidth: useCallback((id, widthMetres) => update(id, (a) => ({ ...a, widthMetres })), [update]),
-    undoPoint: useCallback((id) => update(id, (a) => ({ ...a, points: a.points.slice(0, -1) })), [update]),
-    clearPoints: useCallback((id) => update(id, (a) => ({ ...a, points: [] })), [update]),
     reset,
     replaceAll,
     // Reads the ref, not the state, so a render triggered by the click that opened this
     // request can never make it send the previous tick's geometry.
+    //
+    // Geometry only, plus the id — the caller attaches the quote item number, because that comes
+    // from the sheet's tick state (rowsFrom) which this hook knows nothing about. The id is what
+    // shapeKey() needs to look the number up, and it is also the re-sync join key.
     payload: useCallback(
       () =>
         shapesRef.current
           .filter((a) => a.points.length >= MIN_POINTS[a.mode])
-          .map(({ points, widthMetres, mode, color }) => ({ points, widthMetres, mode, color })),
+          .map(({ id, points, widthMetres, mode, color }) => ({ id, points, widthMetres, mode, color })),
       []
     ),
+    listRef: shapesRef,
+    activeIdRef,
   };
 }

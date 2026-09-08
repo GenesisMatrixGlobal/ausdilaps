@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { SyncToSalesforce } from "@/components/tools/shared/sync-to-salesforce";
@@ -101,6 +101,12 @@ export function ResidentialMarkupTab() {
   /** Progress and advice for a pasted link. Separate from addressError, which is orange and
    *  disables Generate — neither is right for "following that share link…". */
   const [addressNote, setAddressNote] = useState<string | null>(null);
+  /** A heading is only meaningful for the point it was measured from, so it is stored WITH that
+   *  point's key and matched during render. That makes a stale heading structurally impossible —
+   *  change address and the old key no longer matches, so it is ignored rather than having to be
+   *  cleared. Which also keeps the effect free of a synchronous setState, the thing the React
+   *  compiler lint rejects. */
+  const [siteHeadingFor, setSiteHeadingFor] = useState<{ key: string; heading: number } | null>(null);
   const [addressError, setAddressError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -242,6 +248,37 @@ export function ResidentialMarkupTab() {
   // Generate, so the address can be looked at the moment it is typed.
   const subjectLayer = layers.find((l) => l.kind === "subject");
   const sitePoint = (subjectLayer ? layerAnchor(subjectLayer) : null) ?? addressPoint;
+  // A primitive key, not the object: sitePoint is derived every render, so depending on its
+  // identity would refetch forever.
+  const sitePointKey = sitePoint ? `${sitePoint.lat.toFixed(6)},${sitePoint.lng.toFixed(6)}` : null;
+
+  // Which way Street View has to look to see the site. One metadata lookup per target, and the
+  // button is a working link before it lands — see streetViewUrl for why the heading has to be
+  // asked for rather than left to Google.
+  useEffect(() => {
+    if (!sitePointKey) return;
+    let live = true;
+    const [lat, lng] = sitePointKey.split(",").map(Number);
+    void fetch("/api/maps/street-view", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ lat, lng }),
+    })
+      .then((r) => r.json())
+      .then((j: { ok?: boolean; heading?: number | null }) => {
+        if (live && j?.ok && typeof j.heading === "number") {
+          setSiteHeadingFor({ key: sitePointKey, heading: j.heading });
+        }
+      })
+      // Silent: an unaimed Street View link is a fine outcome, and there is nothing the operator
+      // could do about a metadata miss anyway.
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [sitePointKey]);
+
+  const siteHeading = siteHeadingFor?.key === sitePointKey ? siteHeadingFor.heading : null;
 
   function saveJson() {
     const doc = saveFileJson();
@@ -744,6 +781,7 @@ export function ResidentialMarkupTab() {
             per-row links cover the adjoining lots. */}
         <StreetViewLink
           at={sitePoint}
+          heading={siteHeading}
           label={street.trim() || "the project site"}
           className={cn(buttonVariants({ variant: "outline", size: "md" }), "gap-1.5")}
           iconSize={15}

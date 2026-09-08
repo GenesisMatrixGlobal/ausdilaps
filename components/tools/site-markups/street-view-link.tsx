@@ -48,26 +48,25 @@ function PegmanIcon({ size = 14 }: { size?: number }) {
  * `at` null — a layer with too little geometry to have a centre, or an address not yet
  * resolved — renders the same box greyed rather than nothing, so a table column doesn't jitter
  * row to row and a toolbar doesn't reflow when a snapshot lands.
- *
- * `tabbable` is false inside the sheet. That grid's whole point is spreadsheet keyboard
- * behaviour — tab across, type, tab on — and an anchor with an href would put a stop between
- * every Street and Suburb cell. It stays a mouse affordance there; the toolbar's copy is
- * reachable by keyboard.
+
  */
 export function StreetViewLink({
   at,
+  heading,
   label,
   className,
   iconSize,
-  tabbable = true,
   children,
 }: {
   at: LatLng | null;
+  /** Which way to look, once /api/maps/street-view has answered. Null or absent just means the
+   *  camera opens unaimed — see streetViewUrl for why that is a real downgrade rather than a
+   *  cosmetic one. */
+  heading?: number | null;
   /** What the operator would call this thing, for the hover title and the screen reader. */
   label: string;
   className?: string;
   iconSize?: number;
-  tabbable?: boolean;
   children?: React.ReactNode;
 }) {
   const content = (
@@ -85,10 +84,9 @@ export function StreetViewLink({
   }
   return (
     <a
-      href={streetViewUrl(at)}
+      href={streetViewUrl(at, heading)}
       target="_blank"
       rel="noopener noreferrer"
-      tabIndex={tabbable ? undefined : -1}
       title={`Street View — ${label}`}
       aria-label={`Open Street View at ${label}`}
       className={className}

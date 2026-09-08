@@ -2,6 +2,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadToolUsage } from "@/lib/tools/usage";
+import { GAME_SLUGS } from "@/lib/tools/registry";
 import { loadPageSpeed, PAGESPEED_TARGETS, type PageSpeedScore } from "@/lib/pagespeed";
 import { ASSET_COUNT_RANGES } from "@/lib/leads";
 
@@ -184,6 +185,8 @@ export async function loadDashboard(origin: string) {
       });
     }
 
+    const workTools = [...usage.values()].filter((t) => !GAME_SLUGS.has(t.toolSlug));
+
     return {
       now,
       unavailable: null as string | null,
@@ -206,8 +209,16 @@ export async function loadDashboard(origin: string) {
         neverSignedIn,
       },
       tools: {
-        usedThisWeek: [...usage.values()].reduce((n, s) => n + s.last7Days, 0),
-        usedLast30: [...usage.values()].reduce((n, s) => n + s.last30Days, 0),
+        // GAMES ARE EXCLUDED from these two totals, deliberately.
+        //
+        // The question this figure answers is "are the tools we built earning their keep".
+        // Site Snap is in the same registry and records usage through the same
+        // recordToolUse(), so left in it would fold break-room plays into the number and
+        // imply the estimating tools are busier than they are. byTool still carries every
+        // slug, games included, so the per-tool list on /admin/tools stays complete — it is
+        // only the headline aggregate that filters.
+        usedThisWeek: workTools.reduce((n, s) => n + s.last7Days, 0),
+        usedLast30: workTools.reduce((n, s) => n + s.last30Days, 0),
         byTool: usage,
       },
       pageSpeed: speed,

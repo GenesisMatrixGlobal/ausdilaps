@@ -73,6 +73,41 @@ That's it. It appears at `/staff/estimators/tools/my-tool` and
 **To surface an existing tool to another department, add that department's slug to its
 `departments` array.** One line, no new route, no duplicated component.
 
+### Adding a game
+
+A game is a registry entry with **`kind: "game"`** and **no `departments` field at all**:
+
+```ts
+{
+  slug: "my-game",
+  code: "MYG",
+  kind: "game",
+  title: "My Game",
+  description: "One line, shown on the card.",
+  Component: dynamic(() => import("@/components/tools/my-game").then((m) => m.MyGame)),
+}
+```
+
+It then appears under a **Games & Activities** heading beneath the tools on *every*
+department page, with a `GAME` badge, and opens at `/staff/<any-department>/tools/my-game`.
+`ToolDefinition` is a discriminated union, so a `departments` array on a game is a type
+error — that is on purpose. Read `departmentsFor(tool)` rather than `tool.departments`
+anywhere both kinds are handled.
+
+**This costs no migration, and never will.** The tool-to-department mapping lives only in
+`lib/tools/registry.ts`; nothing in Postgres records it, and `tool_usage` stores a bare slug
+with no department column. The one database cost of a *game* specifically is its own
+leaderboard table, if it keeps scores (decided 2026-09-08: a table per game, not a shared
+one).
+
+Two things games are deliberately kept out of:
+
+- `toolsForDepartment()` returns tools only, which is what keeps the "N tools" count on the
+  `/staff` department picker honest.
+- the "Tool uses" headline on `/admin` (`lib/admin/dashboard.ts`) — otherwise break-room
+  plays inflate the figure that answers "are the tools we built earning their keep".
+  `/admin/tools` still lists every game with its real usage count.
+
 Shared tool UI goes in `components/tools/shared/` — currently `sync-to-salesforce.tsx`,
 which takes an image *callback* rather than bytes so each tool decides which version to file
 and nothing is rendered or billed until upload.

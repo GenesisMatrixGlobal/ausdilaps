@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth/session";
 import { DEPARTMENTS } from "@/lib/departments";
-import { TOOLS } from "@/lib/tools/registry";
+import { TOOLS, departmentsFor, isGame } from "@/lib/tools/registry";
 import { loadToolUsage } from "@/lib/tools/usage";
 import { Pill } from "@/components/staff/pill";
 
@@ -36,7 +36,9 @@ export default async function AdminToolsPage() {
           // Any of a tool's departments resolves for an admin — canAccess() grants admins
           // every department — so the first one is as good a route as any. This is why
           // there are no per-tool /admin routes: they'd be a second path to one component.
-          const href = `/staff/${tool.departments[0]}/tools/${tool.slug}`;
+          // departmentsFor() rather than tool.departments: a game has no departments field,
+          // and reading index [0] off one would build "/staff/undefined/tools/<slug>".
+          const href = `/staff/${departmentsFor(tool)[0]}/tools/${tool.slug}`;
           const stat = usage.get(tool.slug);
           const count = stat?.last30Days ?? 0;
 
@@ -64,11 +66,19 @@ export default async function AdminToolsPage() {
               <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-ad-muted">{tool.description}</p>
 
               <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                {tool.departments.map((slug) => (
-                  <Pill key={slug} tone="ok">
-                    {DEPARTMENTS.find((d) => d.slug === slug)?.label ?? slug}
-                  </Pill>
-                ))}
+                {/* A game is in every department, so listing all five labels is noise. */}
+                {isGame(tool) ? (
+                  <>
+                    <Pill tone="ok">Game</Pill>
+                    <Pill tone="ok">All departments</Pill>
+                  </>
+                ) : (
+                  tool.departments.map((slug) => (
+                    <Pill key={slug} tone="ok">
+                      {DEPARTMENTS.find((d) => d.slug === slug)?.label ?? slug}
+                    </Pill>
+                  ))
+                )}
                 <span className="ml-auto text-sm font-medium text-ad-steel opacity-0 transition-opacity group-hover:opacity-100">
                   Open →
                 </span>

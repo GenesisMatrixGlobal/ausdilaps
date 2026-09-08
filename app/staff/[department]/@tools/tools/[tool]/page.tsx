@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { isDepartmentSlug } from "@/lib/departments";
-import { getTool } from "@/lib/tools/registry";
+import { canOpenInDepartment, getTool } from "@/lib/tools/registry";
 import { ToolFrame } from "@/components/staff/tool-frame";
 
 /** One page file serves every tool, present and future — the tool itself comes
@@ -26,7 +26,8 @@ export default async function ToolPage({
   const tool = getTool(slug);
   // 404 rather than 403 when the tool exists but isn't assigned to this
   // department — the department layout already proved they can be here.
-  if (!tool || !tool.departments.includes(department)) notFound();
+  // Games pass for every department; canOpenInDepartment() owns that rule.
+  if (!tool || !canOpenInDepartment(tool, department)) notFound();
 
   const { Component } = tool;
 

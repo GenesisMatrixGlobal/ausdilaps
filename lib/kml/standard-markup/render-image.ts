@@ -12,23 +12,12 @@ import {
   type StaticMapPolygon,
 } from "@/lib/kml/site-markup/static-map";
 import { renderTiledStaticMap } from "@/lib/maps/static-map-tiles";
-import { textToSvgPaths, textToSvgPathsCentred, textWidth } from "@/lib/kml/overlay/text-path";
-import {
-  HAIRLINE,
-  INK,
-  NUM_GAP,
-  PANEL_PAD,
-  ROW_HEIGHT,
-  ROW_SIZE,
-  TOTAL_GAP,
-  UNIT_GAP,
-  panelRect,
-  splitValue,
-  textWithSuper,
-  widthWithSuper,
-} from "@/lib/kml/overlay/legend";
-import { badgeAnchor, formatArea, measureShape, ringAnchor, ringFor } from "./measure";
-import { lotPlanFromId } from "./parcels/parcel-id";
+import { textToSvgPathsCentred } from "@/lib/kml/overlay/text-path";
+// Only the panel chrome now. The row primitives (ROW_SIZE, splitValue, textWithSuper, …) are
+// still shared with the Measure export, which does list each measurement — they are unused HERE
+// because this legend is the colour key alone.
+import { PANEL_PAD, panelRect } from "@/lib/kml/overlay/legend";
+import { badgeAnchor, measureShape, ringAnchor, ringFor } from "./measure";
 import { COMPASS_N_PATH, LEGEND_LABEL_PATHS, LEGEND_LABEL_WIDTHS } from "./overlay-paths";
 import { latLngToPixel, type LatLngBox } from "./projection";
 import {
@@ -57,6 +46,9 @@ export interface MarkupShapeInput {
   /** Badge number, assigned client-side over the ticked sheet rows. */
   label?: string;
   /** What the operator called it on the sheet, for the legend. */
+  /** What the operator named it on the sheet. ⚠️ NOT DRAWN — the legend that printed it was
+   *  reduced to the colour key. Kept on the wire because re-enabling an item schedule should be
+   *  a change to legendSvg alone, not a change to the schema, the route and the client too. */
   name?: string;
 }
 
@@ -74,7 +66,8 @@ export interface NumberedNeighbour {
    *  the client over the ticked sheet rows, so the bubble, the sheet and this legend agree.
    *  Empty means: draw the outline, no bubble, no legend row. */
   label: string;
-  /** From the state address layer — what the legend names this lot. Optional: a lot the layer
+  /** From the state address layer. ⚠️ NOT DRAWN — it named this lot in the retired legend
+   *  schedule; see `name` on MarkupShapeInput. Optional: a lot the layer
    *  had nothing for simply falls back to its lot/plan. */
   street?: string | null;
 }
@@ -112,11 +105,13 @@ export interface RenderMapInput {
    * them), because the operator now points the camera themselves.
    */
   bounds: LatLngBox;
-  /** The subject's own street and area, for the legend's project-site row. */
+  /** ⚠️ NOT DRAWN, same as `name` above — these fed the legend's project-site row. Retained
+   *  rather than removed so the item schedule can come back without a schema change. */
   subjectStreet?: string | null;
   subjectAreaSqm?: number | null;
   /** The site's quote item number, or "" when it is drawn but not a line item — which is the
-   *  usual case, since the site is normally shown to the client rather than billed. */
+   *  usual case, since the site is normally shown to the client rather than billed. ⚠️ Also NOT
+   *  DRAWN now: the site has never had a pin, so its number only ever appeared in the legend. */
   subjectLabel?: string;
 }
 
@@ -257,30 +252,6 @@ function badgesSvg(
 
 const COMPASS_BLUE = "46688a"; // ad-steel — the AusDilaps brand accent
 
-/** One line of the legend's item table. */
-export interface LegendRow {
-  /** The badge number, or "" for the project site, which has no pin on the map. */
-  label: string;
-  /** What the item is: a street address, or "Shape 2". */
-  name: string;
-  /** Colour of the badge number — ties the row to its pin and to its outline. */
-  color: string;
-  areaSqm: number | null;
-}
-
-/**
- * The legend: the three colour meanings, then a hairline, then one row per numbered item.
- *
- * The colour rows keep their pre-baked glyph paths from ./overlay-paths.ts — a GENERATED file
- * holding outlines for exactly those three strings, because Vercel's serverless runtime has no
- * fonts and sharp renders <text> blank. The item rows can't use that (a street name isn't in
- * the file), so they go through text-path.ts's glyph atlas, which handles arbitrary printable
- * ASCII. Both are outlines in the end; the difference is only where they come from.
- *
- * Everything is measured from real glyph widths and the panel grows with the row count. The
- * previous version hardcoded `height = 106` for its three fixed rows, which is exactly the bug
- * that pattern prevents.
- */
 /**
  * The colour key rows, in fixed order, for the colours that are actually ON this drawing.
  *
@@ -300,87 +271,42 @@ function colourKeys(shown: { red: boolean; blue: boolean; orange: boolean }): [s
   return keys;
 }
 
-function legendSvg(rows: LegendRow[], keys: [string, string][]): string {
+/**
+ * The legend: the colour meanings, and nothing else.
+ *
+ * It briefly also listed every numbered quote item with its street and area. That was dropped
+ * on request — useful in concept, too busy on a drawing a client sees, and it duplicated a table
+ * the estimator already has on screen and in Salesforce. The numbered pins stay: they are the
+ * quote item numbers, and cross-referencing them is what they are for.
+ *
+ * The labels use pre-baked glyph paths from ./overlay-paths.ts — a GENERATED file holding
+ * outlines for exactly those three strings, because Vercel's serverless runtime has no fonts and
+ * sharp renders <text> blank. With the item rows gone, nothing here needs text-path.ts's
+ * arbitrary-ASCII atlas any more.
+ *
+ * Sized from real glyph widths and grown from the row count. The version before last hardcoded
+ * `height = 106` for its three fixed rows, which is exactly the bug that pattern prevents — and
+ * the row count is no longer fixed, since a colour absent from the drawing is absent here too.
+ */
+function legendSvg(keys: [string, string][]): string {
+  if (keys.length === 0) return "";
+
   const x = 20;
   const y = 20;
   const KEY_ROW_HEIGHT = 30;
 
-  const items = rows.map((r) => ({
-    ...r,
-    ...splitValue(r.areaSqm === null ? "—" : formatArea(r.areaSqm)),
-  }));
+  const width = PANEL_PAD * 2 + Math.max(0, ...keys.map(([, label]) => LEGEND_LABEL_WIDTHS[label] ?? 0));
+  const height = PANEL_PAD * 2 + keys.length * KEY_ROW_HEIGHT;
 
-  // Column widths, all from measured glyph advances.
-  const numberColumn = Math.max(0, ...items.map((r) => textWidth(r.label, ROW_SIZE)));
-  const nameColumn = Math.max(0, ...items.map((r) => textWidth(r.name, ROW_SIZE)));
-  const digitsColumn = Math.max(0, ...items.map((r) => textWidth(r.digits, ROW_SIZE)));
-  const unitColumn = Math.max(0, ...items.map((r) => widthWithSuper(r.unit, ROW_SIZE)));
-
-  const keysWidth = Math.max(0, ...keys.map(([, label]) => LEGEND_LABEL_WIDTHS[label] ?? 0));
-  const itemsWidth =
-    items.length === 0
-      ? 0
-      : numberColumn + NUM_GAP + nameColumn + NUM_GAP + digitsColumn + UNIT_GAP + unitColumn;
-  const width = PANEL_PAD * 2 + Math.max(keysWidth, itemsWidth);
-
-  const keysHeight = keys.length * KEY_ROW_HEIGHT;
-  const itemsHeight =
-    items.length === 0 ? 0 : TOTAL_GAP + (items.length - 1) * ROW_HEIGHT + ROW_SIZE + TOTAL_GAP;
-  const height = PANEL_PAD * 2 + keysHeight + itemsHeight;
-
-  const numberRight = x + PANEL_PAD + numberColumn;
-  const nameLeft = numberRight + NUM_GAP;
-  const digitsRight = nameLeft + nameColumn + NUM_GAP + digitsColumn;
-  const unitLeft = digitsRight + UNIT_GAP;
-
-  const out: string[] = [panelRect(x, y, width, height)];
-
-  // The colour key.
-  keys.forEach(([color, label], i) => {
-    out.push(
-      `<path transform="translate(${x + PANEL_PAD}, ${y + PANEL_PAD + 22 + i * KEY_ROW_HEIGHT})" d="${LEGEND_LABEL_PATHS[label]}" fill="#${color}" />`
-    );
-  });
-
-  if (items.length === 0) return out.join("\n    ");
-
-  if (keysHeight > 0) {
-    const ruleY = y + PANEL_PAD + keysHeight + TOTAL_GAP / 2;
-    out.push(
-      `<line x1="${x + PANEL_PAD}" y1="${ruleY.toFixed(1)}" x2="${(x + width - PANEL_PAD).toFixed(1)}" y2="${ruleY.toFixed(1)}" stroke="${HAIRLINE}" stroke-width="1" />`
-    );
-  }
-
-  let baseline = y + PANEL_PAD + keysHeight + TOTAL_GAP + ROW_SIZE;
-  for (const r of items) {
-    out.push(
-      // Number right-aligned so a two-digit badge still lines up under a one-digit one; the
-      // name left-aligned because it is prose; the figures right-aligned so the ones place
-      // lines up down the column, with the unit flush beside it.
-      textToSvgPaths(r.label, {
-        x: numberRight - textWidth(r.label, ROW_SIZE),
-        y: baseline,
-        fontSize: ROW_SIZE,
-        fill: r.color,
-      }),
-      textToSvgPaths(r.name, { x: nameLeft, y: baseline, fontSize: ROW_SIZE, fill: INK }),
-      textToSvgPaths(r.digits, {
-        x: digitsRight - textWidth(r.digits, ROW_SIZE),
-        y: baseline,
-        fontSize: ROW_SIZE,
-        fill: INK,
-      }),
-      textWithSuper(r.unit, unitLeft, baseline, ROW_SIZE, INK)
-    );
-    baseline += ROW_HEIGHT;
-  }
-
-  return out.join("\n    ");
+  return [
+    panelRect(x, y, width, height),
+    ...keys.map(
+      ([color, label], i) =>
+        `<path transform="translate(${x + PANEL_PAD}, ${y + PANEL_PAD + 22 + i * KEY_ROW_HEIGHT})" d="${LEGEND_LABEL_PATHS[label]}" fill="#${color}" />`
+    ),
+  ].join("\n    ");
 }
 
-/** North arrow, fixed top-right — Static Maps images are always rendered north-up in
- *  this pipeline (no `heading` param used anywhere), so this is a static icon, no
- *  orientation math needed. */
 function northArrowSvg(nativeSize: number): string {
   const r = 32;
   const cx = nativeSize - 20 - r;
@@ -465,49 +391,11 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
     orange: drawnShapes.some((x) => x.shape.color === "orange"),
   });
 
-  // The legend lists ONLY the quote line items, in item order.
-  //
-  // Sorted numerically by the number rather than left in "site, lots, shapes" order: with lots
-  // and shapes numbered from one series, source order read 1, 3, 4, 1, 2 on a markup with a lot
-  // unticked. Sorting is also why an unnumbered row can simply be filtered out rather than
-  // leaving a hole.
-  const legendRows: LegendRow[] = [
-    ...(hideSubject || !input.subjectLabel
-      ? []
-      : [
-          {
-            label: input.subjectLabel,
-            name: input.subjectStreet || "Project site",
-            color: SITE_RED,
-            areaSqm: input.subjectAreaSqm ?? null,
-          },
-        ]),
-    ...kept
-      .filter((n) => n.label)
-      .map((n) => ({
-        label: n.label,
-        // Street first, because that is what an estimator recognises; falls back to the lot/plan.
-        name: n.street || lotPlanFromId(n.id) || "Lot",
-        color: NEIGHBOUR_FILL,
-        areaSqm: n.areaSqm,
-      })),
-    ...drawnShapes
-      .filter((x) => x.shape.label)
-      .map((x) => ({
-        label: x.shape.label!,
-        // What the operator typed in the sheet's Street cell — "Council Assets" reads far better
-        // in a client-facing drawing than "Shape". Falls back when they haven't named it.
-        name: x.shape.name?.trim() || "Shape",
-        color: SHAPE_COLORS[x.shape.color] ?? SHAPE_COLORS.orange,
-        areaSqm: Math.round(x.measured.areaSqm),
-      })),
-  ].sort((a, b) => Number(a.label) - Number(b.label));
-
   // Chrome at fixed pixel size, composited over the stitched frame in one sharp call.
   const overlay = Buffer.from(
     `<svg width="${pxWidth}" height="${pxHeight}" xmlns="http://www.w3.org/2000/svg">
     ${badgesSvg(badges, plan.center, plan.zoom, plan.width, plan.height)}
-    ${legendSvg(legendRows, keys)}
+    ${legendSvg(keys)}
     ${northArrowSvg(pxWidth)}
   </svg>`
   );

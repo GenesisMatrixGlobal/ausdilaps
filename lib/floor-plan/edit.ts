@@ -8,7 +8,7 @@
 // construction rather than by cleanup afterwards.
 
 import { rectsFromCells, repairInteriorGaps, roomCells } from "./grid";
-import { OUTSIDE, type Door, type Level, type Room } from "./types";
+import { OUTSIDE, type Door, type Fence, type Level, type Room } from "./types";
 
 export type Grid = { w: number; h: number };
 export type EditResult = { ok: true; level: Level } | { ok: false; error: string };
@@ -227,6 +227,55 @@ export function updateDoor(level: Level, doorId: string, patch: Partial<Door>): 
 
 export function deleteDoor(level: Level, doorId: string): EditResult {
   return { ok: true, level: { ...level, doors: level.doors.filter((d) => d.id !== doorId) } };
+}
+
+/**
+ * Split a room in two, which is how a wall gets ADDED.
+ *
+ * There is no "draw a wall" operation in this model and there cannot be: a wall exists wherever
+ * two rooms meet, so it is a consequence of cell ownership rather than a thing in its own right.
+ * Handing half the cells to a new room makes the wall appear on its own, and the existing resize
+ * handles then drag it wherever it actually belongs.
+ */
+export function splitRoom(level: Level, grid: Grid, roomId: string, axis: "v" | "h"): EditResult {
+  const room = level.rooms.find((r) => r.id === roomId);
+  if (!room) return { ok: false, error: "Room not found." };
+
+  const box = boundingBox(room);
+  const span = axis === "v" ? box.w : box.h;
+  if (span < 2) {
+    return { ok: false, error: `${room.label || "That room"} is too narrow to split.` };
+  }
+
+  // The cut lands on the midpoint of the bounding box; nudging it is what the wall handles are
+  // for, so there is no value in guessing a cleverer position here.
+  const cut = (axis === "v" ? box.x : box.y) + Math.floor(span / 2);
+  const newId = `${roomId}-split-${Date.now().toString(36)}`;
+
+  const map = ownerMap(level.rooms);
+  for (const k of roomCells(room)) {
+    const [x, y] = k.split(",").map(Number);
+    if ((axis === "v" ? x : y) >= cut) map.set(k, newId);
+  }
+
+  // fromOwnerMap only knows about rooms already on the level, so introduce the new one first.
+  const seeded: Level = {
+    ...level,
+    rooms: [...level.rooms, { id: newId, label: `${room.label || "Room"} 2`, kind: room.kind, rects: [] }],
+  };
+  return fromOwnerMap(seeded, grid, map);
+}
+
+let fenceSeq = 0;
+
+export function addFence(level: Level, fence: Omit<Fence, "id">): EditResult {
+  if (fence.to - fence.from <= 0) return { ok: false, error: "That fence has no length." };
+  const next: Fence = { ...fence, id: `fence-${Date.now().toString(36)}-${fenceSeq++}` };
+  return { ok: true, level: { ...level, fences: [...level.fences, next] } };
+}
+
+export function deleteFence(level: Level, fenceId: string): EditResult {
+  return { ok: true, level: { ...level, fences: level.fences.filter((f) => f.id !== fenceId) } };
 }
 
 export function renameRoom(level: Level, roomId: string, label: string): EditResult {

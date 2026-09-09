@@ -21,14 +21,22 @@ import {
   placeDoors,
   subtractOpenings,
 } from "@/lib/floor-plan/grid";
-import { moveRoom, resizeRoom, updateDoor, type Edge } from "@/lib/floor-plan/edit";
+import { addFence, moveRoom, resizeRoom, updateDoor, type Edge } from "@/lib/floor-plan/edit";
 import type { FloorPlan, Level } from "@/lib/floor-plan/types";
 
-export type Selection = { type: "room"; id: string } | { type: "door"; id: string } | null;
+export type Selection =
+  | { type: "room"; id: string }
+  | { type: "door"; id: string }
+  | { type: "fence"; id: string }
+  | null;
+
+/** "fence" turns the canvas into a drawing surface; "select" is the normal editing mode. */
+export type Tool = "select" | "fence";
 
 interface EditorProps {
   plan: FloorPlan;
   levelIndex: number;
+  tool: Tool;
   selection: Selection;
   onSelect: (selection: Selection) => void;
   onChange: (level: Level) => void;
@@ -39,6 +47,9 @@ type Drag =
   | { mode: "move"; roomId: string; from: { x: number; y: number }; base: Level }
   | { mode: "resize"; roomId: string; edge: Edge; from: { x: number; y: number }; base: Level }
   | { mode: "door"; doorId: string; from: { x: number; y: number }; base: Level; baseAt: number }
+  // A fence run is drawn, not dragged from something existing, so it carries its own geometry
+  // until it is committed on pointer-up.
+  | { mode: "fence"; orient: "h" | "v"; pos: number; from: number; to: number }
   | null;
 
 const STEEL = "#46688a";
@@ -47,6 +58,7 @@ const INK = "#2f343a";
 export function FloorPlanEditor({
   plan,
   levelIndex,
+  tool,
   selection,
   onSelect,
   onChange,
@@ -85,6 +97,14 @@ export function FloorPlanEditor({
   function onPointerMove(e: React.PointerEvent) {
     if (!drag) return;
     const now = toGrid(e);
+
+    if (drag.mode === "fence") {
+      // Snap to the nearest grid line and extend along it. The axis is locked at pointer-down
+      // so a wobbly drag cannot flip the run halfway through.
+      const along = Math.round(drag.orient === "v" ? now.y : now.x);
+      setDrag({ ...drag, to: along });
+      return;
+    }
 
     if (drag.mode === "door") {
       const base = drag.base.doors.find((d) => d.id === drag.doorId);
@@ -131,6 +151,24 @@ export function FloorPlanEditor({
 
   function onPointerUp() {
     if (!drag) return;
+
+    if (drag.mode === "fence") {
+      const from = Math.min(drag.from, drag.to);
+      const to = Math.max(drag.from, drag.to);
+      if (to > from) {
+        const result = addFence(plan.levels[levelIndex], {
+          orient: drag.orient,
+          pos: drag.pos,
+          from,
+          to,
+        });
+        if (result.ok) onChange(result.level);
+        else onError(result.error);
+      }
+      setDrag(null);
+      return;
+    }
+
     if (preview && preview !== drag.base) onChange(preview);
     setDrag(null);
     setPreview(null);
@@ -165,11 +203,27 @@ export function FloorPlanEditor({
       ref={svgRef}
       viewBox={`-0.5 -0.5 ${grid.w + 1} ${grid.h + 1}`}
       className="w-full touch-none select-none"
-      style={{ maxHeight: "70vh" }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
-      onPointerDown={() => onSelect(null)}
+      onPointerDown={(e) => {
+        if (tool !== "fence") {
+          onSelect(null);
+          return;
+        }
+        // Whichever axis the press is closer to a line on becomes the run's axis. Fences follow
+        // boundaries, which on this grid are the lines between cells.
+        const at = toGrid(e);
+        const dx = Math.abs(at.x - Math.round(at.x));
+        const dy = Math.abs(at.y - Math.round(at.y));
+        const orient = dx <= dy ? "v" : "h";
+        const pos = Math.round(orient === "v" ? at.x : at.y);
+        const start = Math.round(orient === "v" ? at.y : at.x);
+        (e.target as Element).setPointerCapture?.(e.pointerId);
+        onError(null);
+        setDrag({ mode: "fence", orient, pos, from: start, to: start });
+      }}
+      style={{ maxHeight: "70vh", cursor: tool === "fence" ? "crosshair" : undefined }}
     >
       <g stroke="#eef0f2" strokeWidth={0.02}>
         {Array.from({ length: grid.w + 1 }, (_, i) => (
@@ -228,6 +282,49 @@ export function FloorPlanEditor({
               <line key={`${i}-${j}`} x1={piece.from} y1={seg.pos} x2={piece.to} y2={seg.pos} {...props} />
             );
           })
+        )}
+      </g>
+
+      {/* Committed fences, plus the run being drawn. Same dashed grey the A4 renderer uses. */}
+      <g fill="none" pointerEvents={tool === "fence" ? "none" : "auto"}>
+        {level.fences.map((f) => {
+          const isSelected = selection?.type === "fence" && selection.id === f.id;
+          const p1 = f.orient === "v" ? { x: f.pos, y: f.from } : { x: f.from, y: f.pos };
+          const p2 = f.orient === "v" ? { x: f.pos, y: f.to } : { x: f.to, y: f.pos };
+          return (
+            <g key={f.id}>
+              <line
+                x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+                stroke={isSelected ? STEEL : "#9aa4ae"}
+                strokeWidth={isSelected ? 0.12 : 0.09}
+                strokeDasharray="0.3 0.2"
+                pointerEvents="none"
+              />
+              <line
+                x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+                stroke="transparent"
+                strokeWidth={0.5}
+                pointerEvents="all"
+                style={{ cursor: "pointer" }}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  onSelect({ type: "fence", id: f.id });
+                }}
+              />
+            </g>
+          );
+        })}
+        {drag?.mode === "fence" && (
+          <line
+            x1={drag.orient === "v" ? drag.pos : Math.min(drag.from, drag.to)}
+            y1={drag.orient === "v" ? Math.min(drag.from, drag.to) : drag.pos}
+            x2={drag.orient === "v" ? drag.pos : Math.max(drag.from, drag.to)}
+            y2={drag.orient === "v" ? Math.max(drag.from, drag.to) : drag.pos}
+            stroke={STEEL}
+            strokeWidth={0.12}
+            strokeDasharray="0.3 0.2"
+            pointerEvents="none"
+          />
         )}
       </g>
 

@@ -17,28 +17,26 @@ import { validateLevel } from "@/lib/floor-plan/grid";
 import {
   addDoor,
   deleteDoor,
+  deleteFence,
   deleteRoom,
   doorCandidates,
   renameRoom,
+  splitRoom,
   updateDoor,
   type EditResult,
 } from "@/lib/floor-plan/edit";
 import { renderPlan } from "@/lib/floor-plan/render";
-import { floorPlanSchema, OUTSIDE, type FloorPlan, type Level } from "@/lib/floor-plan/types";
-import { FloorPlanEditor, type Selection } from "./editor";
+import { a4Pixels, floorPlanSchema, OUTSIDE, type FloorPlan, type Level } from "@/lib/floor-plan/types";
+import { FloorPlanEditor, type Selection, type Tool } from "./editor";
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_UNDO = 40;
 
+/** A4 at 300 DPI = 2480x3508, the size the report expects. */
+const EXPORT_DPI = 300;
+
 function slugify(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "floor-plan";
-}
-
-function base64ToBlob(base64: string, mimeType: string): Blob {
-  const bytes = atob(base64);
-  const array = new Uint8Array(bytes.length);
-  for (let i = 0; i < bytes.length; i++) array[i] = bytes.charCodeAt(i);
-  return new Blob([array], { type: mimeType });
 }
 
 function readAsBase64(file: Blob): Promise<string> {
@@ -127,6 +125,7 @@ export function FloorPlanTool() {
   const [plan, setPlan] = useState<FloorPlan | null>(null);
   const [history, setHistory] = useState<FloorPlan[]>([]);
   const [view, setView] = useState<"edit" | "sheet">("edit");
+  const [tool, setTool] = useState<Tool>("select");
   const [levelIndex, setLevelIndex] = useState(0);
   const [selection, setSelection] = useState<Selection>(null);
   const [sketchUrl, setSketchUrl] = useState<string | null>(null);
@@ -307,22 +306,58 @@ export function FloorPlanTool() {
     }
   }
 
+  /**
+   * Rasterise the A4 sheet in the browser.
+   *
+   * This used to POST the plan to a route that rendered it with sharp. That route silently
+   * dropped every piece of text — room names, level caption, address, the compass "N" — because
+   * the SVG asks for Arial/Helvetica and Vercel's Linux container ships no fonts at all. Walls
+   * are paths so they survived; text did not. It looked fine locally, where macOS has the fonts,
+   * which is exactly what hid it.
+   *
+   * Rendering here fixes that permanently: the browser has fonts, the on-screen preview and the
+   * download become the same rasteriser rather than two that can disagree, and a ~2.4MB round
+   * trip disappears.
+   */
+  const renderPng = useCallback(async (target: FloorPlan): Promise<Blob> => {
+    const page = a4Pixels(EXPORT_DPI, target.orientation);
+    const svg = renderPlan(target, { mode: "export", dpi: EXPORT_DPI });
+
+    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error("Could not render the plan."));
+        el.src = url;
+      });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = page.w;
+      canvas.height = page.h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Could not render the plan.");
+      // The SVG has no background of its own beyond its own white rect; paint anyway so a
+      // transparent PNG can never reach a report.
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, page.w, page.h);
+      ctx.drawImage(img, 0, 0, page.w, page.h);
+
+      const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/png"));
+      if (!blob) throw new Error("Could not render the plan.");
+      return blob;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }, []);
+
   async function exportPng() {
     if (!plan) return;
     setError(null);
     setBusy("export");
     try {
-      const res = await fetch("/api/floor-plan/export", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ plan, dpi: 300 }),
-      });
-      const json = (await res.json().catch(() => null)) as
-        | { ok: boolean; image?: string; error?: string }
-        | null;
-      if (!json?.ok || !json.image) throw new Error(json?.error ?? "Could not render the plan.");
-
-      const url = URL.createObjectURL(base64ToBlob(json.image, "image/png"));
+      const blob = await renderPng(plan);
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `${slugify(plan.address || "floor-plan")}-floor-plan.png`;
@@ -447,6 +482,31 @@ export function FloorPlanTool() {
                   </button>
                 ))}
               </div>
+              {view === "edit" && (
+                <div className="flex gap-1 rounded-lg border border-ad-border p-1">
+                  {(
+                    [
+                      { key: "select", label: "Select" },
+                      { key: "fence", label: "Fence" },
+                    ] as const
+                  ).map((t) => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => {
+                        setTool(t.key);
+                        setSelection(null);
+                      }}
+                      className={cn(
+                        "rounded px-3 py-1 text-xs font-medium",
+                        tool === t.key ? "bg-ad-steel/10 text-ad-ink" : "text-ad-muted hover:text-ad-ink"
+                      )}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <button
                 type="button"
                 onClick={undo}
@@ -482,6 +542,7 @@ export function FloorPlanTool() {
                 <FloorPlanEditor
                   plan={plan}
                   levelIndex={levelIndex}
+                  tool={tool}
                   selection={selection}
                   onSelect={setSelection}
                   onChange={setLevel}
@@ -538,6 +599,26 @@ export function FloorPlanTool() {
                       </button>
                     ))}
                 </div>
+                {/* Splitting is how a wall gets ADDED: walls exist where two rooms meet, so
+                    handing half the cells to a new room makes one appear. Position it after
+                    with the edge handles. */}
+                <p className="mt-4 text-xs font-medium text-ad-ink">Add a wall by splitting</p>
+                <div className="mt-1 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => apply(splitRoom(level, plan.grid, selectedRoom.id, "v"))}
+                    className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
+                  >
+                    Split ｜ left/right
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => apply(splitRoom(level, plan.grid, selectedRoom.id, "h"))}
+                    className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
+                  >
+                    Split — top/bottom
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => {
@@ -557,9 +638,34 @@ export function FloorPlanTool() {
                 <p className="mt-1 text-xs text-ad-muted">
                   {roomLabel(selectedDoor.a)} → {roomLabel(selectedDoor.b)}
                 </p>
+                {/* "opening" is already modelled and already renders as a gap with no arc —
+                    subtractOpenings cuts the wall either way. This is the missing button. */}
+                <div className="mt-3 flex gap-1 rounded-lg border border-ad-border p-1">
+                  {(
+                    [
+                      { key: "swing", label: "Swing door" },
+                      { key: "opening", label: "Open (no door)" },
+                    ] as const
+                  ).map((k) => (
+                    <button
+                      key={k.key}
+                      type="button"
+                      onClick={() => apply(updateDoor(level, selectedDoor.id, { kind: k.key }))}
+                      className={cn(
+                        "flex-1 rounded px-2 py-1 text-xs font-medium",
+                        selectedDoor.kind === k.key
+                          ? "bg-ad-steel/10 text-ad-ink"
+                          : "text-ad-muted hover:text-ad-ink"
+                      )}
+                    >
+                      {k.label}
+                    </button>
+                  ))}
+                </div>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <button
                     type="button"
+                    disabled={selectedDoor.kind === "opening"}
                     onClick={() =>
                       apply(
                         updateDoor(level, selectedDoor.id, {
@@ -615,6 +721,106 @@ export function FloorPlanTool() {
                 </button>
               </div>
             )}
+
+            {/*
+              Every room, listed, with the name editable right here. Renaming has always been
+              possible by selecting a room on the canvas, but nobody found it — the same failure
+              the Doors list below was added to fix. A list beats a hidden field.
+            */}
+            <div className="rounded-xl border border-ad-border bg-white p-5">
+              <div className="flex items-baseline justify-between">
+                <h3 className="text-sm font-semibold text-ad-ink">Rooms</h3>
+                <span className="text-xs text-ad-muted">{level.rooms.length}</span>
+              </div>
+              <ul className="mt-2 space-y-1">
+                {level.rooms.map((room) => {
+                  const isSelected = selection?.type === "room" && selection.id === room.id;
+                  return (
+                    <li key={room.id} className="flex items-center gap-1">
+                      <input
+                        value={room.label}
+                        onFocus={() => setSelection({ type: "room", id: room.id })}
+                        onChange={(e) =>
+                          apply(renameRoom(level, room.id, e.target.value), `rename:${room.id}`)
+                        }
+                        className={cn(
+                          "min-w-0 flex-1 rounded border px-2 py-1 text-xs outline-none",
+                          isSelected
+                            ? "border-ad-steel bg-ad-steel/5 text-ad-ink"
+                            : "border-transparent text-ad-muted hover:border-ad-border hover:text-ad-ink focus:border-ad-steel"
+                        )}
+                      />
+                      {room.kind === "outdoor" && (
+                        <span className="shrink-0 text-[0.65rem] uppercase tracking-wide text-ad-muted">
+                          outdoor
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={`Delete ${room.label || "room"}`}
+                        onClick={() => {
+                          apply(deleteRoom(level, room.id));
+                          if (isSelected) setSelection(null);
+                        }}
+                        className="shrink-0 rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-orange/10 hover:text-ad-ink"
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="mt-2 text-xs text-ad-muted">
+                Type to rename. Click a room on the plan to move, resize or split it.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-ad-border bg-white p-5">
+              <div className="flex items-baseline justify-between">
+                <h3 className="text-sm font-semibold text-ad-ink">Fences</h3>
+                <span className="text-xs text-ad-muted">{level.fences.length}</span>
+              </div>
+              {level.fences.length === 0 ? (
+                <p className="mt-2 text-xs text-ad-muted">
+                  None. Switch the canvas to <span className="font-medium text-ad-ink">Fence</span>,
+                  then drag along a grid line to draw one.
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-1">
+                  {level.fences.map((f, i) => {
+                    const isSelected = selection?.type === "fence" && selection.id === f.id;
+                    return (
+                      <li key={f.id} className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setSelection({ type: "fence", id: f.id })}
+                          className={cn(
+                            "flex-1 truncate rounded px-2 py-1 text-left text-xs",
+                            isSelected
+                              ? "bg-ad-steel/10 font-medium text-ad-ink"
+                              : "text-ad-muted hover:bg-ad-surface hover:text-ad-ink"
+                          )}
+                        >
+                          Fence {i + 1} · {f.orient === "v" ? "vertical" : "horizontal"} ·{" "}
+                          {Math.round(f.to - f.from)} cells
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Delete fence ${i + 1}`}
+                          onClick={() => {
+                            apply(deleteFence(level, f.id));
+                            if (isSelected) setSelection(null);
+                          }}
+                          className="rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-orange/10 hover:text-ad-ink"
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
 
             {/*
               Every door, listed. Selecting one on the canvas means hitting a doorway-sized

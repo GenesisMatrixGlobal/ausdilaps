@@ -94,11 +94,30 @@ export const annotationSchema = z.object({
 });
 export type Annotation = z.infer<typeof annotationSchema>;
 
+/**
+ * A run of fence along a grid line.
+ *
+ * Unlike a wall, this is STORED rather than derived. Walls exist wherever two rooms meet, so
+ * they fall out of cell ownership for free — but a fence bounds open ground and answers to
+ * nothing, so there is nothing to derive it from. Same vocabulary as WallSeg so the renderers
+ * can treat it the same way.
+ */
+export const fenceSchema = z.object({
+  id: z.string().min(1),
+  orient: z.enum(["h", "v"]),
+  pos: z.number(),
+  from: z.number(),
+  to: z.number(),
+});
+export type Fence = z.infer<typeof fenceSchema>;
+
 export const levelSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
   rooms: z.array(roomSchema),
   doors: z.array(doorSchema).default([]),
+  // Defaulted so every plan saved before fences existed still parses.
+  fences: z.array(fenceSchema).default([]),
   annotations: z.array(annotationSchema).default([]),
 });
 export type Level = z.infer<typeof levelSchema>;

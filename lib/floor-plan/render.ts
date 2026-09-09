@@ -111,12 +111,11 @@ export function renderPlan(plan: FloorPlan, opts: RenderOptions): string {
   const fixedH = captionGap * levels.length + levelGap * (levels.length - 1) + addressBlockH;
   const scale = Math.min(contentW / maxBoundsW, Math.max(1, contentH - fixedH) / Math.max(1, totalBoundsH));
 
-  // Centred in the space above the title block. On a portrait sheet a wide single-storey
-  // building is far shorter than the page — top-aligning it left most of the sheet blank
-  // below and read as unfinished. Once levels stack up and fill the height this converges on
-  // top-aligned anyway, so it is never worse.
+  // Title block sits at the HEAD of the sheet, with the drawing centred in what is left below
+  // it. A reader looking for the address should find it before the drawing, not after.
   const drawnH = totalBoundsH * scale + captionGap * levels.length + levelGap * (levels.length - 1);
-  let cursorY = margin + Math.max(0, (contentH - addressBlockH - drawnH) / 2);
+  const bodyTop = margin + addressBlockH;
+  let cursorY = bodyTop + Math.max(0, (contentH - addressBlockH - drawnH) / 2);
 
   const placed: Placed[] = levels.map(({ level, owner, bounds }) => {
     const ox = margin + (contentW - bounds.w * scale) / 2 - bounds.x * scale;
@@ -148,12 +147,12 @@ export function renderPlan(plan: FloorPlan, opts: RenderOptions): string {
     );
   }
 
-  const addrY = page.h - margin - addressFont * 1.6;
+  const addrY = margin + addressFont * 1.1;
 
-  // The arrow lives in the foot band beside the address, not up against the plan. Anchoring
-  // it to the drawing's top-right corner collided with the building whenever the plan filled
-  // the content width — which a wide single-storey layout always does.
-  parts.push(northArrow(plan.north, margin + contentW, addrY - addressFont, page.w * 0.075));
+  // The arrow sits in the title band beside the address, clear of the drawing. Anchoring it to
+  // the drawing's own corner collided with the building whenever the plan filled the content
+  // width, which a wide single-storey layout always does.
+  parts.push(northArrow(plan.north, margin + contentW, margin, page.w * 0.075));
 
   if (plan.address.trim()) {
     parts.push(
@@ -259,6 +258,20 @@ function drawLevel(p: Placed, grid: { w: number; h: number }, scale: number, opt
       `<path d="M${r2(hx)} ${r2(hy)}L${r2(tip.x)} ${r2(tip.y)}A${r2(w)} ${r2(w)} 0 0 ${sweep} ${r2(jamb.x)} ${r2(
         jamb.y
       )}" stroke="${INK}" stroke-width="${r2(internal * 0.8)}" fill="none"${dash}/>`
+    );
+  }
+
+  // Fences are stored, not derived, so they draw from the level directly. Same dashed grey as
+  // an outdoor area's edge — both say "boundary, not wall".
+  if (level.fences.length > 0) {
+    const runs = level.fences.map((f) =>
+      f.orient === "v"
+        ? `M${r2(ox + f.pos * scale)} ${r2(oy + f.from * scale)}V${r2(oy + f.to * scale)}`
+        : `M${r2(ox + f.from * scale)} ${r2(oy + f.pos * scale)}H${r2(ox + f.to * scale)}`
+    );
+    out.push(
+      `<path d="${runs.join("")}" stroke="${HAIRLINE}" stroke-width="${r2(internal)}" fill="none" ` +
+        `stroke-dasharray="${r2(scale * 0.3)} ${r2(scale * 0.2)}"/>`
     );
   }
 

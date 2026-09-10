@@ -271,11 +271,17 @@ export function LineItemsTable({
                     />
                   </td>
 
-                  <td className={cn(SHEET_CELL, !row.touched.has("levels") && "bg-ad-orange/15")}>
-                    {/* Orange until looked at: the storey count is seeded (1, or an estimate) and
-                        has to be checked before it goes on a Quote. Focusing the cell writes the
-                        current value into the draft, which is what clears the highlight — no
-                        separate "reviewed" flag to persist. */}
+                  <td
+                    className={cn(
+                      SHEET_CELL,
+                      !row.touched.has("levels") && row.values.levels !== "" && "bg-ad-orange/15"
+                    )}
+                  >
+                    {/* Orange until looked at: a SEEDED storey count (1, or an estimate) has to be
+                        checked before it goes on a Quote. A blank cell — council assets — has
+                        nothing to check and is left alone. Focusing the cell writes the current
+                        value into the draft, which is what clears the highlight — no separate
+                        "reviewed" flag to persist. */}
                     <Num
                       value={row.values.levels}
                       onChange={(v) => onChange(row.key, "levels", v)}

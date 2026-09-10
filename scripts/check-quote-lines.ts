@@ -108,7 +108,7 @@ eq(markupSources.map((s) => s.seed.externalMetres), ["", "", "600", ""], "orange
 eq(markupSources[2].seed.street, "Council assets", "orange street default");
 eq(markupSources.map((s) => s.seed.product), ["Standard Internal", "Standard Internal", "External GPS", "Standard Internal"], "colour → product");
 eq(rowsFrom(markupSources, {}, new Set()).length, 3, "excluded layers are dropped");
-eq(markupSources.map((s) => s.seed.levels), ["1", "1", "1", "1"], "a markup seeds one storey");
+eq(markupSources.map((s) => s.seed.levels), ["1", "1", "", "1"], "a markup seeds one storey — none for an orange shape");
 const untouched = rowsFrom(markupSources, {}, new Set())[0];
 eq(untouched.touched.has("levels"), false, "levels starts untouched");
 eq(rowsFrom(markupSources, { subject: { levels: "1" } }, new Set())[0].touched.has("levels"), true, "a click (same value written back) counts as touched");

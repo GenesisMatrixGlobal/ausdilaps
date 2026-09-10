@@ -27,7 +27,7 @@ import { LineItemsTable } from "@/components/tools/shared/quote-lines/line-items
 import { BREAKOUT_XL } from "@/components/tools/shared/quote-lines/styles";
 import { StreetViewLink } from "./street-view-link";
 import { SUBJECT_KEY, layerAnchor, layersFrom, lotKey, shapeKey } from "@/lib/markup-layers/plan";
-import { itemNumbers, rowsFrom, type LineItemDraft, type LineItemDrafts } from "@/lib/markup-layers/line-items";
+import { initialDeselected, itemNumbers, rowsFrom, type LineItemDraft, type LineItemDrafts } from "@/lib/markup-layers/line-items";
 import { sourcesFromLayers } from "@/lib/markup-layers/sources/from-layers";
 import { applyCell, toggleDeselected } from "@/lib/markup-layers/drafts";
 import type { MarkupLayer } from "@/lib/markup-layers/types";
@@ -512,7 +512,28 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
       setExcludedIds(new Set());
       setHideSubject(false);
       setLineDrafts({});
-      setDeselected(new Set());
+      // The site starts unticked — see sourcesFromLayers. Seeded from the same rule the sheet
+      // uses, off the freshly resolved geometry, so the two can't disagree.
+      setDeselected(
+        initialDeselected(
+          sourcesFromLayers(
+            layersFrom(
+              buildBuildingMarkupFile({
+                address: { street, suburb, postcode, state },
+                matchedAddress: json.matchedAddress,
+                mapType: json.mapType,
+                subjectRing: json.subjectRing,
+                subjectLotPlan: json.subjectLotPlan ?? null,
+                subjectAreaSqm: json.subjectAreaSqm ?? null,
+                neighbours: json.neighbours,
+                excludedIds: [],
+                hideSubject: false,
+                shapes: [],
+              })
+            )
+          )
+        )
+      );
       shapes.reset();
       setFlags(json.flags);
       frameGeometry(json.subjectRing, json.neighbours, new Set());
@@ -613,7 +634,25 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
       // No project site on a street survey — and an empty ring must never be drawn.
       setHideSubject(true);
       setLineDrafts({});
-      setDeselected(new Set());
+      // Red lots — the addresses the operator put in — start unticked; see sourcesFromLayers.
+      setDeselected(
+        initialDeselected(
+          sourcesFromLayers(
+            layersFrom(
+              buildBuildingMarkupFile({
+                address: json.address,
+                matchedAddress: null,
+                mapType: MAP_TYPE,
+                subjectRing: [],
+                neighbours: json.parcels,
+                excludedIds: [],
+                hideSubject: true,
+                shapes: [],
+              })
+            )
+          )
+        )
+      );
       shapes.reset();
       setFlags(json.flags ?? []);
       frameGeometry([], json.parcels, new Set());

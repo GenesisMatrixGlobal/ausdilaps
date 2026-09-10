@@ -106,8 +106,10 @@ const markupSources = sourcesFromLayers([
 eq(markupSources.map((s) => s.seed.internalMetres), ["", "600", "", "600"], "blue seeds internal, red seeds nothing");
 eq(markupSources.map((s) => s.seed.externalMetres), ["", "", "600", ""], "orange seeds external");
 eq(markupSources[2].seed.street, "Council assets", "orange street default");
-eq(markupSources.map((s) => s.seed.product), ["Standard Internal", "Standard Internal", "External GPS", "Standard Internal"], "colour → product");
+eq(markupSources.map((s) => s.seed.product), ["Standard Internal", "Residential House", "External GPS", "Residential House"], "colour → product: blue is a house");
 eq(rowsFrom(markupSources, {}, new Set()).length, 3, "excluded layers are dropped");
+eq([...initialDeselected(markupSources)], ["subject"], "the red site starts unticked; blue and orange start ticked");
+eq(rowsFrom(markupSources, {}, initialDeselected(markupSources)).map((r) => r.number), [null, 1, 2], "numbering starts at the first ticked row");
 eq(markupSources.map((s) => s.seed.levels), ["1", "1", "", "1"], "a markup seeds one storey — none for an orange shape");
 const untouched = rowsFrom(markupSources, {}, new Set())[0];
 eq(untouched.touched.has("levels"), false, "levels starts untouched");

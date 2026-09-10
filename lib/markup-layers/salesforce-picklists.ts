@@ -95,7 +95,9 @@ export function assetTypeForProduct(product: string): AssetType | "" {
  */
 export const PRODUCT_BY_COLOR: Record<"red" | "blue" | "orange", string> = {
   red: "Standard Internal",
-  blue: "Standard Internal",
+  // A blue lot is a neighbouring property, and on the jobs this tool prices that is a house
+  // far more often than a commercial building (Rhys, 2026-09-11). Same asset type either way.
+  blue: "Residential House",
   orange: "External GPS",
 };
 

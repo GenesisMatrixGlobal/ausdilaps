@@ -220,7 +220,9 @@ export function SyncToSalesforce({
   }
 
   return (
-    <div className="mt-2 w-full max-w-xl rounded-xl border border-ad-border bg-white p-5">
+    // Full width of the toolbar's block: it wraps onto its own line under the buttons, and at
+    // half width it read as an afterthought beside them.
+    <div className="mt-2 w-full rounded-xl border border-ad-border bg-white p-5">
       <div className="flex items-start justify-between gap-4">
         <p className="text-sm font-medium text-ad-ink">Sync To Salesforce</p>
         <button

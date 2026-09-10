@@ -51,7 +51,10 @@ export function sourceFromLayer(layer: MarkupLayer): LineItemSource {
       levels: layer.color === "orange" ? "" : "1",
     },
     included: layer.included,
-    startSelected: true,
+    // Red is the project site — the address the operator put in. It is drawn to show the client
+    // where the job is, and is usually not itself a line item, so it starts UNTICKED; ticking it
+    // is a deliberate act. Blue lots and orange assets are what gets quoted, so they start ticked.
+    startSelected: layer.color !== "red",
     detail: { kind: "markup", layer },
   };
 }

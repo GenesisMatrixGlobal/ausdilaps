@@ -189,7 +189,7 @@ export function AddressSearch({
         onChange={(e) => setQuery(e.target.value)}
         onFocus={() => suggestions.length > 0 && setOpen(true)}
         placeholder={placeholder}
-        className="mt-1 w-full rounded-lg border border-ad-border p-2 text-sm text-ad-ink outline-none focus:border-ad-steel"
+        className="mt-1 w-full rounded-lg border border-ad-border px-3 py-2 text-sm text-ad-ink outline-none focus:border-ad-steel"
       />
       {loading && <p className="mt-1 text-xs text-ad-muted">Searching…</p>}
       {error && <p className="mt-1 text-xs text-ad-orange">{error}</p>}

@@ -818,13 +818,32 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
         </div>
       ) : multi ? (
         <div className="mt-4 rounded-xl border border-ad-border bg-white p-5">
+          {/* One heading and one line of instruction, so the three ways in read as one control.
+              The fold button sits at the end of this row — the same spot the + occupies on the
+              folded bar, so the two swap in place. */}
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-ad-ink">Addresses</p>
+              <p className="mt-0.5 text-xs text-ad-muted">
+                Search one, paste a list, or drop a screenshot. A line starting with <span className="font-mono">+</span> also
+                brings in its adjoining lots.
+              </p>
+            </div>
+            {result && (
+              <button
+                type="button"
+                onClick={() => setAddressesOpen(false)}
+                aria-label="Hide addresses"
+                title="Hide addresses"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-ad-border text-lg leading-none text-ad-ink hover:bg-ad-surface"
+              >
+                −
+              </button>
+            )}
+          </div>
           {/* The same search box as Building Markup, adding to the list instead of filling a
-              form — so one-off addresses don't have to be typed into the block by hand. No
-              labels: the placeholders say it, and the switch shares the row so the bar isn't a
-              full-width runway. */}
-          {/* One row, fixed proportions: the bar takes three quarters, the switch the rest, and
-              the fold button sits where the + sits on the folded bar so the two swap in place. */}
-          <div className="grid items-center gap-3 sm:grid-cols-[3fr_1fr_auto]">
+              form. The bar takes three quarters of the row, the switch the rest. */}
+          <div className="mt-3 grid items-center gap-3 sm:grid-cols-[3fr_1fr]">
             <div className="-mt-1">
               <AddressSearch
                 onSelect={handleAddressSelect}
@@ -845,32 +864,22 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
             >
               <span
                 className={cn(
-                  "relative inline-block h-5 w-9 rounded-full transition-colors",
+                  "relative inline-block h-5 w-9 shrink-0 rounded-full transition-colors",
                   preselectSurrounding ? "bg-ad-steel" : "bg-ad-border"
                 )}
               >
+                {/* `left-0` is load-bearing: an absolutely positioned knob with no left starts
+                    from its static position, which put it past the end of the track and over
+                    the first letter of the label. */}
                 <span
                   className={cn(
-                    "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
+                    "absolute left-0 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
                     preselectSurrounding ? "translate-x-4" : "translate-x-0.5"
                   )}
                 />
               </span>
               Pre-select surrounding assets
             </button>
-            {result ? (
-              <button
-                type="button"
-                onClick={() => setAddressesOpen(false)}
-                aria-label="Hide addresses"
-                title="Hide addresses"
-                className="flex h-7 w-7 items-center justify-center rounded-full border border-ad-border text-lg leading-none text-ad-ink hover:bg-ad-surface"
-              >
-                −
-              </button>
-            ) : (
-              <span className="hidden h-7 w-7 sm:block" aria-hidden />
-            )}
           </div>
           {addressNote && <p className="mt-1 text-xs text-ad-muted">{addressNote}</p>}
           {addressError && <p className="mt-1 text-xs text-ad-orange">{addressError}</p>}
@@ -883,7 +892,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
               onChange={(e) => setAddressBlock(e.target.value)}
               rows={addressBlock.split(/\r?\n/).length > 5 ? 9 : 5}
               aria-label="Addresses"
-              placeholder={"Or paste addresses, one per line — straight from Excel. A line starting with + also brings in its adjoining lots."}
+              placeholder={"Or paste addresses, one per line — straight from Excel."}
               className="w-full resize-y rounded-lg border border-ad-border p-3 font-mono text-sm text-ad-ink outline-none focus:border-ad-steel"
             />
             <div

@@ -11,11 +11,81 @@
 
 import type { LatLng } from "@/lib/kml/types";
 import { parseAddressBlock } from "@/lib/property-sizing/parse";
+import type { ParsedAddress } from "@/lib/property-sizing/types";
 import { displayStreet, lookupParcels } from "@/lib/property-sizing";
 import { latLngRingFromArcgis } from "@/lib/property-sizing/rings";
+import { mapPool } from "@/lib/util/map-pool";
+import { identifySubjectAndNeighbours } from "./neighbours";
+import { fetchLotAddresses } from "./parcels/addresses";
+import { fetchParcelsNearPointNsw } from "./parcels/nsw";
+import { fetchParcelsNearPointQld } from "./parcels/qld";
+import { fetchParcelsNearPointVic } from "./parcels/vic";
+import type { ParcelFeature } from "./parcels/types";
+import type { StandardMarkupState } from "./resolve";
 
 /** More than this on one drawing stops being a markup and starts being a map. */
 export const MAX_BULK_ADDRESSES = 60;
+
+/**
+ * A line starting with `+` also pulls in the lots ADJOINING that address — the same 4 m
+ * adjacency rule Building Markup uses for its "Detected lots". The DEV tab's address search
+ * writes the marker when its "Pre-select surrounding assets" toggle is on; a pasted list never
+ * carries it. Two kinds of quote from one paste box: a job site with its neighbours, or a
+ * street survey of listed properties.
+ */
+export const WITH_NEIGHBOURS_MARKER = "+";
+
+export interface BulkLine {
+  addr: ParsedAddress;
+  withNeighbours: boolean;
+}
+
+/** One address per non-blank line, with the marker peeled off. Pure. */
+export function parseBulkLines(text: string): BulkLine[] {
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .flatMap((line) => {
+      const withNeighbours = line.startsWith(WITH_NEIGHBOURS_MARKER);
+      const bare = withNeighbours ? line.slice(WITH_NEIGHBOURS_MARKER.length).trim() : line;
+      const [addr] = parseAddressBlock(bare);
+      return addr ? [{ addr, withNeighbours }] : [];
+    });
+}
+
+const NEAR_POINT: Record<StandardMarkupState, (lng: number, lat: number) => Promise<ParcelFeature[]>> = {
+  QLD: (lng, lat) => fetchParcelsNearPointQld(lng, lat),
+  NSW: (lng, lat) => fetchParcelsNearPointNsw(lng, lat),
+  VIC: (lng, lat) => fetchParcelsNearPointVic(lng, lat),
+};
+
+/** The titled lots adjoining the parcel at `point`, with their street addresses. Never
+ *  throws — a failed expansion is a flag, not a lost markup. */
+async function adjoiningLots(
+  state: StandardMarkupState,
+  point: LatLng,
+  ctx: { street: string; suburb: string }
+): Promise<{ lots: { idKey: string; ring: LatLng[]; areaSqm: number | null; street: string | null; suburb: string | null }[]; error?: string }> {
+  try {
+    const candidates = await NEAR_POINT[state](point.lng, point.lat);
+    const found = identifySubjectAndNeighbours(point, candidates);
+    if (!found) return { lots: [] };
+    const addresses = await fetchLotAddresses(
+      state,
+      found.neighbours.map((n) => ({ idKey: n.idKey, ring: n.ring })),
+      ctx
+    );
+    return {
+      lots: found.neighbours.map((n) => {
+        const a = addresses.byIdKey.get(n.idKey);
+        return { idKey: n.idKey, ring: n.ring, areaSqm: n.areaSqm, street: a?.street ?? null, suburb: a?.suburb ?? null };
+      }),
+    };
+  } catch (e) {
+    return { lots: [], error: (e as Error).message };
+  }
+}
 
 export interface BulkParcel {
   id: string;
@@ -44,7 +114,8 @@ function uniqueId(base: string, used: Set<string>): string {
 }
 
 export async function resolveBulkParcels(text: string): Promise<BulkParcelsResult> {
-  const addresses = parseAddressBlock(text);
+  const lines = parseBulkLines(text);
+  const addresses = lines.map((l) => l.addr);
   if (addresses.length === 0) throw new Error("No addresses found — one per line, straight from Excel.");
   if (addresses.length > MAX_BULK_ADDRESSES) {
     throw new Error(`That's ${addresses.length} addresses — the markup takes up to ${MAX_BULK_ADDRESSES} at once.`);
@@ -54,6 +125,7 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
   const parcels: BulkParcel[] = [];
   const unresolved: BulkParcelsResult["unresolved"] = [];
   const used = new Set<string>();
+  const expansionFlags: string[] = [];
 
   looked.forEach(({ addr, result, parcelRings }, i) => {
     const ring = latLngRingFromArcgis(parcelRings);
@@ -75,6 +147,31 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
       suburb: addr.suburb || null,
     });
   });
+
+  // Marked addresses: their adjoining lots join the markup too. After the listed parcels, so a
+  // neighbour that is ALSO a listed address keeps the listed row and is not added twice.
+  const marked = looked
+    .map((l, i) => ({ ...l, withNeighbours: lines[i].withNeighbours }))
+    .filter((l) => l.withNeighbours && l.result.status === "ok" && l.point && l.addr.state && l.addr.state in NEAR_POINT);
+  const expansions = await mapPool(marked, 3, async (l) => ({
+    l,
+    ...(await adjoiningLots(l.addr.state as StandardMarkupState, l.point!, { street: l.addr.street, suburb: l.addr.suburb })),
+  }));
+  for (const { l, lots, error } of expansions) {
+    const label = displayStreet(l.addr);
+    if (error) {
+      expansionFlags.push(`${label}: couldn't look up the adjoining lots — ${error}`);
+      continue;
+    }
+    let added = 0;
+    for (const lot of lots) {
+      const base = lot.idKey || `n${parcels.length}`;
+      if (used.has(base)) continue; // already on the markup in its own right
+      parcels.push({ id: uniqueId(base, used), ring: lot.ring, areaSqm: lot.areaSqm, street: lot.street, suburb: lot.suburb });
+      added++;
+    }
+    expansionFlags.push(`${label}: ${added} adjoining lot${added === 1 ? "" : "s"} added`);
+  }
 
   if (parcels.length === 0) {
     throw new Error(
@@ -102,6 +199,7 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
   for (const l of looked) {
     if (l.result.status === "ok") for (const f of l.result.flags) flags.push(`${displayStreet(l.addr)}: ${f}`);
   }
+  flags.push(...expansionFlags);
   const states = new Set(addresses.map((a) => a.state).filter(Boolean));
   if (states.size > 1) flags.push(`Addresses span ${[...states].join(", ")} — the map's state controls follow the first`);
 

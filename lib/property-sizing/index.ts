@@ -136,10 +136,17 @@ async function lookupLot(addr: ParsedAddress): Promise<WorkRow> {
  */
 export async function lookupParcels(
   addresses: ParsedAddress[]
-): Promise<{ addr: ParsedAddress; result: SizingResult; parcelRings?: number[][][] }[]> {
+): Promise<{ addr: ParsedAddress; result: SizingResult; parcelRings?: number[][][]; point: { lat: number; lng: number } | null }[]> {
   return mapPool(addresses, 5, async (addr) => {
     const w = await lookupLot(addr);
-    return { addr: w.addr, result: w.result, parcelRings: w.parcelRings };
+    return {
+      addr: w.addr,
+      result: w.result,
+      parcelRings: w.parcelRings,
+      // The VERIFIED point — after any address-layer correction — so a caller looking for
+      // adjoining lots searches around the right parcel.
+      point: w.lon != null && w.lat != null ? { lat: w.lat, lng: w.lon } : null,
+    };
   });
 }
 

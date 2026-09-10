@@ -21,6 +21,7 @@ import { sourcesFromLayers } from "@/lib/markup-layers/sources/from-layers";
 import type { MarkupLayer } from "@/lib/markup-layers/types";
 import type { SizingResult } from "@/lib/property-sizing/types";
 import { buildQuoteLineItems, rowReason } from "@/lib/quote-lines/payload";
+import { parseBulkLines } from "@/lib/kml/standard-markup/bulk-parcels";
 
 let failures = 0;
 function fail(msg: string) {
@@ -49,6 +50,12 @@ if (!RATE_STEPS.internal.includes("0.80")) fail("internal default 0.80 is not a 
 if (!RATE_STEPS.external.includes("0.30")) fail("external default 0.30 is not a rate step");
 if (RATE_STEPS.internal.includes("0.55")) fail("internal steps above 0.50 must be 10c");
 if (!RATE_STEPS.internal.includes("0.45")) fail("internal steps below 0.50 must be 5c");
+
+// ── Bulk lines (the DEV tab's paste box) ────────────────────────────────────────────────
+const lines = parseBulkLines("+ 44 Eastern Avenue, Dover Heights NSW 2030\n42\tEASTERN AVE\tDOVER HEIGHTS NSW 2030\n\n+11 Craig Ave, Vaucluse NSW 2030\n");
+eq(lines.map((l) => l.withNeighbours), [true, false, true], "+ marks a line for adjoining lots");
+eq(lines.map((l) => l.addr.street), ["44 Eastern Avenue", "42 EASTERN AVE", "11 Craig Ave"], "marker is peeled off before parsing");
+eq(lines.map((l) => l.addr.suburb), ["Dover Heights", "DOVER HEIGHTS", "Vaucluse"], "suburbs survive the marker");
 
 // ── Sizing adapter ──────────────────────────────────────────────────────────────────────
 const base: SizingResult = {

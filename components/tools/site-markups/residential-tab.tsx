@@ -106,6 +106,11 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
   const multi = mode === "multi";
   /** The pasted address list — multi mode only. */
   const [addressBlock, setAddressBlock] = useState("");
+  /** Multi mode: an address added from the SEARCH bar also brings its adjoining lots, the way
+   *  Building Markup's "Detected lots" do. Written into the list as a leading "+" so the two
+   *  kinds of line — a job site with its neighbours, a listed property on its own — sit in one
+   *  box and the server can tell them apart. A pasted list never gets the marker. */
+  const [preselectSurrounding, setPreselectSurrounding] = useState(true);
   const [street, setStreet] = useState("");
   const [suburb, setSuburb] = useState("");
   const [postcode, setPostcode] = useState("");
@@ -361,7 +366,8 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
         .filter(Boolean)
         .join(", ");
       if (!line) return;
-      setAddressBlock((prev) => (prev.trim() ? `${prev.replace(/\s+$/, "")}\n${line}` : line));
+      const entry = preselectSurrounding ? `+ ${line}` : line;
+      setAddressBlock((prev) => (prev.trim() ? `${prev.replace(/\s+$/, "")}\n${entry}` : entry));
       setAddressError(null);
       setAddressNote(null);
       return;
@@ -384,7 +390,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
     } else {
       setAddressError(`This tool doesn't support ${parsed.state || "that state"} yet — enter the address manually.`);
     }
-  }, [multi]);
+  }, [multi, preselectSurrounding]);
 
   /**
    * A pasted Google Maps link or `lat, lng` pair, handled the same way the Measure tab handles
@@ -748,7 +754,34 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
         <div className="mt-4 rounded-xl border border-ad-border bg-white p-5">
           {/* The same search box as Building Markup, adding to the list instead of filling a
               form — so one-off addresses don't have to be typed into the block by hand. */}
-          <p className="text-sm font-medium text-ad-ink">Add an address</p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm font-medium text-ad-ink">Add an address</p>
+            {/* A switch, on by default: the searched address is usually a job site, and a job
+                site is quoted with its neighbours. Pasted lists are unaffected either way. */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={preselectSurrounding}
+              onClick={() => setPreselectSurrounding((v) => !v)}
+              className="flex items-center gap-2 text-sm text-ad-ink"
+              title="When on, an address added here also brings in the lots adjoining it"
+            >
+              <span
+                className={cn(
+                  "relative inline-block h-5 w-9 rounded-full transition-colors",
+                  preselectSurrounding ? "bg-ad-steel" : "bg-ad-border"
+                )}
+              >
+                <span
+                  className={cn(
+                    "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
+                    preselectSurrounding ? "translate-x-4" : "translate-x-0.5"
+                  )}
+                />
+              </span>
+              Pre-select surrounding assets
+            </button>
+          </div>
           <AddressSearch
             onSelect={handleAddressSelect}
             onPastedLocation={handlePaste}
@@ -769,7 +802,8 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
           </label>
           <p className="mt-1 text-xs text-ad-muted">
             Up to 60 addresses. Each is looked up on its own, so a row that doesn&apos;t resolve is
-            reported, not silently dropped.
+            reported, not silently dropped. A line starting with <span className="font-mono">+</span> also
+            brings in the lots adjoining that address.
           </p>
         </div>
       ) : (
@@ -874,9 +908,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
             ? multi
               ? "Resolving addresses…"
               : "Generating snapshot…"
-            : multi
-              ? "Generate markup"
-              : "Generate snapshot"}
+            : `${result ? "Regenerate" : "Generate"} ${multi ? "markup" : "snapshot"}`}
         </button>
         <button
           className={cn(buttonVariants({ variant: "accent", size: "md" }), downloading && "opacity-60")}

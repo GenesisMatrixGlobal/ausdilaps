@@ -44,6 +44,12 @@
   --color-ad-amber: #a86a12;         /* text + dots — 4.9:1 on white */
   --color-ad-amber-line: #e8d3a8;    /* hairlines and borders */
   --color-ad-amber-tint: #fdf8ef;    /* panel ground */
+  /* Status green. Same reasoning as the amber above: a status colour, not a brand
+     one. Deliberately muted rather than a stock #22c55e, which fights the steel blue
+     and reads as a system toast rather than part of this palette. */
+  --color-ad-green: #1f6f4a;         /* text + mark — 5.7:1 on white */
+  --color-ad-green-line: #b8dcc7;    /* hairlines and borders */
+  --color-ad-green-tint: #f1f9f4;    /* panel ground */
   --color-ad-ink: #2f343a;           /* charcoal — headings + body */
   --color-ad-navy: #2e3338;          /* charcoal dark band */
   --color-ad-navy-deep: #23272b;     /* deepest band / footer */
@@ -118,4 +124,39 @@
     linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
   background-size: 56px 56px;
+}
+
+/* Quote form success state. The tick draws itself and the panel settles in — a
+   submitted enquiry is the one moment on the site worth marking. Everything is
+   decorative, so it all collapses under prefers-reduced-motion. */
+@keyframes ad-success-panel {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes ad-success-ring {
+  from { stroke-dashoffset: 166; }
+  to   { stroke-dashoffset: 0; }
+}
+@keyframes ad-success-tick {
+  from { stroke-dashoffset: 40; }
+  to   { stroke-dashoffset: 0; }
+}
+.ad-success {
+  animation: ad-success-panel 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.ad-success-ring {
+  stroke-dasharray: 166;
+  animation: ad-success-ring 560ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+.ad-success-tick {
+  stroke-dasharray: 40;
+  animation: ad-success-tick 320ms cubic-bezier(0.65, 0, 0.35, 1) 420ms both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ad-success,
+  .ad-success-ring,
+  .ad-success-tick {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import { useForm, type UseFormRegister } from "react-hook-form";
 import { Button } from "@/components/ui/button";
@@ -156,6 +156,19 @@ export function QuoteForm() {
   });
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
   const [serverError, setServerError] = useState("");
+  const successRef = useRef<HTMLDivElement>(null);
+
+  // Bring the confirmation into view. The form is long enough that submitting from
+  // the bottom otherwise leaves the success panel off-screen and looks like nothing
+  // happened. Declared before the early return below — hooks can't live after it.
+  useEffect(() => {
+    if (status !== "success") return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    successRef.current?.scrollIntoView({
+      behavior: reduced ? "auto" : "smooth",
+      block: "center",
+    });
+  }, [status]);
 
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const inquiryType = watch("inquiryType");
@@ -221,8 +234,36 @@ export function QuoteForm() {
 
   if (status === "success") {
     return (
-      <div className="rounded-xl border border-ad-border bg-white p-8 text-center">
-        <div className="rule-accent mx-auto mb-5 w-12" />
+      <div
+        ref={successRef}
+        role="status"
+        aria-live="polite"
+        className="ad-success rounded-xl border border-ad-green-line bg-ad-green-tint p-8 text-center"
+      >
+        <svg
+          viewBox="0 0 56 56"
+          className="mx-auto mb-5 h-14 w-14 text-ad-green"
+          fill="none"
+          aria-hidden="true"
+        >
+          <circle
+            className="ad-success-ring"
+            cx="28"
+            cy="28"
+            r="26.5"
+            stroke="currentColor"
+            strokeWidth="2"
+            opacity="0.45"
+          />
+          <path
+            className="ad-success-tick"
+            d="M17 28.5 L24.5 36 L39 21"
+            stroke="currentColor"
+            strokeWidth="3.25"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
         <h3 className="font-heading text-2xl font-semibold text-ad-ink">Request received.</h3>
         <p className="mx-auto mt-3 max-w-md text-ad-muted">
           Thanks — we&apos;ve got your details and will come back to you shortly.

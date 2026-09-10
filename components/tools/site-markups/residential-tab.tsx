@@ -61,6 +61,8 @@ interface Neighbour {
   id: string;
   ring: LatLng[];
   areaSqm: number | null;
+  /** Red for the address a multi-property markup was searched from; absent = blue. */
+  color?: "red" | "blue";
   /** From the state's address layer — see lib/kml/standard-markup/parcels/addresses.ts.
    *  Null when the layer had nothing for this lot, or the lookup failed. */
   street?: string | null;
@@ -820,23 +822,26 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
               form — so one-off addresses don't have to be typed into the block by hand. No
               labels: the placeholders say it, and the switch shares the row so the bar isn't a
               full-width runway. */}
-          <AddressSearch
-            onSelect={handleAddressSelect}
-            onPastedLocation={handlePaste}
-            clearOnSelect
-            placeholder="Add an address, or paste a Google Maps link…"
-          />
-          {/* A switch, on by default, on its own line under the bar: the searched address is
-              usually a job site, and a job site is quoted with its neighbours. Pasted lists are
-              unaffected either way. Sharing the bar's row squeezed both. */}
-          <div className="mt-2 flex justify-end">
+          {/* One row, fixed proportions: the bar takes three quarters, the switch the rest, and
+              the fold button sits where the + sits on the folded bar so the two swap in place. */}
+          <div className="grid items-center gap-3 sm:grid-cols-[3fr_1fr_auto]">
+            <div className="-mt-1">
+              <AddressSearch
+                onSelect={handleAddressSelect}
+                onPastedLocation={handlePaste}
+                clearOnSelect
+                placeholder="Add an address, or paste a Google Maps link…"
+              />
+            </div>
+            {/* A switch, on by default: the searched address is the property the quote is about —
+                drawn red — and it is quoted with its neighbours. Pasted lists are unaffected. */}
             <button
               type="button"
               role="switch"
               aria-checked={preselectSurrounding}
               onClick={() => setPreselectSurrounding((v) => !v)}
-              className="flex items-center gap-2 text-sm text-ad-muted hover:text-ad-ink"
-              title="When on, an address added here also brings in the lots adjoining it"
+              className="flex items-center gap-2 text-sm text-ad-ink"
+              title="When on, an address added here is drawn red and brings in the lots adjoining it"
             >
               <span
                 className={cn(
@@ -853,6 +858,19 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
               </span>
               Pre-select surrounding assets
             </button>
+            {result ? (
+              <button
+                type="button"
+                onClick={() => setAddressesOpen(false)}
+                aria-label="Hide addresses"
+                title="Hide addresses"
+                className="flex h-7 w-7 items-center justify-center rounded-full border border-ad-border text-lg leading-none text-ad-ink hover:bg-ad-surface"
+              >
+                −
+              </button>
+            ) : (
+              <span className="hidden h-7 w-7 sm:block" aria-hidden />
+            )}
           </div>
           {addressNote && <p className="mt-1 text-xs text-ad-muted">{addressNote}</p>}
           {addressError && <p className="mt-1 text-xs text-ad-orange">{addressError}</p>}
@@ -917,15 +935,6 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
               {shotNote && <span className={cn("text-xs", /Couldn|doesn|No addresses|failed/.test(shotNote) ? "text-ad-orange" : "text-ad-muted")}>{shotNote}</span>}
             </div>
           </div>
-          {result && (
-            <button
-              type="button"
-              onClick={() => setAddressesOpen(false)}
-              className="mt-2 text-xs text-ad-steel underline underline-offset-2 hover:text-ad-ink"
-            >
-              Hide addresses
-            </button>
-          )}
         </div>
       ) : (
       <div className="mt-4 grid gap-4 rounded-xl border border-ad-border bg-white p-5 sm:grid-cols-2">
@@ -1098,7 +1107,9 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
         {error && <span className="text-sm text-ad-orange">{error}</span>}
       </div>
 
-      {flags.length > 0 && (
+      {/* Off on the DEV tab for now (Rhys, 2026-09-11): nothing it has said there has been
+          worth the space. The per-lot notes still reach the sheet's Notes column. */}
+      {!multi && flags.length > 0 && (
         <div className="mt-6 max-w-xl rounded-lg border border-ad-orange/40 bg-ad-orange/5 p-3 text-sm text-ad-ink">
           <div className="flex items-start justify-between gap-3">
             <p className="font-medium">Worth a manual check:</p>
@@ -1182,7 +1193,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
                       onChange={() => toggleNeighbour(n.id)}
                       className="h-4 w-4 accent-ad-steel"
                     />
-                    {rowBadge(lotKey(n.id), `#${NEIGHBOUR_FILL}`)}
+                    {rowBadge(lotKey(n.id), `#${n.color === "red" ? SITE_RED : NEIGHBOUR_FILL}`)}
                     {/* The street address, not "Lot 1" — the numbered badge beside it already
                         ties the row to its pin on the image, so repeating the number as the
                         label spent the only line of text in the row on something already on

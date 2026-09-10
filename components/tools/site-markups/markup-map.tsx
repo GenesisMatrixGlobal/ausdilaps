@@ -105,6 +105,8 @@ interface ShapeHandles {
 
 interface LotHandles {
   polygon: google.maps.Polygon;
+  /** The hex the polygon and badge were built with, so a colour change can rebuild them. */
+  color: string;
   badge: MapBadge;
 }
 
@@ -196,7 +198,7 @@ export function MarkupMap({
   subjectRing: LatLng[];
   hideSubject: boolean;
   /** Only the lots that are ticked on the MAP. Unticking one removes its polygon and its badge. */
-  lots: { id: string; ring: LatLng[] }[];
+  lots: { id: string; ring: LatLng[]; color?: "red" | "blue" }[];
   /** Quote item number per layer key. A layer absent from this map is drawn but NOT numbered —
    *  which is how the project site gets shown to a client without becoming a line item. Derived
    *  once by the tab from rowsFrom(), so the bubble, the sheet and the legend always agree. */
@@ -617,7 +619,7 @@ export function MarkupMap({
   }, [map, subjectRing, hideSubject]);
 
   // Detected lots, keyed on id so unticking one removes exactly its polygon and badge.
-  const lotSignature = lots.map((l) => `${l.id}:${numbers.get(lotKey(l.id)) ?? ""}`).join("|");
+  const lotSignature = lots.map((l) => `${l.id}:${l.color ?? "blue"}:${numbers.get(lotKey(l.id)) ?? ""}`).join("|");
   useEffect(() => {
     if (!map) return;
     const handles = lotHandles.current;
@@ -632,10 +634,20 @@ export function MarkupMap({
     }
 
     for (const lot of lots) {
+      const hex = `#${lot.color === "red" ? SITE_RED : NEIGHBOUR_FILL}`;
       let h = handles.get(lot.id);
+      // A lot that changed colour (the same address re-generated with the surrounding-assets
+      // switch flipped) is rebuilt: the badge has no colour setter, and a stale blue pin on a
+      // red lot is exactly the kind of mismatch nobody notices until it is printed.
+      if (h && h.color !== hex) {
+        h.polygon.setMap(null);
+        h.badge.destroy();
+        handles.delete(lot.id);
+        h = undefined;
+      }
       if (!h) {
-        const hex = `#${NEIGHBOUR_FILL}`;
         h = {
+          color: hex,
           polygon: new google.maps.Polygon({
             map,
             // Read-only, and NOT clickable: a lot covers most of the frame, so a clickable
@@ -651,9 +663,9 @@ export function MarkupMap({
             fillColor: hex,
             fillOpacity: FILL_OPACITY,
           }),
-          // Blue, matching the outline it sits on — the bubble's colour is now the item's own
-          // colour throughout rather than orange for every lot.
-          badge: createMapBadge(map, "teardrop", `#${NEIGHBOUR_FILL}`),
+          // Matching the outline it sits on — the bubble's colour is the item's own colour
+          // throughout rather than orange for every lot.
+          badge: createMapBadge(map, "teardrop", hex),
         };
         handles.set(lot.id, h);
       }

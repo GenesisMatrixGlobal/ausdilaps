@@ -22,6 +22,10 @@ export interface SavedNeighbour {
   id: string;
   ring: LatLng[];
   areaSqm: number | null;
+  /** How the lot is drawn. Absent means blue — every lot before 2026-09-11 was. A multi-property
+   *  markup draws the address the operator SEARCHED in red: that is the whole of what "project
+   *  site" ever meant on the drawing, so it is a colour on a lot, not a second kind of thing. */
+  color?: "red" | "blue";
   /** From the state's address layer at generate time. Stored rather than re-looked-up on open
    *  for the same reason the geometry is: it is what was on the drawing that got signed off,
    *  and the address layer may say something different today. Optional — version-1 files and
@@ -170,6 +174,7 @@ export function parseBuildingMarkupFile(
       id: str(n.id),
       ring,
       areaSqm: isFiniteNumber(n.areaSqm) ? n.areaSqm : null,
+      ...(n.color === "red" ? { color: "red" as const } : {}),
       // No `label`. A lot's number is now the quote item number, derived from the tick state at
       // render time (see line-items.ts), so storing one would go stale the moment a lot was
       // unticked. Version-2 files that carry one are simply ignored.

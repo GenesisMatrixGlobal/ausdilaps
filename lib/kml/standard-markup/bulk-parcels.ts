@@ -105,6 +105,9 @@ export interface BulkParcel {
   areaSqm: number | null;
   street: string | null;
   suburb: string | null;
+  /** Red for a `+` address — the one the quote is about, drawn the way Building Markup draws its
+   *  site. Blue for a listed property and for every adjoining lot. */
+  color: "red" | "blue";
 }
 
 export interface BulkParcelsResult {
@@ -157,6 +160,7 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
       areaSqm: result.lotSizeSqm,
       street: displayStreet(addr),
       suburb: addr.suburb || null,
+      color: lines[i].withNeighbours ? "red" : "blue",
     });
   });
 
@@ -179,7 +183,7 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
     for (const lot of lots) {
       const base = lot.idKey || `n${parcels.length}`;
       if (used.has(base)) continue; // already on the markup in its own right
-      parcels.push({ id: uniqueId(base, used), ring: lot.ring, areaSqm: lot.areaSqm, street: lot.street, suburb: lot.suburb });
+      parcels.push({ id: uniqueId(base, used), ring: lot.ring, areaSqm: lot.areaSqm, street: lot.street, suburb: lot.suburb, color: "blue" });
       added++;
     }
     expansionFlags.push(`${label}: ${added} adjoining lot${added === 1 ? "" : "s"} added`);

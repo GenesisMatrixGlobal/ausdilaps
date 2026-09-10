@@ -118,7 +118,8 @@ export function layersFrom(file: BuildingMarkupFile): MarkupLayer[] {
       // pathological cases, and it saves retyping it on every row.
       suburb: lot.suburb ?? file.address.suburb ?? null,
       mode: null,
-      color: "blue",
+      // Red for the address a multi-property markup was searched from; blue otherwise.
+      color: lot.color ?? "blue",
       included: !excluded.has(lot.id),
       points: lot.ring,
     });

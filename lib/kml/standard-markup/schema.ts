@@ -57,6 +57,8 @@ export const standardMarkupRenderRequestSchema = z.object({
        *  the legend needed them, silently stripped here. */
       street: z.string().max(200).nullish(),
       suburb: z.string().max(120).nullish(),
+      /** Red for the searched address on a multi-property markup; blue is every lot before it. */
+      color: z.enum(["red", "blue"]).default("blue"),
     })
   ),
   mapType: z.enum(["satellite", "hybrid", "roadmap"]).default("hybrid"),

@@ -66,6 +66,8 @@ export interface NumberedNeighbour {
    *  the client over the ticked sheet rows, so the bubble, the sheet and this legend agree.
    *  Empty means: draw the outline, no bubble, no legend row. */
   label: string;
+  /** Red for the address a multi-property markup was searched from. Absent = blue. */
+  color?: "red" | "blue";
   /** From the state address layer. ⚠️ NOT DRAWN — it named this lot in the retired legend
    *  schedule; see `name` on MarkupShapeInput. Optional: a lot the layer
    *  had nothing for simply falls back to its lot/plan. */
@@ -178,14 +180,17 @@ function markupPolygons(
             strokeWeight: OUTLINE_WEIGHT,
           },
         ]),
-    ...kept.map((n) => ({
-      ring: simplify(n.ring),
-      fillColor: NEIGHBOUR_FILL,
-      fillOpacityPercent: FILL_OPACITY_PERCENT,
-      strokeColor: NEIGHBOUR_FILL,
-      strokeOpacityPercent: STROKE_OPACITY_PERCENT,
-      strokeWeight: OUTLINE_WEIGHT,
-    })),
+    ...kept.map((n) => {
+      const red = n.color === "red";
+      return {
+        ring: simplify(n.ring),
+        fillColor: red ? SITE_RED : NEIGHBOUR_FILL,
+        fillOpacityPercent: FILL_OPACITY_PERCENT,
+        strokeColor: red ? SITE_RED : NEIGHBOUR_FILL,
+        strokeOpacityPercent: red ? SITE_STROKE_OPACITY_PERCENT : STROKE_OPACITY_PERCENT,
+        strokeWeight: OUTLINE_WEIGHT,
+      };
+    }),
     ...shapePolygons.map(({ ring, color }) => ({
       ring: simplify(ring),
       fillColor: color,
@@ -445,7 +450,7 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
       .map((n) => ({
         at: ringAnchor(n.ring) ?? centroidOf(n.ring),
         label: n.label,
-        color: NEIGHBOUR_FILL,
+        color: n.color === "red" ? SITE_RED : NEIGHBOUR_FILL,
         shape: "teardrop" as const,
       })),
     ...drawnShapes
@@ -463,8 +468,8 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
   // geometry or as a hand-drawn shape: red is the subject boundary or a redrawn site, blue is a
   // detected lot or a shape inside the property, orange is only ever a drawn shape.
   const keys = colourKeys({
-    red: !hideSubject || drawnShapes.some((x) => x.shape.color === "red"),
-    blue: kept.length > 0 || drawnShapes.some((x) => x.shape.color === "blue"),
+    red: !hideSubject || kept.some((n) => n.color === "red") || drawnShapes.some((x) => x.shape.color === "red"),
+    blue: kept.some((n) => n.color !== "red") || drawnShapes.some((x) => x.shape.color === "blue"),
     orange: drawnShapes.some((x) => x.shape.color === "orange"),
   });
 

@@ -113,6 +113,17 @@ export interface RenderMapInput {
    *  usual case, since the site is normally shown to the client rather than billed. ⚠️ Also NOT
    *  DRAWN now: the site has never had a pin, so its number only ever appeared in the legend. */
   subjectLabel?: string;
+  /**
+   * Draw the outlines in the SVG composite instead of as Static Maps `path` params.
+   *
+   * The URL route carries every ring in every tile request under a ~7,600-character budget, so
+   * the tiler simplifies rings to fit and this renderer caps the lot count at MAX_NEIGHBOURS.
+   * A multi-property markup (the *DEV* tab) has 20-50 lots, which would arrive as blobs with
+   * most of them missing. Drawn here there is no budget: the same latLngToPixel projection the
+   * badges use puts every vertex where it belongs. Off by default — the shipped Building Markup
+   * export stays exactly as it was.
+   */
+  overlayOutlines?: boolean;
 }
 
 export interface RenderMapResult {
@@ -200,6 +211,38 @@ function markupPolygons(
  * map-badge.ts puts on the live map — teardrops for lots, circles in the shape's own colour
  * for hand-drawn shapes, so the two independent number series can't be confused.
  */
+/**
+ * Every polygon as SVG, for `overlayOutlines`. Same fill/stroke figures the Static Maps route
+ * uses, so a drawing looks the same whichever way its outlines were drawn — only the tile
+ * background comes from Google now.
+ */
+function outlinesSvg(
+  polygons: StaticMapPolygon[],
+  center: LatLng,
+  zoom: number,
+  /** LOGICAL size — the Static Maps `size`, before `scale`. */
+  width: number,
+  height: number
+): string {
+  const projection = { center, zoom, imageSizePx: width, imageHeightPx: height };
+  return polygons
+    .map((p) => {
+      const points = p.ring
+        .map((pt) => {
+          const logical = latLngToPixel(projection, pt);
+          return `${(logical.x * SCALE).toFixed(1)},${(logical.y * SCALE).toFixed(1)}`;
+        })
+        .join(" ");
+      // Google's `weight` is in logical pixels; the composite is drawn at SCALE.
+      return (
+        `<polygon points="${points}" fill="#${p.fillColor}" fill-opacity="${(p.fillOpacityPercent ?? FILL_OPACITY_PERCENT) / 100}" ` +
+        `stroke="#${p.strokeColor}" stroke-opacity="${(p.strokeOpacityPercent ?? STROKE_OPACITY_PERCENT) / 100}" ` +
+        `stroke-width="${(p.strokeWeight ?? OUTLINE_WEIGHT) * SCALE}" stroke-linejoin="round" />`
+      );
+    })
+    .join("\n    ");
+}
+
 interface BadgeSpec {
   at: LatLng;
   label: string;
@@ -346,11 +389,20 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
   const shapes = input.shapes ?? [];
   const flags: string[] = [];
 
+  const overlayOutlines = input.overlayOutlines ?? false;
+
   // Nearest-first, so if the cap bites it drops the lots furthest from the site rather than
-  // whichever the cadastre happened to list last.
-  const subjectCentroid = centroidOf(input.subjectRing);
+  // whichever the cadastre happened to list last. The cap exists only for the URL route —
+  // outlines drawn in the composite have no budget to fit, so every lot is kept.
+  //
+  // A multi-property markup has no subject ring; sort from the middle of the lots instead, so
+  // centroidOf() is never asked about an empty ring.
+  const subjectCentroid =
+    input.subjectRing.length >= 3
+      ? centroidOf(input.subjectRing)
+      : centroidOf(visible.flatMap((n) => n.ring));
   const kept =
-    visible.length > MAX_NEIGHBOURS
+    !overlayOutlines && visible.length > MAX_NEIGHBOURS
       ? [...visible]
           .sort((a, b) => {
             const ca = centroidOf(a.ring);
@@ -369,7 +421,9 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
   const { stitched, plan, pxWidth, pxHeight } = await renderTiledStaticMap({
     bounds: input.bounds,
     mapType: input.mapType,
-    polygonsFor: (tolerance) => markupPolygons(input.subjectRing, kept, shapes, hideSubject, tolerance),
+    // With overlayOutlines the tiles carry no geometry at all — the polygons are drawn below.
+    polygonsFor: (tolerance) =>
+      overlayOutlines ? [] : markupPolygons(input.subjectRing, kept, shapes, hideSubject, tolerance),
     styles: ["feature:poi|visibility:off"],
   });
 
@@ -417,6 +471,18 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
   // Chrome at fixed pixel size, composited over the stitched frame in one sharp call.
   const overlay = Buffer.from(
     `<svg width="${pxWidth}" height="${pxHeight}" xmlns="http://www.w3.org/2000/svg">
+    ${
+      overlayOutlines
+        ? outlinesSvg(
+            // Tolerance 0: nothing to fit a URL into, so every vertex is drawn.
+            markupPolygons(input.subjectRing, kept, shapes, hideSubject, 0),
+            plan.center,
+            plan.zoom,
+            plan.width,
+            plan.height
+          )
+        : ""
+    }
     ${badgesSvg(badges, plan.center, plan.zoom, plan.width, plan.height)}
     ${legendSvg(keys)}
     ${northArrowSvg(pxWidth)}

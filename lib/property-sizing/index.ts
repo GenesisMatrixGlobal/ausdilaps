@@ -17,7 +17,7 @@ const PROVIDERS: Partial<Record<AuStateCode, (a: ParsedAddress) => Promise<LotRe
   VIC: lookupVic,
 };
 
-function displayStreet(addr: ParsedAddress): string {
+export function displayStreet(addr: ParsedAddress): string {
   return addr.unit ? `Unit ${addr.unit}/${addr.street}` : addr.street;
 }
 
@@ -96,6 +96,20 @@ async function lookupLot(addr: ParsedAddress): Promise<WorkRow> {
     result.flags = [...result.flags, mismatch];
   }
   return { addr, result, lon: _lon, lat: _lat, parcelRings: _parcelRings };
+}
+
+/**
+ * Address → parcel, for every address, with the cadastre ring kept. The multi-property markup
+ * (Markup and Measure's *DEV* tab) draws from this; it wants the boundary, not the building
+ * estimate, so estimateBuilding() is deliberately not run here.
+ */
+export async function lookupParcels(
+  addresses: ParsedAddress[]
+): Promise<{ addr: ParsedAddress; result: SizingResult; parcelRings?: number[][][] }[]> {
+  return mapPool(addresses, 5, async (addr) => {
+    const w = await lookupLot(addr);
+    return { addr: w.addr, result: w.result, parcelRings: w.parcelRings };
+  });
 }
 
 export async function sizeProperties(addresses: ParsedAddress[]): Promise<SizingResult[]> {

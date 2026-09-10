@@ -151,8 +151,11 @@ export function parseBuildingMarkupFile(
     };
   }
 
-  const subjectRing = parseLatLngList(doc.subjectRing, limits.maxRingPoints);
-  if (!subjectRing || subjectRing.length < 3) {
+  const subjectRing = parseLatLngList(doc.subjectRing, limits.maxRingPoints) ?? [];
+  // A multi-property markup (the *DEV* tab) has no project site at all: every lot is a blue
+  // property and hideSubject is set. That is the one shape of file allowed to carry no ring.
+  const noSubject = subjectRing.length === 0 && doc.hideSubject === true;
+  if (subjectRing.length < 3 && !noSubject) {
     return { ok: false, error: "That file has no usable property boundary in it." };
   }
 

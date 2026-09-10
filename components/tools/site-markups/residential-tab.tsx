@@ -93,7 +93,18 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
   return new Blob([array], { type: mimeType });
 }
 
-export function ResidentialMarkupTab() {
+/**
+ * "single" is Building Markup: one address, its lot in red, the cadastre's adjoining lots in
+ * blue. "multi" is the *DEV* tab's multi-property markup: a pasted list of addresses, every one
+ * a blue lot, no red project site. Same component, same map, same sheet, same export — the
+ * mode changes how lots are found and what the form asks for, and nothing else.
+ */
+export type MarkupMode = "single" | "multi";
+
+export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode }) {
+  const multi = mode === "multi";
+  /** The pasted address list — multi mode only. */
+  const [addressBlock, setAddressBlock] = useState("");
   const [street, setStreet] = useState("");
   const [suburb, setSuburb] = useState("");
   const [postcode, setPostcode] = useState("");
@@ -470,6 +481,70 @@ export function ResidentialMarkupTab() {
     }
   }
 
+  /** Multi mode's Generate: every pasted address becomes a blue lot, and there is no red site.
+   *  The response lands in the same `result` the single-address path fills, so everything
+   *  after this point — map, sidebar, sheet, export, save file — is shared code. */
+  async function generateBulk() {
+    setError(null);
+    setFlags([]);
+    if (!addressBlock.trim()) {
+      setError("Paste at least one address.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/kml/standard-markup/bulk-parcels", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: addressBlock }),
+      });
+      const json = (await res.json().catch(() => null)) as
+        | {
+            ok: boolean;
+            error?: string;
+            parcels?: Neighbour[];
+            address?: { street: string; suburb: string; postcode: string; state: string };
+            flags?: string[];
+          }
+        | null;
+      if (!res.ok || !json?.ok || !json.parcels || !json.address) {
+        setError(json?.error ?? "Something went wrong resolving those addresses.");
+        return;
+      }
+      // The job's address is the first resolved one: it names the files and the save file, and
+      // gives "+ Add lot from map" a state and suburb to look a picked lot up with.
+      setStreet(json.address.street);
+      setSuburb(json.address.suburb);
+      setPostcode(json.address.postcode);
+      const supported = STATES.find((st) => st.key === json.address!.state && !st.disabled);
+      if (supported) setState(json.address.state as SupportedState);
+      setParsedSummary(`${json.parcels.length} properties`);
+      setAddressPoint(null);
+      setResult({
+        subjectRing: [],
+        subjectLotPlan: null,
+        subjectAreaSqm: null,
+        neighbours: json.parcels,
+        matchedAddress: null,
+        mapType: MAP_TYPE,
+        flags: json.flags ?? [],
+      });
+      setExcludedIds(new Set());
+      // No project site on a street survey — and an empty ring must never be drawn.
+      setHideSubject(true);
+      setLineDrafts({});
+      setDeselected(new Set());
+      shapes.reset();
+      setFlags(json.flags ?? []);
+      frameGeometry([], json.parcels, new Set());
+      setPicking(false);
+      setPickMessage(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   /** Ids key the exclude-set and the checkboxes, so a duplicate would make two lots
    *  toggle as one — the same rule resolve.ts applies server-side, applied here against
@@ -600,6 +675,9 @@ export function ResidentialMarkupTab() {
         bounds: camera.bounds,
         excludeIds: Array.from(excludedIds),
         hideSubject,
+        // Outlines drawn in the composite, not the tile URL: a 50-lot markup would otherwise
+        // be simplified to fit the URL and capped at 12 lots. See render-image.ts.
+        overlayOutlines: multi,
         // The export bakes the shapes AND the numbered badges — unlike the live map, a .png has
         // no overlay to draw them. payload() supplies geometry; the numbers are attached here
         // from the same source as everything else.
@@ -647,9 +725,29 @@ export function ResidentialMarkupTab() {
   return (
     <div className="mt-8">
       <p className="text-ad-muted">
-        Snapshot an address with its surrounding lots highlighted in blue, auto-scoped to the property.
+        {multi
+          ? "Paste a list of addresses — straight from Excel — and every one becomes a lot on one markup, with a sheet row each. No project site: this is a street survey, not a job site."
+          : "Snapshot an address with its surrounding lots highlighted in blue, auto-scoped to the property."}
       </p>
 
+      {multi ? (
+        <div className="mt-4 rounded-xl border border-ad-border bg-white p-5">
+          <label className="block text-sm font-medium text-ad-ink">
+            Addresses
+            <textarea
+              value={addressBlock}
+              onChange={(e) => setAddressBlock(e.target.value)}
+              rows={8}
+              placeholder={"One per line, e.g.\n42\tEastern Ave\tDover Heights NSW 2030\n11 Craig Ave, Vaucluse NSW 2030"}
+              className="mt-1 w-full resize-y rounded-lg border border-ad-border p-3 font-mono text-sm font-normal text-ad-ink outline-none focus:border-ad-steel"
+            />
+          </label>
+          <p className="mt-1 text-xs text-ad-muted">
+            Up to 60 addresses. Each is looked up on its own, so a row that doesn&apos;t resolve is
+            reported, not silently dropped.
+          </p>
+        </div>
+      ) : (
       <div className="mt-4 grid gap-4 rounded-xl border border-ad-border bg-white p-5 sm:grid-cols-2">
         {!manualEntry ? (
           <div className="sm:col-span-2">
@@ -739,14 +837,21 @@ export function ResidentialMarkupTab() {
         )}
 
       </div>
+      )}
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <button
           className={cn(buttonVariants({ variant: "primary", size: "md" }), loading && "opacity-60")}
-          onClick={generate}
-          disabled={loading || (!manualEntry && !!addressError)}
+          onClick={multi ? generateBulk : generate}
+          disabled={loading || (!multi && !manualEntry && !!addressError)}
         >
-          {loading ? "Generating snapshot…" : "Generate snapshot"}
+          {loading
+            ? multi
+              ? "Resolving addresses…"
+              : "Generating snapshot…"
+            : multi
+              ? "Generate markup"
+              : "Generate snapshot"}
         </button>
         <button
           className={cn(buttonVariants({ variant: "accent", size: "md" }), downloading && "opacity-60")}
@@ -848,11 +953,13 @@ export function ResidentialMarkupTab() {
             {/* Always rendered, unlike before — the project site row lives here, and a
                 property with no detected neighbours still needs it. */}
             <div className="rounded-xl border border-ad-border bg-white p-4">
-              <p className="text-sm font-medium text-ad-ink">Detected lots</p>
+              <p className="text-sm font-medium text-ad-ink">{multi ? "Properties" : "Detected lots"}</p>
               <p className="mt-1 text-xs text-ad-muted">
                 Uncheck anything that shouldn&apos;t be included.
               </p>
               <ul className="mt-3 space-y-2">
+                {/* No project-site row on a multi-property markup: there is no site. */}
+                {!multi && (
                 <li className="flex items-center gap-2 text-sm text-ad-ink">
                   <input
                     type="checkbox"
@@ -869,6 +976,7 @@ export function ResidentialMarkupTab() {
                     {subjectRowLabel()}
                   </span>
                 </li>
+                )}
                 {result.neighbours.map((n) => (
                   <li key={n.id} className="flex items-center gap-2 text-sm text-ad-ink">
                     <input

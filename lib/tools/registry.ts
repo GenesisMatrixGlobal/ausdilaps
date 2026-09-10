@@ -46,7 +46,14 @@ type Common = {
   title: string;
   /** One line — shown on the tool card and as the page subtitle. */
   description: string;
-  Component: ComponentType;
+  Component: ComponentType<ToolProps>;
+};
+
+/** What the tool page hands every tool. Optional throughout, so a tool that wants none of it
+ *  declares no props at all. */
+export type ToolProps = {
+  /** Company admin — gates experimental surfaces such as Markup and Measure's *DEV* tab. */
+  isAdmin?: boolean;
 };
 
 /** A department tool: appears only under the departments listed. */

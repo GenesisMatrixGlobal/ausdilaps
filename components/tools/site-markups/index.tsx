@@ -6,6 +6,7 @@ import { ToolHeaderSlot } from "@/components/staff/tool-header-slot";
 import { RoadMarkupTab } from "./road-tab";
 import { ResidentialMarkupTab } from "./residential-tab";
 import { MeasureTab } from "./measure-tab";
+import type { ToolProps } from "@/lib/tools/registry";
 
 // ⚠️ The LABEL and the code name differ, deliberately. "Building Markup" is what staff
 // call it; the tab key, the component (ResidentialMarkupTab), the route
@@ -18,9 +19,15 @@ const TABS = [
   { key: "measure", label: "Measure" },
 ] as const;
 
-type Tab = (typeof TABS)[number]["key"];
+/** Rhys's sandbox: the multi-property markup, and whatever is being tried next. Admins only.
+ *  Changes proven here get promoted into the staff tabs by hand — nothing on this tab is
+ *  promised to anyone. */
+const DEV_TAB = { key: "dev", label: "*DEV*" } as const;
 
-export function SiteMarkupsTool() {
+type Tab = (typeof TABS)[number]["key"] | typeof DEV_TAB.key;
+
+export function SiteMarkupsTool({ isAdmin = false }: ToolProps) {
+  const tabs: readonly { key: Tab; label: string }[] = isAdmin ? [...TABS, DEV_TAB] : TABS;
   const [tab, setTab] = useState<Tab>("residential");
   // Mounted-once-visited, then kept mounted. Two reasons, pulling opposite ways:
   //  - Unmounting on switch throws away whatever the tab was holding — a half-drawn set of
@@ -40,7 +47,7 @@ export function SiteMarkupsTool() {
       {/* Rides up into the ToolFrame's title row — border-b-0 because that row already
           carries the rule the active tab underlines against. */}
       <ToolHeaderSlot>
-        <TabBar tabs={TABS} active={tab} onChange={show} className="border-b-0" />
+        <TabBar tabs={tabs} active={tab} onChange={show} className="border-b-0" />
       </ToolHeaderSlot>
       {/* `hidden`, not conditional rendering: see `visited` above. */}
       {visited.has("residential") && (
@@ -58,6 +65,14 @@ export function SiteMarkupsTool() {
           {/* The map needs to know it's back on screen — a Google map sized against a
               display:none container returns grey until it re-measures. */}
           <MeasureTab active={tab === "measure"} />
+        </div>
+      )}
+      {isAdmin && visited.has("dev") && (
+        <div hidden={tab !== "dev"}>
+          {/* The same component as Building Markup in its multi-property mode — one map, one
+              sheet, one export path. Its own instance, so experiments here never touch the
+              markup an estimator has open on the first tab. */}
+          <ResidentialMarkupTab mode="multi" />
         </div>
       )}
     </div>

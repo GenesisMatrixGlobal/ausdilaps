@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { isDepartmentSlug } from "@/lib/departments";
 import { canOpenInDepartment, getTool } from "@/lib/tools/registry";
 import { ToolFrame } from "@/components/staff/tool-frame";
+import { getStaffUser, isAdmin } from "@/lib/auth/session";
 
 /** One page file serves every tool, present and future — the tool itself comes
  *  from the registry. */
@@ -30,6 +31,8 @@ export default async function ToolPage({
   if (!tool || !canOpenInDepartment(tool, department)) notFound();
 
   const { Component } = tool;
+  const user = await getStaffUser();
+  const admin = user ? isAdmin(user) : false;
 
   return (
     <div>
@@ -41,7 +44,7 @@ export default async function ToolPage({
       </Link>
       <div className="mt-4">
         <ToolFrame title={tool.title} code={tool.code}>
-          <Component />
+          <Component isAdmin={admin} />
         </ToolFrame>
       </div>
     </div>

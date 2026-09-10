@@ -35,7 +35,9 @@ export type MarkupShapeInput = z.infer<typeof markupShapeSchema>;
  *  geocoding or cadastre work) so unchecking a lot and regenerating is a single fast
  *  Static Maps call, not a repeat of the whole slow lookup pipeline. */
 export const standardMarkupRenderRequestSchema = z.object({
-  subjectRing: z.array(latLngSchema).min(3),
+  /** Empty for a multi-property markup (the *DEV* tab), which has no red project site — every
+   *  lot is a blue property. `hideSubject` must be true in that case; nothing else changes. */
+  subjectRing: z.array(latLngSchema),
   /** The job's own street, for the legend's project-site row. The operator typed it, so it
    *  beats anything the address layer could offer for a corner lot with several frontages. */
   subjectStreet: z.string().max(200).nullish(),
@@ -78,6 +80,11 @@ export const standardMarkupRenderRequestSchema = z.object({
    *  operator is redrawing it as a red shape instead. The subject ring is still sent and
    *  still anchors the frame — see boundsAnchor in static-map.ts. */
   hideSubject: z.boolean().default(false),
+  /** Draw every outline in the server-side SVG composite instead of as Static Maps `path`
+   *  parameters. Lifts the URL-length budget (which otherwise simplifies rings and caps the
+   *  lot count at 12) — for a 50-property markup. Off by default so the shipped Building
+   *  Markup export is byte-for-byte what it was. */
+  overlayOutlines: z.boolean().default(false),
   /** User-drawn shapes — council assets, external areas, adjacent buildings, anything
    *  the automatic lot detection can't produce. A list, not a single one, since a
    *  property can need several unrelated ones. Capped at 5 per property.

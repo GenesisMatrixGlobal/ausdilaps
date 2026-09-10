@@ -21,36 +21,56 @@ async function verifyTurnstile(secret: string, token: string, ip: string | null)
   }
 }
 
-async function sendEmails(d: QuoteInput, tier: LeadTier, testMode: boolean) {
+async function sendEmails(
+  d: QuoteInput,
+  tier: LeadTier,
+  testMode: boolean,
+  leadId: string | null
+) {
   const key = process.env.RESEND_API_KEY;
   if (!key) return false;
   const from = process.env.RESEND_FROM_EMAIL ?? "AusDilaps <no-reply@ausdilaps.com.au>";
   const adminEmail = process.env.ADMIN_EMAIL ?? "info@ausdilaps.com.au";
   const salesNotify = process.env.SALES_NOTIFY_EMAIL;
 
+  const submittedAt = new Intl.DateTimeFormat("en-AU", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Australia/Brisbane",
+  }).format(new Date());
+
+  // EVERY field on the form, in the order it is asked. Blanks are printed as a
+  // dash rather than dropped: an absent row used to be indistinguishable from a
+  // field that was never asked, so a half-filled enquiry looked complete.
   const rows: [string, string | number | undefined][] = [
     ["Inquiry type", d.inquiryType],
+    ["Tier", tier],
     ["Name", d.name],
     ["Role", d.role],
     ["Company", d.company],
     ["Email", d.email],
     ["Phone", d.phone],
+    ["Preferred contact", d.contactMethod?.join(", ")],
     ["Project", d.projectName],
-    ["Location", d.projectLocation],
+    ["Project location", d.projectLocation],
     ["Approx. assets requiring inspection", d.assetCount],
     ["Property role", d.propertyRole],
     ["Project / OPT number", d.projectNumber],
     ["Document ID", d.documentId],
-    ["Address", d.contactAddress],
-    ["Preferred contact", d.contactMethod?.join(", ")],
-    ["Tier", tier],
+    ["Enquirer address", d.contactAddress],
+    ["Submitted from", d.sourcePage],
+    ["Submitted", submittedAt],
+    ["Lead ID", leadId ?? "not saved — check Supabase"],
   ];
   const tableRows = rows
-    .filter(([, v]) => v !== undefined && v !== "" && v !== null)
-    .map(
-      ([k, v]) =>
-        `<tr><td style="padding:8px 0;color:#5b6570;width:170px;">${k}</td><td style="padding:8px 0;font-weight:600;color:#2f343a;">${esc(String(v))}</td></tr>`
-    )
+    .map(([k, v]) => {
+      const blank = v === undefined || v === null || v === "";
+      const value = blank ? "\u2014" : esc(String(v));
+      const style = blank
+        ? "color:#9ca3af;font-weight:400;"
+        : "color:#2f343a;font-weight:600;";
+      return `<tr><td style="padding:8px 0;color:#5b6570;width:210px;vertical-align:top;border-bottom:1px solid #f1f2f4;">${k}</td><td style="padding:8px 0;${style}vertical-align:top;border-bottom:1px solid #f1f2f4;">${value}</td></tr>`;
+    })
     .join("");
 
   const send = async (payload: Record<string, unknown>) => {
@@ -76,7 +96,10 @@ async function sendEmails(d: QuoteInput, tier: LeadTier, testMode: boolean) {
     html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;color:#2f343a;">
       <h2 style="margin:0 0 20px;">New quote request — ausdilaps.com.au</h2>
       <table style="width:100%;border-collapse:collapse;">${tableRows}</table>
-      ${d.notes ? `<div style="margin-top:20px;padding-top:20px;border-top:1px solid #eee;"><p style="color:#5b6570;margin:0 0 8px;">Notes</p><p style="white-space:pre-wrap;">${esc(d.notes)}</p></div>` : ""}
+      <div style="margin-top:20px;padding-top:20px;border-top:1px solid #eee;">
+        <p style="color:#5b6570;margin:0 0 8px;">Notes</p>
+        <p style="white-space:pre-wrap;margin:0;${d.notes ? "" : "color:#9ca3af;"}">${d.notes ? esc(d.notes) : "\u2014"}</p>
+      </div>
     </div>`,
   });
 
@@ -192,7 +215,7 @@ export async function POST(req: NextRequest) {
   // Email (best-effort, never blocks).
   let emailed = false;
   try {
-    emailed = await sendEmails(d, tier, testMode);
+    emailed = await sendEmails(d, tier, testMode, leadId);
   } catch (e) {
     console.error("[quote] email failed:", e);
   }

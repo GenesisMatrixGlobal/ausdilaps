@@ -1,8 +1,12 @@
 // Class strings shared by the sheet's cells. Borderless inputs, tinted on focus: what makes
 // a grid of boxes read as a spreadsheet instead of a form.
 
+// A faint dashed underline says "you can type here" without turning the grid into a stack of
+// form boxes; hover tints the cell, focus turns the underline solid and steel. Bare transparent
+// inputs read as static text — nobody realised the sheet was editable.
 export const SHEET_INPUT =
-  "w-full bg-transparent px-2 py-2 text-sm text-ad-ink outline-none focus:bg-ad-steel/10";
+  "w-full cursor-text bg-transparent px-2 py-2 text-sm text-ad-ink outline-none " +
+  "border-b border-dashed border-ad-border hover:bg-ad-steel/5 focus:border-solid focus:border-ad-steel focus:bg-ad-steel/10";
 
 export const SHEET_HEAD =
   "border-b border-ad-border bg-ad-surface px-2 py-2 align-bottom text-[0.7rem] font-semibold uppercase tracking-wide text-ad-muted";

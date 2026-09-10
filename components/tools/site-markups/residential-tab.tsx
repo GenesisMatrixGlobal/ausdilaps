@@ -24,7 +24,6 @@ import {
 import { MarkupMap, type MarkupMapCommands } from "./markup-map";
 import { NEIGHBOUR_FILL, SITE_RED } from "@/lib/kml/standard-markup/style";
 import { LineItemsTable } from "@/components/tools/shared/quote-lines/line-items-table";
-import { MARKUP_LEADING_COLUMNS } from "./layer-column";
 import { BREAKOUT_XL } from "@/components/tools/shared/quote-lines/styles";
 import { StreetViewLink } from "./street-view-link";
 import { SUBJECT_KEY, layerAnchor, layersFrom, lotKey, shapeKey } from "@/lib/markup-layers/plan";
@@ -802,10 +801,10 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
         // Folded: one line, and a + to get the list back. The markup and the sheet are the work
         // now; the addresses that made them are a detail.
         <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-ad-border bg-white px-4 py-2.5">
-          <p className="text-sm text-ad-muted">
-            <span className="font-medium text-ad-ink">{addressBlock.split(/\r?\n/).filter((l) => l.trim()).length}</span>{" "}
-            address{addressBlock.split(/\r?\n/).filter((l) => l.trim()).length === 1 ? "" : "es"} on this markup
-          </p>
+          {/* The same heading as the open card, so folding changes the size and nothing else. A
+              count was tried and read as a claim about the markup, which it could not keep
+              (adjoining lots are not lines in the box). */}
+          <p className="text-sm font-medium text-ad-ink">Addresses</p>
           <button
             type="button"
             onClick={() => setAddressesOpen(true)}
@@ -1239,7 +1238,9 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
             a column across every layer, which a max-w-xs sidebar can't show. */}
         <LineItemsTable
           rows={rows}
-          leading={MARKUP_LEADING_COLUMNS}
+          // No tool-specific columns: the colour swatch sits beside the item number, and the
+          // lot's address and area are in the sidebar list. A "Layer" column repeated both.
+          leading={[]}
           onChange={setLineCell}
           onToggle={toggleRow}
           onToggleAll={toggleAllRows}

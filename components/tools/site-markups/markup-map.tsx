@@ -130,7 +130,11 @@ function mapOptions(maps: typeof google.maps): google.maps.MapOptions {
     heading: 0,
     rotateControl: false,
 
-    gestureHandling: "greedy",
+    // Scroll-wheel and trackpad zoom need ⌘ on a Mac / Ctrl on Windows; Google picks the key
+    // for the platform and shows "Use ⌘ + scroll to zoom the map" itself. Without it the map
+    // swallowed every scroll meant for the page — the sheet is directly below it. Dragging to
+    // pan is unaffected, and so are the zoom buttons.
+    gestureHandling: "cooperative",
     // Load-bearing, not cosmetic: a POI pin under the cursor otherwise opens an info window
     // and EATS the click meant to place a point — and hybrid over an Australian suburb is
     // covered in them.

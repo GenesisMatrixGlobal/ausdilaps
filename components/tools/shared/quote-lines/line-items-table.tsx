@@ -170,7 +170,7 @@ export function LineItemsTable({
                   onChange={onToggleAll}
                 />
               </th>
-              <th className={cn(SHEET_HEAD, "w-10 text-right")}>#</th>
+              <th className={cn(SHEET_HEAD, "w-14 text-right")}>#</th>
               {leading.map((col) => (
                 <th key={col.header} className={cn(SHEET_HEAD, "text-left", col.className)}>
                   {col.header}
@@ -207,11 +207,21 @@ export function LineItemsTable({
                       className="h-4 w-4 accent-ad-steel"
                     />
                   </td>
-                  {/* The quote item number. It ties this row to its bubble on a markup and its
-                      line on the Quote; an em dash means "not a line item", which is what an
-                      unticked row is. */}
-                  <td className={cn(SHEET_CELL, "px-2 py-2 text-right font-medium tabular-nums text-ad-ink")}>
-                    {row.number ?? "—"}
+                  {/* The quote item number, with the row's colour swatch beside it when the source
+                      has one — the same colour as its outline and pin on the map. The number ties
+                      this row to that pin and to its line on the Quote; an em dash means "not a
+                      line item", which is what an unticked row is. */}
+                  <td className={cn(SHEET_CELL, "px-2 py-2 font-medium tabular-nums text-ad-ink")}>
+                    <span className="flex items-center justify-end gap-1.5">
+                      {row.source.swatch && (
+                        <span
+                          className="h-3 w-3 shrink-0 rounded-full border border-black/10"
+                          style={{ backgroundColor: `#${row.source.swatch}` }}
+                          aria-hidden
+                        />
+                      )}
+                      {row.number ?? "—"}
+                    </span>
                   </td>
                   {leading.map((col) => (
                     <td key={col.header} className={cn(SHEET_CELL, "px-2 py-2", col.className)}>

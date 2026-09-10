@@ -47,8 +47,14 @@ const inputCls =
   "mt-1.5 w-full rounded-md border border-ad-border bg-white px-4 py-2.5 text-[0.95rem] text-ad-ink placeholder:text-ad-muted/60 focus:border-ad-accent focus:outline-none focus:ring-2 focus:ring-ad-accent/30";
 const labelCls = "block text-sm font-medium text-ad-ink";
 
-function composeAddress(line: string, suburb: string, state: string, postcode: string) {
-  return [line.trim(), [suburb.trim(), state.trim(), postcode.trim()].filter(Boolean).join(" ")]
+function composeAddress(
+  line: string | undefined,
+  suburb: string | undefined,
+  state: string | undefined,
+  postcode: string | undefined
+) {
+  const s = (v: string | undefined) => (v ?? "").trim();
+  return [s(line), [s(suburb), s(state), s(postcode)].filter(Boolean).join(" ")]
     .filter(Boolean)
     .join(", ");
 }
@@ -115,7 +121,38 @@ export function QuoteForm() {
     reset,
     watch,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>();
+  } = useForm<FormValues>({
+    // Every field needs a default. react-hook-form only registers what is rendered,
+    // and the form shows a different address block per enquiry type — so without
+    // these, the block that ISN'T shown arrives as `undefined` and composeAddress
+    // throws on `.trim()` before the fetch ever runs. That threw on every enquiry
+    // type, in every browser, and the catch below reported it as "Network error".
+    defaultValues: {
+      inquiryType: "",
+      name: "",
+      email: "",
+      phone: "",
+      role: "",
+      company: "",
+      projectName: "",
+      projectAddressLine: "",
+      projectAddressSuburb: "",
+      projectAddressState: "",
+      projectAddressPostcode: "",
+      assetCount: "",
+      propertyRole: "",
+      projectNumber: "",
+      documentId: "",
+      contactAddress: "",
+      addressLine: "",
+      addressSuburb: "",
+      addressState: "",
+      addressPostcode: "",
+      contactMethod: [],
+      notes: "",
+      company_website: "",
+    },
+  });
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
   const [serverError, setServerError] = useState("");
 
@@ -158,9 +195,13 @@ export function QuoteForm() {
         setStatus("error");
         setServerError(data.error ?? "Something went wrong. Please try again or call us.");
       }
-    } catch {
+    } catch (e) {
+      // This catch covers the whole body, not just the fetch — a client-side throw
+      // in here used to be reported to the user as a network problem and left no
+      // trace anywhere. Log it so the next fault is diagnosable from the console.
+      console.error("[quote] submit failed:", e);
       setStatus("error");
-      setServerError("Network error. Please try again or call us on 1800 345 277.");
+      setServerError("Something went wrong. Please try again or call us on 1800 345 277.");
     }
   }
 

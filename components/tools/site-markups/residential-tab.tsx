@@ -852,34 +852,21 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
                 placeholder="Add an address, or paste a Google Maps link…"
               />
             </div>
-            {/* A switch, on by default: the searched address is the property the quote is about —
-                drawn red — and it is quoted with its neighbours. Pasted lists are unaffected. */}
-            <button
-              type="button"
-              role="switch"
-              aria-checked={preselectSurrounding}
-              onClick={() => setPreselectSurrounding((v) => !v)}
+            {/* A plain checkbox, on by default: the searched address is the property the quote is
+                about — drawn red — and it is quoted with its neighbours. Pasted lists are
+                unaffected. (Was a hand-rolled switch; it never rendered cleanly.) */}
+            <label
               className="flex items-center gap-2 text-sm text-ad-ink"
               title="When on, an address added here is drawn red and brings in the lots adjoining it"
             >
-              <span
-                className={cn(
-                  "relative inline-block h-5 w-9 shrink-0 rounded-full transition-colors",
-                  preselectSurrounding ? "bg-ad-steel" : "bg-ad-border"
-                )}
-              >
-                {/* `left-0` is load-bearing: an absolutely positioned knob with no left starts
-                    from its static position, which put it past the end of the track and over
-                    the first letter of the label. */}
-                <span
-                  className={cn(
-                    "absolute left-0 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
-                    preselectSurrounding ? "translate-x-4" : "translate-x-0.5"
-                  )}
-                />
-              </span>
+              <input
+                type="checkbox"
+                checked={preselectSurrounding}
+                onChange={(e) => setPreselectSurrounding(e.target.checked)}
+                className="h-4 w-4 accent-ad-steel"
+              />
               Pre-select surrounding assets
-            </button>
+            </label>
           </div>
           {addressNote && <p className="mt-1 text-xs text-ad-muted">{addressNote}</p>}
           {addressError && <p className="mt-1 text-xs text-ad-orange">{addressError}</p>}

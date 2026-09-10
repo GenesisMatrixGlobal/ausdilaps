@@ -54,17 +54,23 @@ export function rowReason(values: LineItemDraft): string | null {
   const internal = parseCell(values.internalMetres);
   const external = parseCell(values.externalMetres);
   if (internal <= 0 && external <= 0) return "no internal or external m²";
+  // A rate the org's picklist doesn't have (an old free-typed cell) would be rejected by
+  // Salesforce for the whole batch — refused here instead, naming the cell.
+  if (internal > 0 && rateToPicklistValue("internal", values.internalRate) === undefined) {
+    return `internal rate $${values.internalRate} isn't one of the picklist's values`;
+  }
+  if (external > 0 && rateToPicklistValue("external", values.externalRate) === undefined) {
+    return `external rate $${values.externalRate} isn't one of the picklist's values`;
+  }
   return null;
 }
 
 function rateFields(kind: keyof typeof RATE_FIELDS, rate: string): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
   const fields = RATE_FIELDS[kind];
-  const value = parseCell(rate);
-  if (value <= 0) return out;
-  out[fields.currency] = value;
-  if (fields.picklist) out[fields.picklist] = rateToPicklistValue(rate);
-  return out;
+  return {
+    [fields.currency]: parseCell(rate),
+    [fields.picklist]: rateToPicklistValue(kind, rate),
+  };
 }
 
 export function buildQuoteLineItems(

@@ -101,39 +101,55 @@ export const PRODUCT_BY_COLOR: Record<"red" | "blue" | "orange", string> = {
 
 // ─── Rates ──────────────────────────────────────────────────────────────────────────────
 //
-// The org prices per m² off PICKLISTS, not free numbers (Rhys, 2026-09-10): external rates
-// step in 5 cents; internal rates step in 5 cents below $0.50 and 10 cents above. The sheet's
-// rate cells are therefore selects over these steps, so an operator cannot type a rate the
-// picklist has no value for. Stored as "0.80"-style strings like every other cell.
+// The org prices per m² off PICKLISTS. These are the org's option lists VERBATIM, read from a
+// QuoteLineItem describe on 2026-09-11 (`Internal_Rate_PL__c`, `External_Rate_PL__c`): the sheet
+// shows the label and the sync writes the API value. Two traps that make a derived list wrong:
+// external API values have NO leading zero (".30"), and the internal 0.60 option's API value is
+// "0.6" while every other one is two-decimal. Copy the org, don't compute it.
 //
-// ⚠ The upper bounds and the picklist VALUE FORMAT ("0.80" vs "$0.80" vs "80c") are not yet
-// confirmed against the org — the Salesforce credentials are Vercel-only (marked sensitive,
-// so `vercel env pull` returns placeholders) and the describe could not be run. Verify with
-// `scripts/sf-describe` once SF_CLIENT_ID/SECRET are in .env.local, and correct
-// rateToPicklistValue() if the format differs. Nothing else needs to change.
+// The currency fields (`Internal_M2_Rate__c`, `External_Rate__c`) are written too — the team's
+// real lines carry both, and the hourly formulas may read either.
 
-function cents(from: number, to: number, step: number): string[] {
-  const out: string[] = [];
-  for (let c = from; c <= to; c += step) out.push((c / 100).toFixed(2));
-  return out;
+export interface RateOption {
+  /** What the sheet shows and stores, e.g. "0.80". */
+  label: string;
+  /** What Salesforce accepts, e.g. "0.80" or ".30" or "0.6". */
+  apiValue: string;
 }
 
+export const RATE_OPTIONS: Record<"internal" | "external", readonly RateOption[]> = {
+  internal: [
+    { label: "0.20", apiValue: "0.20" }, { label: "0.25", apiValue: "0.25" }, { label: "0.30", apiValue: "0.30" },
+    { label: "0.35", apiValue: "0.35" }, { label: "0.40", apiValue: "0.40" }, { label: "0.45", apiValue: "0.45" },
+    { label: "0.50", apiValue: "0.50" }, { label: "0.60", apiValue: "0.6" }, { label: "0.70", apiValue: "0.70" },
+    { label: "0.80", apiValue: "0.80" }, { label: "0.90", apiValue: "0.90" }, { label: "1.00", apiValue: "1.00" },
+    { label: "1.10", apiValue: "1.10" }, { label: "1.20", apiValue: "1.20" }, { label: "1.30", apiValue: "1.30" },
+    { label: "1.40", apiValue: "1.40" }, { label: "1.50", apiValue: "1.50" },
+  ],
+  external: [
+    { label: "0.10", apiValue: ".10" }, { label: "0.15", apiValue: ".15" }, { label: "0.20", apiValue: ".20" },
+    { label: "0.25", apiValue: ".25" }, { label: "0.30", apiValue: ".30" }, { label: "0.35", apiValue: ".35" },
+    { label: "0.40", apiValue: ".40" }, { label: "0.45", apiValue: ".45" }, { label: "0.50", apiValue: ".50" },
+    { label: "0.55", apiValue: ".55" }, { label: "0.60", apiValue: ".60" }, { label: "0.65", apiValue: ".65" },
+    { label: "0.70", apiValue: ".70" }, { label: "0.75", apiValue: ".75" }, { label: "0.80", apiValue: ".80" },
+  ],
+};
+
+/** The labels, for the sheet's rate selects. */
 export const RATE_STEPS = {
-  internal: [...cents(5, 45, 5), ...cents(50, 300, 10)],
-  external: cents(5, 200, 5),
+  internal: RATE_OPTIONS.internal.map((o) => o.label),
+  external: RATE_OPTIONS.external.map((o) => o.label),
 } as const;
 
-/**
- * Which QuoteLineItem fields a rate is written to. A picklist of null means "not sent" —
- * the internal picklist's API name is not yet known (see the ⚠ above), so only the currency
- * field is written for internal until the describe names it.
- */
+/** Which QuoteLineItem fields a rate is written to. */
 export const RATE_FIELDS = {
-  internal: { currency: "Internal_M2_Rate__c", picklist: null as string | null },
-  external: { currency: "External_Rate__c", picklist: "External_Rate_PL__c" as string | null },
+  internal: { currency: "Internal_M2_Rate__c", picklist: "Internal_Rate_PL__c" },
+  external: { currency: "External_Rate__c", picklist: "External_Rate_PL__c" },
 } as const;
 
-/** The picklist string for a sheet rate. One function, so a format surprise is a one-line fix. */
-export function rateToPicklistValue(rate: string): string {
-  return Number(rate).toFixed(2);
+/** The picklist API value for a sheet rate, or undefined when the org has no such option —
+ *  the payload then refuses the row rather than sending a value Salesforce would reject. */
+export function rateToPicklistValue(kind: keyof typeof RATE_OPTIONS, rate: string): string | undefined {
+  const label = Number(rate).toFixed(2);
+  return RATE_OPTIONS[kind].find((o) => o.label === label)?.apiValue;
 }

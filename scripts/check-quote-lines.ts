@@ -14,6 +14,7 @@ import {
   assetTypeApiValue,
   productByName,
   RATE_STEPS,
+  rateToPicklistValue,
 } from "@/lib/markup-layers/salesforce-picklists";
 import { defaultDraft, initialDeselected, rowsFrom } from "@/lib/markup-layers/line-items";
 import { sourcesFromSizing } from "@/lib/markup-layers/sources/from-sizing";
@@ -50,6 +51,13 @@ if (!RATE_STEPS.internal.includes("0.80")) fail("internal default 0.80 is not a 
 if (!RATE_STEPS.external.includes("0.30")) fail("external default 0.30 is not a rate step");
 if (RATE_STEPS.internal.includes("0.55")) fail("internal steps above 0.50 must be 10c");
 if (!RATE_STEPS.internal.includes("0.45")) fail("internal steps below 0.50 must be 5c");
+// Verbatim from the org's describe, 2026-09-11.
+eq(rateToPicklistValue("external", "0.30"), ".30", "external picklist API value has no leading zero");
+eq(rateToPicklistValue("internal", "0.80"), "0.80", "internal picklist API value");
+eq(rateToPicklistValue("internal", "0.60"), "0.6", "the org's one odd API value");
+eq(rateToPicklistValue("internal", "0.83"), undefined, "off-step rate has no API value");
+eq(RATE_STEPS.internal.length, 17, "17 internal options");
+eq(RATE_STEPS.external.length, 15, "15 external options");
 
 // ── Bulk lines (the DEV tab's paste box) ────────────────────────────────────────────────
 const lines = parseBulkLines("+ 44 Eastern Avenue, Dover Heights NSW 2030\n42\tEASTERN AVE\tDOVER HEIGHTS NSW 2030\n\n+11 Craig Ave, Vaucluse NSW 2030\n");
@@ -115,6 +123,7 @@ const { records, refused } = buildQuoteLineItems(
     { key: "f", values: draft({ quantity: "0" }) },
     { key: "g", values: draft({ product: "Video Roadways" }) },
     { key: "h", values: draft({ assetType: "Other", internalMetres: "50", externalMetres: "20", levels: "" }) },
+    { key: "i", values: draft({ internalRate: "0.83" }) },
   ],
   { quoteId: "0Q0TEST", pricebookEntryByProduct2Id: pricebook }
 );
@@ -124,6 +133,7 @@ eq(refused.map((r) => [r.key, r.reason]), [
   ["e", '"Mobilisation" isn\'t a product this sheet can sync'],
   ["f", "quantity must be above 0"],
   ["g", '"Video Roadways" isn\'t on this Quote\'s price book'],
+  ["i", "internal rate $0.83 isn't one of the picklist's values"],
 ], "refusals");
 eq(records.length, 3, "records created");
 const [a, b, h] = records;
@@ -136,11 +146,12 @@ eq(a.Property_Type__c, "Commercial", "asset type API value");
 eq(a.Levels__c, 2, "Levels__c from the sheet's Levels cell");
 eq(a.Internal_M2__c, 187, "internal m² rounded");
 eq(a.Internal_M2_Rate__c, 0.8, "internal rate currency");
+eq(a.Internal_Rate_PL__c, "0.80", "internal rate picklist");
 if ("External_M2__c" in a || "External_Rate__c" in a) fail("blank external must not send external fields");
 eq(b.Quantity, 2, "quantity parsed");
 eq(b.External_M2__c, 1200, "external m² with thousands separator");
 eq(b.External_Rate__c, 0.35, "external rate currency");
-eq(b.External_Rate_PL__c, "0.35", "external rate picklist");
+eq(b.External_Rate_PL__c, ".35", "external rate picklist, org format");
 eq(b.Property_Type__c, "External_GPS", "External GPS API value");
 if ("Internal_M2__c" in b) fail("blank internal must not send internal fields");
 eq(h.Property_Type__c, "Other", "asset type override wins");

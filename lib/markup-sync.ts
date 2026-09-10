@@ -170,16 +170,16 @@ export interface ResolvedTarget {
   lineItem: { id: string; label: string; alreadyFilled: boolean } | null;
 }
 
-/** "Site Markup - 00005267.png" — the kind of file first, then the Quote it belongs to (Rhys,
- *  2026-09-11). The Opportunity name used to lead, which sorted every job's markups apart from
- *  each other in Box and buried what the file WAS. A line-item paste keeps its "Line 3" tail. */
+/** "Site Markup - OPT-33482 Rev.0 Rhys 2026 Testing.png" — the kind of file first, then the
+ *  Quote's NAME (Rhys, 2026-09-11), which is how the team refers to a quote; the number and the
+ *  record Id are fallbacks for a Quote with no name. A line-item paste keeps its "Line 3" tail. */
 function suggestFilename(
+  quoteName: string | null,
   quoteNumber: string | null,
   quoteId: string,
-  _opportunityName: string | null,
   lineItemLabel?: string | null
 ): string {
-  const parts = ["Site Markup", quoteNumber ?? quoteId, lineItemLabel].filter(Boolean);
+  const parts = ["Site Markup", quoteName?.trim() || quoteNumber || quoteId, lineItemLabel].filter(Boolean);
   return sanitiseBoxFilename(`${parts.join(" - ")}.png`);
 }
 
@@ -259,9 +259,9 @@ export async function resolveQuoteTarget(opts: {
     opportunityName,
     boxFolderLink: rawLink,
     suggestedFilename: suggestFilename(
+      quote.Name ?? null,
       quote.QuoteNumber ?? null,
       quote.Id,
-      opportunityName,
       lineItem?.label
     ),
     // Null for a line-item target, so the UI has no Quote slot to offer and no later change

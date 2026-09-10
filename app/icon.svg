@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="AusDilaps">
+  <!-- Favicon = the three towers from the logo mark, nothing else.
+       The wordmark and tagline are unreadable below ~64px, and the logo's fine horizontal
+       hatching and hairline circle alias into mush at 16px. A solid silhouette on a filled
+       brand-steel tile is the part of the identity that survives, and the fill means it
+       holds against both a light and a dark browser chrome.
+
+       Two constraints learned from rendering it at real size:
+       - Widths are UNEQUAL (7/6/5), echoing the logo where the tallest tower is widest.
+         Three equal-width descending bars read as a declining bar chart, not a skyline.
+       - Gaps stay at 1.5 units. At 16px one unit is half a pixel, so a gap under 1.5
+         falls below a pixel and the towers merge into one blob. -->
+  <rect width="32" height="32" rx="6" fill="#46688a"/>
+  <g fill="#ffffff">
+    <rect x="5.5" y="6" width="7" height="20"/>
+    <rect x="14" y="11" width="6" height="15"/>
+    <rect x="21.5" y="15.5" width="5" height="10.5"/>
+  </g>
+</svg>

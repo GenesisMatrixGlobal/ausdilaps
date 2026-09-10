@@ -13,7 +13,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
-import type { LineItemRow } from "@/lib/markup-layers/line-items";
+import { levelsUnchecked, type LineItemRow } from "@/lib/markup-layers/line-items";
 import { rowReason, type Refusal } from "@/lib/quote-lines/payload";
 
 export interface ResolvedQuote {
@@ -53,6 +53,9 @@ export function SyncQuoteLines({ rows, initialQuoteInput }: SyncQuoteLinesProps 
     .map((r) => ({ row: r, reason: rowReason(r.values) }))
     .filter((x): x is { row: LineItemRow; reason: string } => x.reason !== null);
   const ready = ticked.length - blocked.length;
+  // Every ticked row's Levels cell must have been looked at (it stops being orange) before
+  // anything goes to the Quote.
+  const unchecked = ticked.filter(levelsUnchecked).length;
   const signature = signatureOf(rows);
   const alreadyCreated = result?.signature === signature;
 
@@ -177,16 +180,23 @@ export function SyncQuoteLines({ rows, initialQuoteInput }: SyncQuoteLinesProps 
               adds to them — it does not replace anything.
             </p>
           )}
+          {unchecked > 0 && (
+            <p className="text-ad-orange">
+              Check the {unchecked} highlighted Levels cell{unchecked === 1 ? "" : "s"} first — click each one to confirm the storey count.
+            </p>
+          )}
           <button
             className={cn(buttonVariants({ variant: "accent", size: "md" }))}
             onClick={create}
-            disabled={busy !== null || ready === 0 || blocked.length > 0 || alreadyCreated}
+            disabled={busy !== null || ready === 0 || blocked.length > 0 || unchecked > 0 || alreadyCreated}
             title={
-              blocked.length > 0
-                ? "Untick or fix the rows that can't sync first"
-                : alreadyCreated
-                  ? "These rows are already on the Quote — change a row to create again"
-                  : undefined
+              unchecked > 0
+                ? "Click each highlighted Levels cell to confirm it first"
+                : blocked.length > 0
+                  ? "Untick or fix the rows that can't sync first"
+                  : alreadyCreated
+                    ? "These rows are already on the Quote — change a row to create again"
+                    : undefined
             }
           >
             {busy === "create"

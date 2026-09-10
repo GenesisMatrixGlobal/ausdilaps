@@ -16,7 +16,7 @@ import {
   RATE_STEPS,
   rateToPicklistValue,
 } from "@/lib/markup-layers/salesforce-picklists";
-import { defaultDraft, initialDeselected, rowsFrom } from "@/lib/markup-layers/line-items";
+import { defaultDraft, initialDeselected, levelsUnchecked, rowsFrom } from "@/lib/markup-layers/line-items";
 import { sourcesFromSizing } from "@/lib/markup-layers/sources/from-sizing";
 import { sourcesFromLayers } from "@/lib/markup-layers/sources/from-layers";
 import type { MarkupLayer } from "@/lib/markup-layers/types";
@@ -114,6 +114,8 @@ eq(markupSources.map((s) => s.seed.levels), ["1", "1", "", "1"], "a markup seeds
 const untouched = rowsFrom(markupSources, {}, new Set())[0];
 eq(untouched.touched.has("levels"), false, "levels starts untouched");
 eq(rowsFrom(markupSources, { subject: { levels: "1" } }, new Set())[0].touched.has("levels"), true, "a click (same value written back) counts as touched");
+eq(rowsFrom(markupSources, {}, new Set()).map(levelsUnchecked), [true, true, false], "seeded levels need a check; the orange shape's blank does not");
+eq(levelsUnchecked(rowsFrom(markupSources, { subject: { levels: "1" } }, new Set())[0]), false, "checked once, no longer flagged");
 
 // ── Payload ─────────────────────────────────────────────────────────────────────────────
 const pricebook = new Map(SHEET_PRODUCTS.map((p) => [p.product2Id, `pbe-${p.product2Id}`]));

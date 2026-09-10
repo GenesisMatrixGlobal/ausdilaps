@@ -17,7 +17,7 @@ import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAMES } from "@/lib/markup-layers/salesforce-picklists";
-import { assetTypeFor, type LineItemDraft, type LineItemRow } from "@/lib/markup-layers/line-items";
+import { assetTypeFor, levelsUnchecked, type LineItemDraft, type LineItemRow } from "@/lib/markup-layers/line-items";
 import { AssetTypeSelect } from "./asset-type-select";
 import { RateSelect } from "./rate-select";
 import { SyncQuoteLines, type SyncQuoteLinesProps } from "./sync-quote-lines";
@@ -271,12 +271,7 @@ export function LineItemsTable({
                     />
                   </td>
 
-                  <td
-                    className={cn(
-                      SHEET_CELL,
-                      !row.touched.has("levels") && row.values.levels !== "" && "bg-ad-orange/15"
-                    )}
-                  >
+                  <td className={cn(SHEET_CELL, levelsUnchecked(row) && "bg-ad-orange/15")}>
                     {/* Orange until looked at: a SEEDED storey count (1, or an estimate) has to be
                         checked before it goes on a Quote. A blank cell — council assets — has
                         nothing to check and is left alone. Focusing the cell writes the current

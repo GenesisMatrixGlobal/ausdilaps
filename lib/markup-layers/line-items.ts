@@ -153,6 +153,13 @@ export function itemNumbers(rows: LineItemRow[]): Map<string, number> {
   return new Map(rows.filter((r) => r.number !== null).map((r) => [r.key, r.number!]));
 }
 
+/** A seeded storey count that nobody has looked at yet. The sheet paints the cell orange, and
+ *  NO sync runs while a ticked row has one — a wrong storey count on a Quote is expensive and
+ *  this is the only moment it is cheap to catch. A blank cell (council assets) needs no check. */
+export function levelsUnchecked(row: LineItemRow): boolean {
+  return row.values.levels !== "" && !row.touched.has("levels");
+}
+
 /** The keys a tool should seed its `deselected` set with when a fresh set of sources arrives. */
 export function initialDeselected(sources: LineItemSource[]): Set<string> {
   return new Set(sources.filter((s) => s.included && !s.startSelected).map((s) => s.key));

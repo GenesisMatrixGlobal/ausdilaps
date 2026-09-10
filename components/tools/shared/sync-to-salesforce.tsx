@@ -12,7 +12,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
-import type { LineItemRow } from "@/lib/markup-layers/line-items";
+import { levelsUnchecked, type LineItemRow } from "@/lib/markup-layers/line-items";
 import { rowReason, type Refusal } from "@/lib/quote-lines/payload";
 
 interface ResolvedTarget {
@@ -96,6 +96,8 @@ export function SyncToSalesforce({
     .filter((x): x is { row: LineItemRow; reason: string } => x.reason !== null);
   const linesReady = ticked.length - blocked.length;
   const wantLines = !!lineItems && createLines && ticked.length > 0;
+  // No line items go to the Quote while a ticked row's Levels cell is still orange.
+  const unchecked = wantLines ? ticked.filter(levelsUnchecked).length : 0;
 
   function reset() {
     setTarget(null);
@@ -357,6 +359,11 @@ export function SyncToSalesforce({
                       ))}
                     </ul>
                   )}
+                  {unchecked > 0 && (
+                    <p className="pl-6 text-ad-orange">
+                      Check the {unchecked} highlighted Levels cell{unchecked === 1 ? "" : "s"} on the sheet first — click each one to confirm the storey count.
+                    </p>
+                  )}
                   <p className="pl-6 text-xs text-ad-muted">
                     Unit price goes in as a $1 placeholder — pricing is finalised in Salesforce.
                   </p>
@@ -365,8 +372,14 @@ export function SyncToSalesforce({
               <button
                 className={cn(buttonVariants({ variant: "primary", size: "md" }))}
                 onClick={upload}
-                disabled={busy !== null || !filename.trim() || (wantLines && blocked.length > 0)}
-                title={wantLines && blocked.length > 0 ? "Untick or fix the rows that can't sync, or untick 'Create line items'" : undefined}
+                disabled={busy !== null || !filename.trim() || (wantLines && (blocked.length > 0 || unchecked > 0))}
+                title={
+                  unchecked > 0
+                    ? "Click each highlighted Levels cell on the sheet to confirm it, or untick 'Create line items'"
+                    : wantLines && blocked.length > 0
+                      ? "Untick or fix the rows that can't sync, or untick 'Create line items'"
+                      : undefined
+                }
               >
                 {busy === "upload" ? (wantLines ? "Uploading and creating…" : "Uploading…") : wantLines ? "Upload and create line items" : "Upload to Box"}
               </button>

@@ -22,10 +22,13 @@ import {
 } from "./shapes";
 import { MarkupMap, type MarkupMapCommands } from "./markup-map";
 import { NEIGHBOUR_FILL, SITE_RED } from "@/lib/kml/standard-markup/style";
-import { LineItemsTable } from "./line-items-table";
+import { LineItemsTable } from "@/components/tools/shared/quote-lines/line-items-table";
+import { MARKUP_LEADING_COLUMNS } from "./layer-column";
 import { StreetViewLink } from "./street-view-link";
 import { SUBJECT_KEY, layerAnchor, layersFrom, lotKey, shapeKey } from "@/lib/markup-layers/plan";
 import { itemNumbers, rowsFrom, type LineItemDraft, type LineItemDrafts } from "@/lib/markup-layers/line-items";
+import { sourcesFromLayers } from "@/lib/markup-layers/sources/from-layers";
+import { applyCell, toggleDeselected } from "@/lib/markup-layers/drafts";
 import type { MarkupLayer } from "@/lib/markup-layers/types";
 import { formatArea } from "@/lib/kml/standard-markup/measure";
 import { lotPlanFromId } from "@/lib/kml/standard-markup/parcels/parcel-id";
@@ -174,26 +177,15 @@ export function ResidentialMarkupTab() {
     return lotRowText(name, result?.subjectAreaSqm ?? null);
   }
 
+  // The sheet's rules (product change clears the asset-type override, and so on) live in
+  // lib/markup-layers/drafts.ts, shared with every other tool that hosts the sheet.
   const setLineCell = (key: string, field: keyof LineItemDraft, value: string) =>
-    setLineDrafts((prev) => {
-      const row = { ...prev[key], [field]: value };
-      // Changing the product clears any asset-type override on that row. The override was made
-      // against the OLD product; keeping it silently is how a line ends up saying it's a
-      // Standard Internal inspection of an external GPS survey.
-      if (field === "product") delete row.assetType;
-      return { ...prev, [key]: row };
-    });
+    setLineDrafts((prev) => applyCell(prev, key, field, value));
 
-  const toggleRow = (key: string) =>
-    setDeselected((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  const toggleRow = (key: string) => setDeselected((prev) => toggleDeselected(prev, key));
 
   const toggleAllRows = (select: boolean) =>
-    setDeselected(select ? new Set() : new Set(layers.filter((l) => l.included).map((l) => l.key)));
+    setDeselected(select ? new Set() : new Set(sources.filter((s) => s.included).map((s) => s.key)));
 
   /** base64 of a UTF-8 string — plain btoa() throws on an accented address. */
   function toBase64(text: string): string {
@@ -238,9 +230,10 @@ export function ResidentialMarkupTab() {
   // be two different mappings.
   const file = currentFile();
   const layers: MarkupLayer[] = file ? layersFrom(file) : [];
+  const sources = sourcesFromLayers(layers);
   // ONE numbering, derived once and shared by the sheet, the sidebar badges, the live map and the
   // export payload — so all four can never disagree about what item 2 is.
-  const rows = rowsFrom(layers, lineDrafts, deselected);
+  const rows = rowsFrom(sources, lineDrafts, deselected);
   const numbers = itemNumbers(rows);
 
   // Street View's target for the markup as a whole. The resolved parcel wins — it is the actual
@@ -933,12 +926,14 @@ export function ResidentialMarkupTab() {
         {/* Full width and BELOW the image, not in the column beside it: pricing is read down
             a column across every layer, which a max-w-xs sidebar can't show. */}
         <LineItemsTable
-          layers={layers}
-          drafts={lineDrafts}
-          deselected={deselected}
+          rows={rows}
+          leading={MARKUP_LEADING_COLUMNS}
           onChange={setLineCell}
           onToggle={toggleRow}
           onToggleAll={toggleAllRows}
+          breakout
+          emptyText="Nothing included on the markup yet."
+          sync={{}}
         />
         </>
       )}

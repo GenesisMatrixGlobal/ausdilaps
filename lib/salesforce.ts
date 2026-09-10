@@ -115,6 +115,59 @@ export async function updateRecord(
   if (!res.ok) throw await salesforceError(res, `Salesforce update of ${sobject}`);
 }
 
+/**
+ * Creates several records of one type in ONE call, all-or-nothing.
+ *
+ * The Composite sObject Collections endpoint rather than N single inserts: one token round
+ * trip instead of N+1 (getAccessToken does not cache), and `allOrNone` means a Quote can never
+ * end up with half a sheet on it because the fourth row failed. Salesforce returns 200 with a
+ * per-record `success` flag even when the whole batch rolled back, so the flags are what get
+ * checked — not the HTTP status. Caps at 200 records per call, which is Salesforce's limit.
+ */
+export async function createRecords(
+  sobject: string,
+  records: Record<string, unknown>[]
+): Promise<{ id: string }[]> {
+  if (records.length === 0) return [];
+  if (records.length > 200) {
+    throw new Error(`Salesforce creates are capped at 200 records per call (got ${records.length}).`);
+  }
+  const { token, instanceUrl, apiVersion } = await getAccessToken();
+  const res = await fetch(`${instanceUrl}/services/data/${apiVersion}/composite/sobjects`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      allOrNone: true,
+      records: records.map((r) => ({ attributes: { type: sobject }, ...r })),
+    }),
+    cache: "no-store",
+  });
+  if (!res.ok) throw await salesforceError(res, `Salesforce create of ${sobject}`);
+
+  const results = (await res.json()) as {
+    id?: string;
+    success: boolean;
+    errors?: { statusCode?: string; message?: string; fields?: string[] }[];
+  }[];
+  const failed = results.filter((r) => !r.success);
+  if (failed.length > 0) {
+    // Name the record by position and quote Salesforce's own text: an INVALID_FIELD or a
+    // picklist rejection on row 3 is exactly what the operator needs to fix row 3.
+    const detail = results
+      .map((r, i) =>
+        r.success || !r.errors?.length
+          ? null
+          : `row ${i + 1}: ${r.errors
+              .map((e) => [e.statusCode, e.message, e.fields?.length ? `(${e.fields.join(", ")})` : null].filter(Boolean).join(" "))
+              .join("; ")}`
+      )
+      .filter(Boolean)
+      .join(" · ");
+    throw new Error(`Salesforce create of ${sobject} failed — nothing was created. ${detail}`);
+  }
+  return results.map((r) => ({ id: r.id! }));
+}
+
 export type SalesforceLead = {
   name: string;
   email: string;

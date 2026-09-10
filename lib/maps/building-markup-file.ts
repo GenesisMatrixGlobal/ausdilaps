@@ -98,6 +98,9 @@ const LINE_ITEM_FIELDS = new Set([
   "street",
   "suburb",
   "product",
+  // Was missing until 2026-09-10, so an asset-type override was written by the tool and then
+  // dropped by this parser on reopen — the one cell that silently reverted.
+  "assetType",
   "internalMetres",
   "externalMetres",
   "internalRate",

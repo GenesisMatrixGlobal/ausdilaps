@@ -6,6 +6,16 @@ import { buttonVariants } from "@/components/ui/button";
 import type { SizingResult } from "@/lib/property-sizing/types";
 import { SitePlanTab } from "./site-plan-tab";
 import { tsv } from "@/components/tools/shared/download";
+import { LineItemsTable, type LeadingColumn } from "@/components/tools/shared/quote-lines/line-items-table";
+import {
+  assetTypeFor,
+  initialDeselected,
+  rowsFrom,
+  type LineItemDraft,
+  type LineItemDrafts,
+} from "@/lib/markup-layers/line-items";
+import { sourcesFromSizing } from "@/lib/markup-layers/sources/from-sizing";
+import { applyCell, toggleDeselected } from "@/lib/markup-layers/drafts";
 
 type Mode = "text" | "image" | "site-plan";
 
@@ -27,6 +37,64 @@ async function fileToBase64(file: File): Promise<{ data: string; mediaType: stri
 
 const fmtArea = (n: number | null) => (n == null ? "" : n.toLocaleString("en-AU"));
 
+/** The result behind a sheet row — every row here comes from sourcesFromSizing. */
+function sizingOf(row: { source: { detail: { kind: string } } }): SizingResult | null {
+  const d = row.source.detail;
+  return d.kind === "sizing" ? (d as { kind: "sizing"; result: SizingResult }).result : null;
+}
+
+/** What Bulk Property Sizing knows about a property, ahead of the sheet's own columns: lot size
+ *  (with the matched address and any flags under it), levels and dwelling area. Everything else
+ *  the old results table showed — ref, lot/plan, match %, notes — folds into the sub-line. */
+const SIZING_LEADING_COLUMNS: LeadingColumn[] = [
+  {
+    header: "Lot size (m²)",
+    className: "min-w-[16rem]",
+    cell: (row) => {
+      const r = sizingOf(row);
+      if (!r) return null;
+      const ok = r.status === "ok";
+      const sub = [r.lotPlan, r.matchedAddress, ...r.flags].filter(Boolean).join(" · ");
+      return (
+        <span className="block">
+          <span className={cn("block text-right font-semibold tabular-nums", ok ? "text-ad-ink" : "text-ad-orange")}>
+            {r.lotSizeSqm == null ? "—" : fmtArea(r.lotSizeSqm)}
+          </span>
+          <span className={cn("block max-w-[28rem] text-xs", ok ? "text-ad-muted" : "text-ad-orange")} title={sub}>
+            {sub || (ok ? "" : r.status.replace("_", " "))}
+          </span>
+        </span>
+      );
+    },
+  },
+  {
+    header: "Levels",
+    className: "w-[5.5rem] text-right",
+    cell: (row) => {
+      const r = sizingOf(row);
+      return r ? (
+        <span className="block text-right tabular-nums text-ad-muted">
+          {r.levels ?? "—"}
+          {r.levelsConfidence != null && <span className="ml-1 text-xs">{r.levelsConfidence}%</span>}
+        </span>
+      ) : null;
+    },
+  },
+  {
+    header: "Dwelling (m²)",
+    className: "w-[7rem] text-right",
+    cell: (row) => {
+      const r = sizingOf(row);
+      return r ? (
+        <span className="block text-right tabular-nums text-ad-muted">
+          {r.dwellingAreaSqm == null ? "—" : fmtArea(r.dwellingAreaSqm)}
+          {r.dwellingAreaConfidence != null && <span className="ml-1 text-xs">{r.dwellingAreaConfidence}%</span>}
+        </span>
+      ) : null;
+    },
+  },
+];
+
 export function PropertySizingTool() {
   const [mode, setMode] = useState<Mode>("text");
   const [text, setText] = useState("");
@@ -38,6 +106,10 @@ export function PropertySizingTool() {
   const [results, setResults] = useState<SizingResult[] | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // The sheet's cells and tick state — the same model Building Markup's sheet uses. Both are
+  // reset with every lookup, so nothing outlives the results it was keyed for.
+  const [lineDrafts, setLineDrafts] = useState<LineItemDrafts>({});
+  const [deselected, setDeselected] = useState<Set<string>>(new Set());
 
   function chooseFile(f: File | null) {
     setError(null);
@@ -108,7 +180,11 @@ export function PropertySizingTool() {
         setError(json.error ?? "Something went wrong.");
         return;
       }
-      setResults(json.results ?? []);
+      const fresh = json.results ?? [];
+      setResults(fresh);
+      setLineDrafts({});
+      // Rows whose lookup didn't resolve cleanly start UNTICKED — see sources/from-sizing.ts.
+      setDeselected(initialDeselected(sourcesFromSizing(fresh)));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -116,28 +192,52 @@ export function PropertySizingTool() {
     }
   }
 
+  const sources = results ? sourcesFromSizing(results) : [];
+  const rows = rowsFrom(sources, lineDrafts, deselected);
+
+  const setLineCell = (key: string, field: keyof LineItemDraft, value: string) =>
+    setLineDrafts((prev) => applyCell(prev, key, field, value));
+  const toggleRow = (key: string) => setDeselected((prev) => toggleDeselected(prev, key));
+  const toggleAllRows = (select: boolean) =>
+    setDeselected(select ? new Set() : new Set(sources.map((s) => s.key)));
+
+  /** Copies what is on screen — the sheet's cells as edited, not the raw lookup. */
   async function copy(what: "full" | "three") {
     if (!results) return;
-    const rows =
+    const table =
       what === "three"
-        ? [["Street", "Suburb", "Lot Size (m2)"], ...results.map((r) => [r.street, r.suburb, fmtArea(r.lotSizeSqm)])]
+        ? [
+            ["Street", "Suburb", "Lot Size (m2)"],
+            ...rows.map((row) => [row.values.street, row.values.suburb, fmtArea(sizingOf(row)?.lotSizeSqm ?? null)]),
+          ]
         : [
-            ["Ref", "Street", "Suburb", "Matched address", "Lot Size (m2)", "Lot/Plan", "Levels", "Levels conf %", "Dwelling Area (m2)", "Dwelling conf %", "Notes"],
-            ...results.map((r) => [
-              r.id ?? "",
-              r.street,
-              r.suburb,
-              r.matchedAddress ?? "",
-              fmtArea(r.lotSizeSqm),
-              r.lotPlan ?? "",
-              r.levels == null ? "" : String(r.levels),
-              r.levelsConfidence == null ? "" : String(r.levelsConfidence),
-              fmtArea(r.dwellingAreaSqm),
-              r.dwellingAreaConfidence == null ? "" : String(r.dwellingAreaConfidence),
-              r.flags.join("; "),
-            ]),
+            ["#", "Street", "Suburb", "Lot Size (m2)", "Lot/Plan", "Matched address", "Levels", "Levels conf %", "Dwelling Area (m2)", "Dwelling conf %", "Product", "Asset type", "Internal m2", "External m2", "Internal $/m2", "External $/m2", "Qty", "Notes"],
+            ...rows.map((row) => {
+              const r = sizingOf(row);
+              const v = row.values;
+              return [
+                row.number == null ? "" : String(row.number),
+                v.street,
+                v.suburb,
+                fmtArea(r?.lotSizeSqm ?? null),
+                r?.lotPlan ?? "",
+                r?.matchedAddress ?? "",
+                r?.levels == null ? "" : String(r.levels),
+                r?.levelsConfidence == null ? "" : String(r.levelsConfidence),
+                fmtArea(r?.dwellingAreaSqm ?? null),
+                r?.dwellingAreaConfidence == null ? "" : String(r.dwellingAreaConfidence),
+                v.product,
+                assetTypeFor(v),
+                v.internalMetres,
+                v.externalMetres,
+                v.internalRate,
+                v.externalRate,
+                v.quantity,
+                (r?.flags ?? []).join("; "),
+              ];
+            }),
           ];
-    await navigator.clipboard.writeText(tsv(rows));
+    await navigator.clipboard.writeText(tsv(table));
     setCopied(what);
     setTimeout(() => setCopied(null), 2000);
   }
@@ -267,7 +367,8 @@ export function PropertySizingTool() {
         </div>
       </div>
 
-      {/* Results */}
+      {/* Results — the shared Quote Line Item sheet, with what the lookup found ahead of the
+          sheet's own columns. Rows that need a manual check arrive unticked and orange. */}
       {results && (
         <div className="mt-8">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -297,64 +398,20 @@ export function PropertySizingTool() {
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-ad-border">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="bg-ad-surface text-left text-ad-muted">
-                  <th className="px-3 py-2 font-medium">Ref</th>
-                  <th className="px-3 py-2 font-medium">Street</th>
-                  <th className="px-3 py-2 font-medium">Suburb</th>
-                  <th className="px-3 py-2 font-medium">Matched (gov data)</th>
-                  <th className="px-3 py-2 text-right font-medium">Lot Size (m²)</th>
-                  <th className="px-3 py-2 font-medium">Lot/Plan</th>
-                  <th className="px-3 py-2 text-right font-medium">Match</th>
-                  <th className="px-3 py-2 text-right font-medium">Levels</th>
-                  <th className="px-3 py-2 text-right font-medium">Dwelling (m²)</th>
-                  <th className="px-3 py-2 font-medium">Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((r, i) => (
-                  <tr
-                    key={i}
-                    className={cn("border-t border-ad-border", r.status !== "ok" && "bg-ad-orange/5")}
-                  >
-                    <td className="px-3 py-2 text-ad-muted">{r.id ?? ""}</td>
-                    <td className="px-3 py-2 text-ad-ink">{r.street}</td>
-                    <td className="px-3 py-2 text-ad-ink">{r.suburb}</td>
-                    <td className="px-3 py-2 text-xs text-ad-muted">{r.matchedAddress ?? ""}</td>
-                    <td className="px-3 py-2 text-right font-semibold text-ad-ink">
-                      {r.lotSizeSqm == null ? "—" : fmtArea(r.lotSizeSqm)}
-                    </td>
-                    <td className="px-3 py-2 text-ad-muted">{r.lotPlan ?? ""}</td>
-                    <td className="px-3 py-2 text-right text-ad-muted">
-                      {r.matchScore == null ? "" : `${Math.round(r.matchScore)}%`}
-                    </td>
-                    <td className="px-3 py-2 text-right text-ad-muted">
-                      {r.levels ?? "—"}
-                      {r.levelsConfidence != null && (
-                        <span className="ml-1 text-xs text-ad-muted">{r.levelsConfidence}%</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right text-ad-muted">
-                      {r.dwellingAreaSqm == null ? "—" : fmtArea(r.dwellingAreaSqm)}
-                      {r.dwellingAreaConfidence != null && (
-                        <span className="ml-1 text-xs text-ad-muted">{r.dwellingAreaConfidence}%</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-ad-muted">{r.flags.join("; ")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <LineItemsTable
+            rows={rows}
+            leading={SIZING_LEADING_COLUMNS}
+            onChange={setLineCell}
+            onToggle={toggleRow}
+            onToggleAll={toggleAllRows}
+            emptyText="No addresses resolved."
+            sync={{}}
+          />
           <p className="mt-3 text-xs text-ad-muted">
-            Check the <span className="font-medium">Matched (gov data)</span> column — if it doesn&apos;t
-            match your intended address, the row was mis-read (check the pasted line, or for a screenshot
-            try a clearer image). A row whose matched house number differs from the one you typed is
-            flagged and counted as needing a manual check. Levels &amp; dwelling area are estimates — footprint + LiDAR roof height where council
-            data covers it, else a lot-coverage estimate; the % is confidence, and low-confidence rows
-            should be verified in CoreLogic.
+            A row whose matched address or house number doesn&apos;t agree with what you typed is orange
+            and starts unticked — check it before syncing. Levels &amp; dwelling area are estimates —
+            footprint + LiDAR roof height where council data covers it, else a lot-coverage estimate; the
+            % is confidence. Dwelling area pre-fills Internal m²; edit any cell before you sync.
           </p>
         </div>
       )}

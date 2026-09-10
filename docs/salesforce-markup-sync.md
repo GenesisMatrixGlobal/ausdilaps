@@ -13,8 +13,10 @@ this one only appears under **External Client Apps**.
 **Id:** `0xIOl0000000aptMAA`
 **Flow:** OAuth 2.0 client credentials (server-to-server, no user login).
 **Run-as user:** `rhys@ausdilaps.com.au` — the app's permissions are this user's permissions.
-**Scope:** `Api` ("Manage user data via APIs"). Nothing else is needed; the app only reads
-Quote/Opportunity and writes one Quote field.
+**Scope:** `Api` ("Manage user data via APIs"). Nothing else is needed. The app reads
+Quote/Opportunity/QuoteLineItem/PricebookEntry, writes the Quote's Site Mark Up slots and a
+line item's `Line_Item_Mark_Up__c`, and **creates QuoteLineItems** from the Quote Line Item
+sheet (`/api/salesforce/quote-lines/*`) — so the run-as user needs Create on QuoteLineItem.
 
 Not to be confused with **`Survey_Headings_Web_App`** (`0xIOl0000000XgjMAE`), which is the
 Excel row importer. It uses the JWT bearer flow (`SF_SURVEY_*` env vars) and is unrelated.

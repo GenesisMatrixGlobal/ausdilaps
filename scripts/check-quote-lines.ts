@@ -1,0 +1,141 @@
+// Quote Line Item sheet — mapping and payload check. Pure: no env, no network, no database.
+//
+//   npx tsx scripts/check-quote-lines.ts
+//
+// Asserts the things a Salesforce create would otherwise discover one failed row at a time:
+// every sheet product has an Id and an asset type the picklist knows; both tool adapters
+// produce the seeds agreed with Rhys; and buildQuoteLineItems() sends exactly the agreed
+// fields (UnitPrice 1, no Description) and refuses exactly the rows it should. Exits non-zero
+// on any failure, so it can gate a commit.
+
+import {
+  ASSET_TYPES,
+  SHEET_PRODUCTS,
+  assetTypeApiValue,
+  productByName,
+  RATE_STEPS,
+} from "@/lib/markup-layers/salesforce-picklists";
+import { defaultDraft, initialDeselected, rowsFrom } from "@/lib/markup-layers/line-items";
+import { sourcesFromSizing } from "@/lib/markup-layers/sources/from-sizing";
+import { sourcesFromLayers } from "@/lib/markup-layers/sources/from-layers";
+import type { MarkupLayer } from "@/lib/markup-layers/types";
+import type { SizingResult } from "@/lib/property-sizing/types";
+import { buildQuoteLineItems, rowReason } from "@/lib/quote-lines/payload";
+
+let failures = 0;
+function fail(msg: string) {
+  failures++;
+  console.error(`✗ ${msg}`);
+}
+function eq<T>(actual: T, want: T, what: string) {
+  if (JSON.stringify(actual) !== JSON.stringify(want)) fail(`${what}: got ${JSON.stringify(actual)}, want ${JSON.stringify(want)}`);
+}
+
+// ── Picklists ───────────────────────────────────────────────────────────────────────────
+const ids = new Set<string>();
+for (const p of SHEET_PRODUCTS) {
+  if (!/^01t[a-zA-Z0-9]{12}$/.test(p.product2Id)) fail(`${p.name}: Product2Id ${p.product2Id} is not a 15-char 01t id`);
+  if (ids.has(p.product2Id)) fail(`${p.name}: duplicate Product2Id`);
+  ids.add(p.product2Id);
+  if (!assetTypeApiValue(p.assetType)) fail(`${p.name}: asset type "${p.assetType}" has no API value`);
+}
+eq(SHEET_PRODUCTS.length, 10, "sheet product count");
+eq(ASSET_TYPES.length, 9, "asset type count");
+eq(assetTypeApiValue("Standard Internal - Low Density"), "Warehouse", "Low Density API value");
+eq(productByName("Video Roadways")?.assetType, "Video Roadway", "Video Roadways → Video Roadway");
+eq(productByName("Rail Infrastructure")?.assetType, "Standard Internal - High Density", "Rail → High Density");
+eq(productByName("Access Letters"), undefined, "per-job charges are not sheet products");
+if (!RATE_STEPS.internal.includes("0.80")) fail("internal default 0.80 is not a rate step");
+if (!RATE_STEPS.external.includes("0.30")) fail("external default 0.30 is not a rate step");
+if (RATE_STEPS.internal.includes("0.55")) fail("internal steps above 0.50 must be 10c");
+if (!RATE_STEPS.internal.includes("0.45")) fail("internal steps below 0.50 must be 5c");
+
+// ── Sizing adapter ──────────────────────────────────────────────────────────────────────
+const base: SizingResult = {
+  raw: "", street: "42 EASTERN AVE", suburb: "DOVER HEIGHTS", state: "NSW", postcode: "2030",
+  lotSizeSqm: 313, lotPlan: "61//DP837", matchedAddress: "42 Eastern Ave, Dover Heights NSW 2030, Australia",
+  matchScore: null, source: "NSW DCDB", levels: 2, levelsConfidence: 60, dwellingAreaSqm: 187.4,
+  dwellingAreaConfidence: 40, status: "ok", flags: [],
+};
+const sizing: SizingResult[] = [
+  base,
+  { ...base, street: "Unit 1/48 EASTERN AVE", dwellingAreaSqm: 90 },
+  { ...base, street: "41 EASTERN AVE", status: "number_mismatch", flags: ["geocoder matched No. 41"] },
+  { ...base, street: "99 NOWHERE ST", status: "not_found", lotSizeSqm: null, dwellingAreaSqm: null },
+];
+const sizingSources = sourcesFromSizing(sizing);
+eq(sizingSources.map((s) => s.seed.product), ["Residential House", "Residential Unit", "Residential House", "Residential House"], "sizing products");
+eq(sizingSources.map((s) => s.seed.internalMetres), ["187", "90", "187", ""], "dwelling → internal m²");
+eq(sizingSources.map((s) => s.seed.externalMetres), ["", "", "", ""], "external stays blank");
+eq([...initialDeselected(sizingSources)], ["sizing:2", "sizing:3"], "non-ok rows start unticked");
+const sizingRows = rowsFrom(sizingSources, {}, initialDeselected(sizingSources));
+eq(sizingRows.map((r) => r.number), [1, 2, null, null], "numbering skips unticked rows");
+eq(defaultDraft(sizingSources[0]).suburb, "DOVER HEIGHTS", "suburb seeded");
+
+// ── Markup adapter ──────────────────────────────────────────────────────────────────────
+const layer = (over: Partial<MarkupLayer>): MarkupLayer => ({
+  key: "k", kind: "lot", label: "Lot", areaSqm: 600, lengthMetres: null, widthMetres: null, lotPlan: "1RP1",
+  street: "14 Albany Creek Rd", suburb: "Aspley", mode: null, color: "blue", included: true, points: [], ...over,
+});
+const markupSources = sourcesFromLayers([
+  layer({ key: "subject", kind: "subject", label: "Site", color: "red" }),
+  layer({ key: "lot:1", color: "blue" }),
+  layer({ key: "shape:o", kind: "shape", label: "Shape", color: "orange", street: null, lotPlan: null, mode: "area" }),
+  layer({ key: "lot:x", included: false }),
+]);
+eq(markupSources.map((s) => s.seed.internalMetres), ["", "600", "", "600"], "blue seeds internal, red seeds nothing");
+eq(markupSources.map((s) => s.seed.externalMetres), ["", "", "600", ""], "orange seeds external");
+eq(markupSources[2].seed.street, "Council assets", "orange street default");
+eq(markupSources.map((s) => s.seed.product), ["Standard Internal", "Standard Internal", "External GPS", "Standard Internal"], "colour → product");
+eq(rowsFrom(markupSources, {}, new Set()).length, 3, "excluded layers are dropped");
+
+// ── Payload ─────────────────────────────────────────────────────────────────────────────
+const pricebook = new Map(SHEET_PRODUCTS.map((p) => [p.product2Id, `pbe-${p.product2Id}`]));
+pricebook.delete(productByName("Video Roadways")!.product2Id); // not on this Quote's book
+const draft = (over: Partial<ReturnType<typeof defaultDraft>>) => ({ ...defaultDraft(sizingSources[0]), ...over });
+const { records, refused } = buildQuoteLineItems(
+  [
+    { key: "a", values: draft({}) },
+    { key: "b", values: draft({ product: "External GPS", internalMetres: "", externalMetres: "1,200", externalRate: "0.35", quantity: "2" }) },
+    { key: "c", values: draft({ internalMetres: "", externalMetres: "" }) },
+    { key: "d", values: draft({ product: "" }) },
+    { key: "e", values: draft({ product: "Mobilisation" }) },
+    { key: "f", values: draft({ quantity: "0" }) },
+    { key: "g", values: draft({ product: "Video Roadways" }) },
+    { key: "h", values: draft({ assetType: "Other", internalMetres: "50", externalMetres: "20" }) },
+  ],
+  { quoteId: "0Q0TEST", pricebookEntryByProduct2Id: pricebook }
+);
+eq(refused.map((r) => [r.key, r.reason]), [
+  ["c", "no internal or external m²"],
+  ["d", "no product chosen"],
+  ["e", '"Mobilisation" isn\'t a product this sheet can sync'],
+  ["f", "quantity must be above 0"],
+  ["g", '"Video Roadways" isn\'t on this Quote\'s price book'],
+], "refusals");
+eq(records.length, 3, "records created");
+const [a, b, h] = records;
+eq(a.UnitPrice, 1, "UnitPrice placeholder");
+if ("Description" in a) fail("Description must not be sent");
+eq(a.QuoteId, "0Q0TEST", "QuoteId");
+eq(a.PricebookEntryId, `pbe-${productByName("Residential House")!.product2Id}`, "PBE from the Quote's book");
+eq(a.Product2Id, "01t96000000GNqD", "Product2Id");
+eq(a.Property_Type__c, "Commercial", "asset type API value");
+eq(a.Internal_M2__c, 187, "internal m² rounded");
+eq(a.Internal_M2_Rate__c, 0.8, "internal rate currency");
+if ("External_M2__c" in a || "External_Rate__c" in a) fail("blank external must not send external fields");
+eq(b.Quantity, 2, "quantity parsed");
+eq(b.External_M2__c, 1200, "external m² with thousands separator");
+eq(b.External_Rate__c, 0.35, "external rate currency");
+eq(b.External_Rate_PL__c, "0.35", "external rate picklist");
+eq(b.Property_Type__c, "External_GPS", "External GPS API value");
+if ("Internal_M2__c" in b) fail("blank internal must not send internal fields");
+eq(h.Property_Type__c, "Other", "asset type override wins");
+eq([h.Internal_M2__c, h.External_M2__c], [50, 20], "both measurements on one line");
+eq(rowReason(draft({})), null, "a default sizing row is sendable");
+
+if (failures) {
+  console.error(`\n${failures} failure(s)`);
+  process.exit(1);
+}
+console.log("✓ picklists, both adapters and the QuoteLineItem payload behave as agreed");

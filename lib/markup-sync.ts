@@ -135,7 +135,7 @@ function idKind(id: string): "id" | "lineItemId" {
 
 /** SOQL string literals escape backslash and single quote — without this a quote number
  *  containing an apostrophe would break the query (or worse). */
-function soqlEscape(value: string): string {
+export function soqlEscape(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 

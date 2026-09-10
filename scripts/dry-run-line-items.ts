@@ -1,8 +1,10 @@
-// Prints the Quote Line Item sheet a saved Building Markup produces. Reads nothing else and
-// writes nothing anywhere — no Salesforce, no Box, no network, no creds.
+// Prints the Quote Line Item sheet a saved Building Markup — or a Bulk Property Sizing result
+// — produces, and the QuoteLineItem records a sync would create from it. Reads nothing else
+// and writes nothing anywhere — no Salesforce, no Box, no network, no creds.
 //
 //   npx tsx scripts/dry-run-line-items.ts <markup>.json
-//   npx tsx scripts/dry-run-line-items.ts --sample     (a built-in markup, for eyeballing)
+//   npx tsx scripts/dry-run-line-items.ts --sample              (a built-in markup, for eyeballing)
+//   npx tsx scripts/dry-run-line-items.ts --sizing <results>.json (the JSON /api/property-sizing returns)
 //
 // It renders the SAME rows the tool shows on screen, off the same file and the same
 // rowsFrom() — so if the two ever disagree, one of them is a bug rather than a second opinion.
@@ -10,7 +12,13 @@
 import { readFileSync } from "node:fs";
 import { buildBuildingMarkupFile, parseBuildingMarkupFile } from "@/lib/maps/building-markup-file";
 import { layersFrom } from "@/lib/markup-layers/plan";
-import { assetTypeFor, rowsFrom } from "@/lib/markup-layers/line-items";
+import { assetTypeFor, initialDeselected, rowsFrom, type LineItemRow } from "@/lib/markup-layers/line-items";
+import { sourcesFromLayers } from "@/lib/markup-layers/sources/from-layers";
+import { sourcesFromSizing } from "@/lib/markup-layers/sources/from-sizing";
+import type { LineItemSource } from "@/lib/markup-layers/source";
+import { buildQuoteLineItems } from "@/lib/quote-lines/payload";
+import { SHEET_PRODUCTS } from "@/lib/markup-layers/salesforce-picklists";
+import type { SizingResult } from "@/lib/property-sizing/types";
 
 const LIMITS = { maxShapePoints: 20, maxRingPoints: 2000, minWidth: 5, maxWidth: 30 };
 
@@ -74,12 +82,78 @@ function pad(value: string, width: number): string {
   return value + " ".repeat(Math.max(0, width - w));
 }
 
+function printSheet(sources: LineItemSource[], rows: LineItemRow[]) {
+  console.log("\nQUOTE LINE ITEMS");
+  console.log(
+    `  ${pad("", 2)}${pad("ITEM", 14)}${pad("STREET", 24)}${pad("SUBURB", 14)}` +
+      `${pad("PRODUCT", 26)}${pad("ASSET TYPE", 34)}${pad("INT m²", 8)}${pad("EXT m²", 8)}` +
+      `${pad("INT $", 7)}${pad("EXT $", 7)}QTY`
+  );
+  for (const r of rows) {
+    const v = r.values;
+    console.log(
+      `  ${pad(r.selected ? "☑" : "☐", 2)}${pad(`${r.number ?? "—"} · ${r.source.label}`, 14)}${pad(v.street || "—", 24)}` +
+        `${pad(v.suburb || "—", 14)}${pad(v.product || "— none —", 26)}${pad(assetTypeFor(v) || "—", 34)}` +
+        `${pad(v.internalMetres || "—", 8)}${pad(v.externalMetres || "—", 8)}` +
+        `${pad(v.internalRate, 7)}${pad(v.externalRate, 7)}${v.quantity}`
+    );
+  }
+
+  const excluded = sources.filter((s) => !s.included);
+  if (excluded.length > 0) {
+    console.log("\nNOT ON THE SHEET");
+    for (const s of excluded) {
+      console.log(
+        `  ${pad(s.label, 14)}${s.detail.kind === "markup" && s.detail.layer.kind === "shape" ? "not enough points to measure" : "unticked on the markup"}`
+      );
+    }
+  }
+
+  // The records a sync would send, against a pretend price book that has every sheet product —
+  // so the only refusals printed are the sheet's own (no product, no m², qty 0).
+  const pricebook = new Map(SHEET_PRODUCTS.map((p) => [p.product2Id, `pbe-${p.product2Id}`]));
+  const { records, refused } = buildQuoteLineItems(
+    rows.filter((r) => r.selected).map((r) => ({ key: r.key, values: r.values })),
+    { quoteId: "0Q0-DRY-RUN", pricebookEntryByProduct2Id: pricebook }
+  );
+  if (refused.length > 0) {
+    console.log("\nWOULD BE REFUSED");
+    for (const r of refused) console.log(`  ⚠ ${r.street || r.key}: ${r.reason}`);
+  }
+  console.log("\nQUOTELINEITEM RECORDS");
+  for (const rec of records) {
+    const { attributes: _a, QuoteId: _q, ...fields } = rec;
+    void _a; void _q;
+    console.log(`  ${JSON.stringify(fields)}`);
+  }
+
+  const selected = rows.filter((r) => r.selected).length;
+  console.log(
+    `\n${selected} of ${rows.length} row(s) selected → ${records.length} record(s). Nothing was written to Salesforce.\n`
+  );
+}
+
 function main() {
   const arg = process.argv[2];
   if (!arg) {
-    console.error("usage: dry-run-line-items.ts <markup>.json | --sample");
+    console.error("usage: dry-run-line-items.ts <markup>.json | --sample | --sizing <results>.json");
     process.exit(2);
   }
+
+  if (arg === "--sizing") {
+    const path = process.argv[3];
+    if (!path) {
+      console.error("usage: dry-run-line-items.ts --sizing <results>.json");
+      process.exit(2);
+    }
+    const doc = JSON.parse(readFileSync(path, "utf8")) as { results?: SizingResult[] } | SizingResult[];
+    const results = Array.isArray(doc) ? doc : doc.results ?? [];
+    const sources = sourcesFromSizing(results);
+    console.log(`\nBulk Property Sizing · ${results.length} address(es)`);
+    printSheet(sources, rowsFrom(sources, {}, initialDeselected(sources)));
+    return;
+  }
+
   const text = arg === "--sample" ? sampleFile() : readFileSync(arg, "utf8");
 
   const parsed = parseBuildingMarkupFile(text, LIMITS);
@@ -96,48 +170,9 @@ function main() {
       (parsed.skippedShapes ? ` · ${parsed.skippedShapes} unreadable shape(s)` : "")
   );
 
-  const layers = layersFrom(file);
+  const sources = sourcesFromLayers(layersFrom(file));
   // The operator's own cells and tick state, which the file carries — without them the dry run
   // prints the defaults and silently disagrees with what the tool is showing on screen.
-  const rows = rowsFrom(layers, file.lineItems ?? {}, new Set(file.deselected ?? []));
-
-  console.log("\nQUOTE LINE ITEMS");
-  console.log(
-    `  ${pad("", 2)}${pad("ITEM", 12)}${pad("STREET", 24)}${pad("SUBURB", 12)}` +
-      `${pad("PRODUCT", 26)}${pad("ASSET TYPE", 26)}${pad("INT m²", 8)}${pad("EXT m²", 8)}` +
-      `${pad("INT $", 7)}${pad("EXT $", 7)}QTY`
-  );
-  for (const r of rows) {
-    const v = r.values;
-    console.log(
-      `  ${pad(r.selected ? "☑" : "☐", 2)}${pad(`${r.number ?? "—"} · ${r.layer.label}`, 12)}${pad(v.street || "—", 24)}` +
-        `${pad(v.suburb || "—", 12)}${pad(v.product || "— none —", 26)}${pad(assetTypeFor(v) || "—", 26)}` +
-        `${pad(v.internalMetres || "—", 8)}${pad(v.externalMetres || "—", 8)}` +
-        `${pad(v.internalRate, 7)}${pad(v.externalRate, 7)}${v.quantity}`
-    );
-  }
-
-  const excluded = layers.filter((l) => !l.included);
-  if (excluded.length > 0) {
-    console.log("\nNOT ON THE SHEET");
-    for (const l of excluded) {
-      console.log(
-        `  ${pad(l.label, 14)}${l.kind === "shape" ? "not enough points to measure" : "unticked on the markup"}`
-      );
-    }
-  }
-
-  const noProduct = rows.filter((r) => r.selected && !r.values.product);
-  const noMeasure = rows.filter((r) => r.selected && !r.values.internalMetres && !r.values.externalMetres);
-  if (noProduct.length > 0 || noMeasure.length > 0) {
-    console.log("\nNEEDS A LOOK");
-    for (const r of noProduct) console.log(`  ⚠ ${r.layer.label} is selected with no product chosen`);
-    for (const r of noMeasure) console.log(`  ⚠ ${r.layer.label} is selected with no internal or external m²`);
-  }
-
-  const selected = rows.filter((r) => r.selected).length;
-  console.log(
-    `\n${selected} of ${rows.length} row(s) selected. Nothing was written to Salesforce.\n`
-  );
+  printSheet(sources, rowsFrom(sources, file.lineItems ?? {}, new Set(file.deselected ?? [])));
 }
 main();

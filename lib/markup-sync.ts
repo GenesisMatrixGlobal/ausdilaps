@@ -170,13 +170,16 @@ export interface ResolvedTarget {
   lineItem: { id: string; label: string; alreadyFilled: boolean } | null;
 }
 
+/** "Site Markup - 00005267.png" — the kind of file first, then the Quote it belongs to (Rhys,
+ *  2026-09-11). The Opportunity name used to lead, which sorted every job's markups apart from
+ *  each other in Box and buried what the file WAS. A line-item paste keeps its "Line 3" tail. */
 function suggestFilename(
   quoteNumber: string | null,
   quoteId: string,
-  opportunityName: string | null,
+  _opportunityName: string | null,
   lineItemLabel?: string | null
 ): string {
-  const parts = [quoteNumber ?? quoteId, opportunityName, lineItemLabel, "Site Markup"].filter(Boolean);
+  const parts = ["Site Markup", quoteNumber ?? quoteId, lineItemLabel].filter(Boolean);
   return sanitiseBoxFilename(`${parts.join(" - ")}.png`);
 }
 

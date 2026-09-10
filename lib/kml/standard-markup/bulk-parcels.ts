@@ -12,6 +12,7 @@
 import type { LatLng } from "@/lib/kml/types";
 import { parseAddressBlock } from "@/lib/property-sizing/parse";
 import { displayStreet, lookupParcels } from "@/lib/property-sizing";
+import { latLngRingFromArcgis } from "@/lib/property-sizing/rings";
 
 /** More than this on one drawing stops being a markup and starts being a map. */
 export const MAX_BULK_ADDRESSES = 60;
@@ -31,18 +32,6 @@ export interface BulkParcelsResult {
   /** Addresses that produced no parcel, with why — shown as flags, never silently dropped. */
   unresolved: { raw: string; reason: string }[];
   flags: string[];
-}
-
-/** ArcGIS ring (`[x, y]` = `[lng, lat]`, outer ring first, usually closed) → the markup's LatLng
- *  ring, unclosed — closeRing() is applied wherever a closed ring is needed. */
-function ringFromArcgis(rings: number[][][] | undefined): LatLng[] | null {
-  const outer = rings?.[0];
-  if (!outer || outer.length < 3) return null;
-  const pts = outer.map(([x, y]) => ({ lat: y, lng: x }));
-  const first = pts[0];
-  const last = pts[pts.length - 1];
-  if (pts.length > 3 && first.lat === last.lat && first.lng === last.lng) pts.pop();
-  return pts.length >= 3 ? pts : null;
 }
 
 /** Ids key the exclude-set and the sheet rows, so two units on one strata lot must not collapse
@@ -67,7 +56,7 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
   const used = new Set<string>();
 
   looked.forEach(({ addr, result, parcelRings }, i) => {
-    const ring = ringFromArcgis(parcelRings);
+    const ring = latLngRingFromArcgis(parcelRings);
     if (result.status !== "ok" || !ring) {
       unresolved.push({
         raw: addr.raw,
@@ -98,6 +87,21 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
 
   const first = looked.find((l) => l.result.status === "ok")?.addr ?? addresses[0];
   const flags = unresolved.map((u) => `${u.raw}: ${u.reason} — not on the markup`);
+  // Two addresses on ONE lot draw one outline with two pins stacked on it — a strata pair, or
+  // a geocode the address layer couldn't correct. Said out loud, because the second pin is
+  // invisible under the first.
+  const byLot = new Map<string, string[]>();
+  for (const p of parcels) {
+    const base = p.id.replace(/#\d+$/, "");
+    byLot.set(base, [...(byLot.get(base) ?? []), p.street ?? p.id]);
+  }
+  for (const [lot, streets] of byLot) {
+    if (streets.length > 1) flags.push(`${streets.join(" and ")} are on the same lot (${lot}) — one outline, pins stacked`);
+  }
+  // Per-address notes from the lookup (address-layer corrections and the like).
+  for (const l of looked) {
+    if (l.result.status === "ok") for (const f of l.result.flags) flags.push(`${displayStreet(l.addr)}: ${f}`);
+  }
   const states = new Set(addresses.map((a) => a.state).filter(Boolean));
   if (states.size > 1) flags.push(`Addresses span ${[...states].join(", ")} — the map's state controls follow the first`);
 

@@ -9,6 +9,8 @@ import { lookupVic } from "./vic";
 import { estimateBuilding } from "./building";
 import { mapPool } from "@/lib/util/map-pool";
 import { houseNumber } from "./parse";
+import { verifyParcelForAddress } from "@/lib/kml/standard-markup/parcels/verify-address";
+import { arcgisRingsFromLatLng, latLngRingFromArcgis } from "./rings";
 
 /** States with an automated lot-size source wired up. Grows per the rollout plan. */
 const PROVIDERS: Partial<Record<AuStateCode, (a: ParsedAddress) => Promise<LotResult>>> = {
@@ -95,7 +97,36 @@ async function lookupLot(addr: ParsedAddress): Promise<WorkRow> {
     result.status = "number_mismatch";
     result.flags = [...result.flags, mismatch];
   }
-  return { addr, result, lon: _lon, lat: _lat, parcelRings: _parcelRings };
+
+  let lon = _lon;
+  let lat = _lat;
+  let parcelRings = _parcelRings;
+
+  // The geocoder's parcel is checked against the state address layer — Google puts two house
+  // numbers on one point often enough that a lot size would otherwise be the neighbour's. A
+  // correction swaps the parcel wholesale; anything less certain leaves it and says so. See
+  // lib/kml/standard-markup/parcels/verify-address.ts.
+  if (result.status === "ok" && lon != null && lat != null && addr.state && addr.state in PROVIDERS) {
+    const verdict = await verifyParcelForAddress({
+      state: addr.state as "QLD" | "NSW" | "VIC",
+      street: addr.street,
+      suburb: addr.suburb,
+      geocodedPoint: { lat, lng: lon },
+      parcelRing: latLngRingFromArcgis(parcelRings),
+      parcelLabel: result.lotPlan,
+    });
+    if (verdict.outcome === "corrected") {
+      result.lotPlan = verdict.parcel.idKey.replace(/^\/+/, "") || result.lotPlan;
+      result.lotSizeSqm = verdict.areaSqm;
+      result.flags = [...result.flags, verdict.note];
+      lon = verdict.point.lng;
+      lat = verdict.point.lat;
+      parcelRings = arcgisRingsFromLatLng(verdict.parcel.ring);
+    } else if (verdict.outcome === "unverified") {
+      result.flags = [...result.flags, verdict.note];
+    }
+  }
+  return { addr, result, lon, lat, parcelRings };
 }
 
 /**

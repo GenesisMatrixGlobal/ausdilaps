@@ -21,7 +21,7 @@ import { assetTypeFor, type LineItemDraft, type LineItemRow } from "@/lib/markup
 import { AssetTypeSelect } from "./asset-type-select";
 import { RateSelect } from "./rate-select";
 import { SyncQuoteLines, type SyncQuoteLinesProps } from "./sync-quote-lines";
-import { SHEET_CELL, SHEET_HEAD, SHEET_INPUT } from "./styles";
+import { BREAKOUT_XL, SHEET_CELL, SHEET_HEAD, SHEET_INPUT } from "./styles";
 
 /** The measurement columns, sized explicitly.
  *
@@ -148,17 +148,7 @@ export function LineItemsTable({
   const columnCount = 2 + leading.length + 9;
 
   return (
-    // `left-1/2` + `-translate-x-1/2` re-centres on the VIEWPORT rather than the parent, which
-    // is what lets a child exceed its container's width. `min()` makes it safe: it never grows
-    // past the viewport less its gutters, so there is no horizontal page scroll, and below xl it
-    // resolves to the container width and the breakout switches itself off. Capped at 100rem
-    // because rows much wider than that are hard to track across.
-    <div
-      className={cn(
-        "mt-6 rounded-xl border border-ad-border bg-white",
-        breakout && "xl:relative xl:left-1/2 xl:w-[min(100rem,calc(100vw-4rem))] xl:-translate-x-1/2"
-      )}
-    >
+    <div className={cn("mt-6 rounded-xl border border-ad-border bg-white", breakout && BREAKOUT_XL)}>
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
         <p className="text-sm font-medium text-ad-ink">
           {title}

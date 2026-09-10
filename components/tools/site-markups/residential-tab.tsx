@@ -24,6 +24,7 @@ import { MarkupMap, type MarkupMapCommands } from "./markup-map";
 import { NEIGHBOUR_FILL, SITE_RED } from "@/lib/kml/standard-markup/style";
 import { LineItemsTable } from "@/components/tools/shared/quote-lines/line-items-table";
 import { MARKUP_LEADING_COLUMNS } from "./layer-column";
+import { BREAKOUT_XL } from "@/components/tools/shared/quote-lines/styles";
 import { StreetViewLink } from "./street-view-link";
 import { SUBJECT_KEY, layerAnchor, layersFrom, lotKey, shapeKey } from "@/lib/markup-layers/plan";
 import { itemNumbers, rowsFrom, type LineItemDraft, type LineItemDrafts } from "@/lib/markup-layers/line-items";
@@ -918,8 +919,21 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
       </div>
 
       {flags.length > 0 && (
-        <div className="mt-6 max-w-md rounded-lg border border-ad-orange/40 bg-ad-orange/5 p-3 text-sm text-ad-ink">
-          <p className="font-medium">Worth a manual check:</p>
+        <div className="mt-6 max-w-xl rounded-lg border border-ad-orange/40 bg-ad-orange/5 p-3 text-sm text-ad-ink">
+          <div className="flex items-start justify-between gap-3">
+            <p className="font-medium">Worth a manual check:</p>
+            {/* Dismissable: once the operator has read these they are in the way of the map. The
+                per-lot corrections stay in the sheet's Notes either way. */}
+            <button
+              type="button"
+              onClick={() => setFlags([])}
+              aria-label="Dismiss"
+              title="Dismiss"
+              className="-mr-1 -mt-1 rounded p-1 leading-none text-ad-muted hover:bg-ad-orange/10 hover:text-ad-ink"
+            >
+              ×
+            </button>
+          </div>
           <ul className="mt-1 list-disc pl-5 text-ad-muted">
             {flags.map((f, i) => (
               <li key={i}>{f}</li>
@@ -930,8 +944,11 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
 
       {result && (
         <>
-        <div className="mt-6 flex flex-col gap-4 xl:flex-row xl:items-start">
-          <div className="w-full max-w-4xl">
+        {/* Breaks out of the 1240px Container on wide screens, like the sheet below it, and the
+            map takes every pixel the sidebar leaves — it used to be a square capped at 896px,
+            which on a 1440px monitor left a third of the row empty. */}
+        <div className={cn("mt-6 flex flex-col gap-4 xl:flex-row xl:items-start", BREAKOUT_XL)}>
+          <div className="w-full min-w-0 xl:flex-1">
             <MarkupMap
               ref={mapRef}
               shapes={shapes}
@@ -945,7 +962,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
             />
           </div>
 
-          <div className="w-full max-w-xs space-y-4">
+          <div className="w-full space-y-4 xl:w-80 xl:shrink-0">
             {/* No Zoom control any more. It existed because the basemap was a fixed Static
                 Maps image, so changing zoom meant refetching the photo — the map pans and
                 zooms directly now, and the export follows whatever frame it is left on. */}

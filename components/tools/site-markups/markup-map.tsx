@@ -745,7 +745,10 @@ export function MarkupMap({
   }, [map]);
 
   return (
-    <div className="relative aspect-square w-full max-w-4xl overflow-hidden rounded-xl border border-ad-border bg-ad-surface">
+    // Height from the viewport, not a square: the row is as wide as the screen allows now, and a
+    // square that wide would be taller than the screen. 78vh keeps the toolbar above and a sliver
+    // of the sheet below in view; the floor stops a short laptop window crushing it.
+    <div className="relative h-[78vh] min-h-[440px] w-full overflow-hidden rounded-xl border border-ad-border bg-ad-surface">
       <div ref={containerRef} className="h-full w-full" />
       {(!map || error) && (
         <div className="absolute inset-0 flex items-center justify-center p-6">

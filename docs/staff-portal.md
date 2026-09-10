@@ -163,9 +163,13 @@ Vercel deploys in about a minute.
    - `http://localhost:3000/staff/auth/callback`
 3. **Supabase → Auth → Providers → Email** — turn **off** "Allow new users to sign up".
    (`shouldCreateUser: false` in the login form is the code-side belt; this is the braces.)
-4. **Supabase → Auth → SMTP** — point at Resend, from `no-reply@ausdilaps.com.au`. **Not
-   optional at team scale**: the built-in sender allows only a couple of emails an hour, so a
-   round of invites will silently fail without it.
+4. ✅ **DONE (2026-09-10). Supabase → Auth → SMTP** points at Resend, from
+   `no-reply@ausdilaps.com.au` — host `smtp.resend.com`, port 465, username the literal
+   string `resend`, password a Resend API key with Sending access. **Not optional at team
+   scale**: the built-in sender allows only a couple of emails an hour. This was hit for
+   real — a batch of invites died on "Email rate limit exceeded" after the first one.
+   After enabling it, raise **Auth → Rate Limits → Rate limit for sending emails**, which
+   stays capped low otherwise.
 5. **Supabase → Auth → Email Templates → Invite user** — change the link to:
 
    ```

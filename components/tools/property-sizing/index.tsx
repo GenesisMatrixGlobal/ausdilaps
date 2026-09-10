@@ -48,16 +48,30 @@ export function PropertySizingTool() {
     });
   }
 
-  // Paste an image straight from the clipboard (Ctrl/Cmd+V) anywhere on the page.
+  // Paste anywhere on the page (Ctrl/Cmd+V). TEXT WINS: Excel puts a bitmap of the copied
+  // cells on the clipboard alongside the text, and the first version of this handler took
+  // the first image item it saw — so pasting a column of addresses into the text box
+  // switched the tool to the screenshot tab and OCR'd a picture of the cells instead of
+  // reading the cells. Only a clipboard with no text at all is treated as a screenshot.
   useEffect(() => {
     function onPaste(e: ClipboardEvent) {
-      const img = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith("image/"));
-      if (img) {
-        const f = img.getAsFile();
-        if (f) {
-          setMode("image");
-          chooseFile(f);
-        }
+      const data = e.clipboardData;
+      if (!data) return;
+      const pasted = data.getData("text/plain");
+      if (pasted.trim()) {
+        // Into the textarea: the browser's default paste does the right thing.
+        if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+        // Anywhere else (the screenshot drop zone, the page body): route it to the text tab.
+        e.preventDefault();
+        setMode("text");
+        setText((prev) => (prev.trim() ? `${prev.replace(/\s+$/, "")}\n${pasted}` : pasted));
+        return;
+      }
+      const img = Array.from(data.items).find((i) => i.type.startsWith("image/"));
+      const f = img?.getAsFile();
+      if (f) {
+        setMode("image");
+        chooseFile(f);
       }
     }
     window.addEventListener("paste", onPaste);
@@ -175,7 +189,7 @@ export function PropertySizingTool() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={8}
-            placeholder={"One address per line, e.g.\n8 Ironwood Ct, Mountain Creek QLD 4557\n15 Carib Ct, Mountain Creek QLD 4557"}
+            placeholder={"One address per line — paste straight from Excel, e.g.\n8 Ironwood Ct, Mountain Creek QLD 4557\n42\tEastern Ave\tDover Heights NSW 2030"}
             className="w-full resize-y rounded-lg border border-ad-border p-3 font-mono text-sm text-ad-ink outline-none focus:border-ad-steel"
           />
         ) : (
@@ -336,8 +350,9 @@ export function PropertySizingTool() {
           </div>
           <p className="mt-3 text-xs text-ad-muted">
             Check the <span className="font-medium">Matched (gov data)</span> column — if it doesn&apos;t
-            match your intended address, the screenshot was mis-read (try a clearer image or the paste-text
-            tab). Levels &amp; dwelling area are estimates — footprint + LiDAR roof height where council
+            match your intended address, the row was mis-read (check the pasted line, or for a screenshot
+            try a clearer image). A row whose matched house number differs from the one you typed is
+            flagged and counted as needing a manual check. Levels &amp; dwelling area are estimates — footprint + LiDAR roof height where council
             data covers it, else a lot-coverage estimate; the % is confidence, and low-confidence rows
             should be verified in CoreLogic.
           </p>

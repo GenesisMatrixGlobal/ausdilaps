@@ -24,6 +24,7 @@ export type LookupStatus =
   | "no_parcel" // geocoded, but no titled parcel at that point (e.g. road/bridge)
   | "not_found" // address couldn't be geocoded
   | "unsupported_state" // state has no automated source wired yet
+  | "number_mismatch" // geocoder resolved a DIFFERENT house number — the parcel is probably a neighbour's
   | "error";
 
 /** One row of tool output. Columns mirror the estimator's target spreadsheet. */

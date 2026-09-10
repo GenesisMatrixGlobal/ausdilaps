@@ -96,7 +96,12 @@ export async function lookupNsw(addr: { street: string; suburb: string; postcode
     return {
       status: "ok",
       lotSizeSqm: Math.round(area),
-      lotPlan: attrs.planlabel ?? attrs.lotidstring ?? null,
+      // lotidstring ("42//DP837") identifies the LOT; planlabel ("DP837") is the whole
+      // deposited plan, shared by every lot subdivided under it. Keyed on planlabel, four
+      // separate houses on Eastern Ave read as one strata parcel — flagged "don't
+      // double-count land" and handed a per-unit floor-area estimate — for nothing.
+      // A strata plan's lot id arrives as "//SP6635" (no lot, no section) — trim the slashes.
+      lotPlan: attrs.lotidstring?.replace(/^\/+/, "") || attrs.planlabel || null,
       matchedAddress,
       matchScore,
       source: "NSW DCDB",

@@ -20,6 +20,8 @@
 import type { LotResult } from "./types";
 import { geocodeViaGoogle, type GoogleGeocodeOutcome } from "./google-geocode";
 import { arcgisErrorMessage } from "@/lib/arcgis";
+import { ringAreaSqm } from "@/lib/kml/standard-markup/geometry";
+import { latLngRingFromArcgis } from "./rings";
 
 const PARCEL_URL =
   "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Parcel/FeatureServer/0/query";
@@ -128,9 +130,13 @@ export async function lookupVic(addr: { street: string; suburb: string; postcode
         flags: ["no titled parcel at this point — measure manually"],
       };
     }
+    // Area from the ring, never Shape__Area: Vicmap publishes areas in Web Mercator, inflated by
+    // 1/cos²(latitude) — 1.6x at Melbourne. 68 Mason St Newport read 448 m² here against the
+    // 279 m² Building Markup measured from the same ring. Same rule the markup applies.
+    const ring = latLngRingFromArcgis(feat.geometry?.rings);
     return {
       status: "ok",
-      lotSizeSqm: Math.round(area),
+      lotSizeSqm: ring ? Math.round(ringAreaSqm(ring)) : Math.round(area),
       lotPlan: feat.attributes?.parcel_spi?.replace(/\\/g, "/") ?? null,
       matchedAddress,
       matchScore: null,

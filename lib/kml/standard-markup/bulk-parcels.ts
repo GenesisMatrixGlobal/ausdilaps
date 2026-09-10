@@ -40,9 +40,13 @@ export interface BulkLine {
   withNeighbours: boolean;
 }
 
-/** One address per non-blank line, with the marker peeled off. Pure. */
+/** One address per non-blank line, with the marker peeled off. Pure.
+ *
+ *  A line with no state and no postcode ("13 Craig Ave Vaucluse" in a list where the others
+ *  say NSW) takes the state of the nearest line that has one — a pasted list is one job, and a
+ *  job is in one state. Only when NOTHING in the list says a state does the line stay unknown. */
 export function parseBulkLines(text: string): BulkLine[] {
-  return text
+  const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean)
@@ -52,6 +56,14 @@ export function parseBulkLines(text: string): BulkLine[] {
       const [addr] = parseAddressBlock(bare);
       return addr ? [{ addr, withNeighbours }] : [];
     });
+  const known = lines.map((l) => l.addr.state);
+  return lines.map((l, i) => {
+    if (l.addr.state) return l;
+    const before = known.slice(0, i).reverse().find(Boolean);
+    const after = known.slice(i + 1).find(Boolean);
+    const inherited = before ?? after;
+    return inherited ? { ...l, addr: { ...l.addr, state: inherited } } : l;
+  });
 }
 
 const NEAR_POINT: Record<StandardMarkupState, (lng: number, lat: number) => Promise<ParcelFeature[]>> = {

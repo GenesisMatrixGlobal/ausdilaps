@@ -44,6 +44,18 @@ const CASES: [string, Expected][] = [
   ["Unit 103/8 Elizabeth St, Brisbane City QLD 4000", { unit: "103", street: "8 Elizabeth St", suburb: "Brisbane City", state: "QLD", postcode: "4000" }],
   // No street type at all — falls back to the last word.
   ["7 The Corso Manly NSW 2095", { street: "7 The Corso", suburb: "Manly", state: "NSW", postcode: "2095" }],
+  // Google's formatted address, straight from the search bar — ", Australia" is not a suburb.
+  ["68 Mason Street, Newport VIC, Australia", { street: "68 Mason Street", suburb: "Newport", state: "VIC" }],
+  ["68 Mason Street, Newport VIC 3015, Australia", { street: "68 Mason Street", suburb: "Newport", state: "VIC", postcode: "3015" }],
+  // No state: inferred from the postcode.
+  ["42 Eastern Ave Dover Heights 2030", { street: "42 Eastern Ave", suburb: "Dover Heights", state: "NSW", postcode: "2030" }],
+  ["8 Ironwood Ct, Mountain Creek 4557", { street: "8 Ironwood Ct", suburb: "Mountain Creek", state: "QLD", postcode: "4557" }],
+  // No state and no postcode: street and suburb still split on the street type.
+  ["42 Eastern Ave Dover Heights", { street: "42 Eastern Ave", suburb: "Dover Heights" }],
+  ["13 Craig Ave, Vaucluse", { street: "13 Craig Ave", suburb: "Vaucluse" }],
+  // A four-digit HOUSE number is not the postcode.
+  ["1234 Gympie Rd, Aspley QLD 4034", { street: "1234 Gympie Rd", suburb: "Aspley", state: "QLD", postcode: "4034" }],
+  ["1234 Gympie Rd Aspley QLD", { street: "1234 Gympie Rd", suburb: "Aspley", state: "QLD" }],
 ];
 
 const MISMATCH_CASES: [string, string | null, boolean][] = [

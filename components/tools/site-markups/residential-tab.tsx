@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { SyncToSalesforce } from "@/components/tools/shared/sync-to-salesforce";
 import { downloadBlob } from "@/components/tools/shared/download";
+import { fileToBase64 } from "@/components/tools/shared/file-to-base64";
 import {
   buildBuildingMarkupFile,
   parseBuildingMarkupFile,
@@ -114,6 +115,11 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
   /** Multi mode: the address card folds away to one line once a markup exists — most jobs are
    *  a single address, and the list is in the way while the quote is being worked. */
   const [addressesOpen, setAddressesOpen] = useState(true);
+  /** Multi mode: the screenshot drop zone's state. */
+  const [shotBusy, setShotBusy] = useState(false);
+  const [shotDrag, setShotDrag] = useState(false);
+  const [shotNote, setShotNote] = useState<string | null>(null);
+  const shotInput = useRef<HTMLInputElement>(null);
   const [street, setStreet] = useState("");
   const [suburb, setSuburb] = useState("");
   const [postcode, setPostcode] = useState("");
@@ -504,6 +510,42 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
     }
   }
 
+  /** Multi mode: a screenshot of an address list is read by the vision pass and its lines
+   *  APPENDED to the paste box — never straight onto the markup, so a misread digit is caught
+   *  in the box rather than on the drawing. */
+  async function readScreenshot(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setShotNote("That doesn't look like an image.");
+      return;
+    }
+    setShotBusy(true);
+    setShotNote("Reading the screenshot…");
+    try {
+      const image = await fileToBase64(file);
+      const res = await fetch("/api/kml/standard-markup/addresses-from-image", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ image }),
+      });
+      const json = (await res.json().catch(() => null)) as { ok: boolean; lines?: string[]; error?: string } | null;
+      if (!res.ok || !json?.ok || !json.lines) {
+        setShotNote(json?.error ?? "Couldn't read that screenshot.");
+        return;
+      }
+      if (json.lines.length === 0) {
+        setShotNote("No addresses found in that screenshot.");
+        return;
+      }
+      const block = json.lines.join("\n");
+      setAddressBlock((prev) => (prev.trim() ? `${prev.replace(/\s+$/, "")}\n${block}` : block));
+      setShotNote(`${json.lines.length} address${json.lines.length === 1 ? "" : "es"} read — check them before generating.`);
+    } catch (e) {
+      setShotNote((e as Error).message);
+    } finally {
+      setShotBusy(false);
+    }
+  }
+
   /** Multi mode's Generate: every pasted address becomes a blue lot, and there is no red site.
    *  The response lands in the same `result` the single-address path fills, so everything
    *  after this point — map, sidebar, sheet, export, save file — is shared code. */
@@ -778,23 +820,22 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
               form — so one-off addresses don't have to be typed into the block by hand. No
               labels: the placeholders say it, and the switch shares the row so the bar isn't a
               full-width runway. */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="min-w-[18rem] flex-1">
-              <AddressSearch
-                onSelect={handleAddressSelect}
-                onPastedLocation={handlePaste}
-                clearOnSelect
-                placeholder="Add an address, or paste a Google Maps link…"
-              />
-            </div>
-            {/* A switch, on by default: the searched address is usually a job site, and a job
-                site is quoted with its neighbours. Pasted lists are unaffected either way. */}
+          <AddressSearch
+            onSelect={handleAddressSelect}
+            onPastedLocation={handlePaste}
+            clearOnSelect
+            placeholder="Add an address, or paste a Google Maps link…"
+          />
+          {/* A switch, on by default, on its own line under the bar: the searched address is
+              usually a job site, and a job site is quoted with its neighbours. Pasted lists are
+              unaffected either way. Sharing the bar's row squeezed both. */}
+          <div className="mt-2 flex justify-end">
             <button
               type="button"
               role="switch"
               aria-checked={preselectSurrounding}
               onClick={() => setPreselectSurrounding((v) => !v)}
-              className="flex items-center gap-2 text-sm text-ad-ink"
+              className="flex items-center gap-2 text-sm text-ad-muted hover:text-ad-ink"
               title="When on, an address added here also brings in the lots adjoining it"
             >
               <span
@@ -815,14 +856,67 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
           </div>
           {addressNote && <p className="mt-1 text-xs text-ad-muted">{addressNote}</p>}
           {addressError && <p className="mt-1 text-xs text-ad-orange">{addressError}</p>}
-          <textarea
-            value={addressBlock}
-            onChange={(e) => setAddressBlock(e.target.value)}
-            rows={addressBlock.split(/\r?\n/).length > 4 ? 8 : 4}
-            aria-label="Addresses"
-            placeholder={"Or paste addresses, one per line — straight from Excel. A line starting with + also brings in its adjoining lots."}
-            className="mt-3 w-full resize-y rounded-lg border border-ad-border p-3 font-mono text-sm text-ad-ink outline-none focus:border-ad-steel"
-          />
+          {/* Three ways in, side by side: the search bar above, then a paste box for a list and
+              a drop zone for a screenshot of one. Both feed the same box, which is what gets
+              generated. */}
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            <textarea
+              value={addressBlock}
+              onChange={(e) => setAddressBlock(e.target.value)}
+              rows={addressBlock.split(/\r?\n/).length > 5 ? 9 : 5}
+              aria-label="Addresses"
+              placeholder={"Or paste addresses, one per line — straight from Excel. A line starting with + also brings in its adjoining lots."}
+              className="w-full resize-y rounded-lg border border-ad-border p-3 font-mono text-sm text-ad-ink outline-none focus:border-ad-steel"
+            />
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => !shotBusy && shotInput.current?.click()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") shotInput.current?.click();
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setShotDrag(true);
+              }}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                setShotDrag(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                setShotDrag(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setShotDrag(false);
+                const f = e.dataTransfer.files?.[0];
+                if (f) void readScreenshot(f);
+              }}
+              className={cn(
+                "flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed p-4 text-center text-sm transition-colors",
+                shotDrag ? "border-ad-orange bg-ad-orange/10" : "border-ad-border hover:bg-ad-surface",
+                shotBusy && "cursor-wait opacity-70"
+              )}
+            >
+              <input
+                ref={shotInput}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) void readScreenshot(f);
+                }}
+              />
+              <span className="font-medium text-ad-ink">
+                {shotBusy ? "Reading…" : shotDrag ? "Drop it" : "Or drop a screenshot of the addresses"}
+              </span>
+              <span className="text-xs text-ad-muted">or click to browse — the addresses it reads are added to the list</span>
+              {shotNote && <span className={cn("text-xs", /Couldn|doesn|No addresses|failed/.test(shotNote) ? "text-ad-orange" : "text-ad-muted")}>{shotNote}</span>}
+            </div>
+          </div>
           {result && (
             <button
               type="button"

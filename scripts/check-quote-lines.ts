@@ -56,6 +56,9 @@ const lines = parseBulkLines("+ 44 Eastern Avenue, Dover Heights NSW 2030\n42\tE
 eq(lines.map((l) => l.withNeighbours), [true, false, true], "+ marks a line for adjoining lots");
 eq(lines.map((l) => l.addr.street), ["44 Eastern Avenue", "42 EASTERN AVE", "11 Craig Ave"], "marker is peeled off before parsing");
 eq(lines.map((l) => l.addr.suburb), ["Dover Heights", "DOVER HEIGHTS", "Vaucluse"], "suburbs survive the marker");
+const inherit = parseBulkLines("42 Eastern Ave Dover Heights NSW 2030\n44 Eastern Ave Dover Heights\n13 Craig Ave, Vaucluse");
+eq(inherit.map((l) => l.addr.state), ["NSW", "NSW", "NSW"], "state-less lines inherit the list's state");
+eq(parseBulkLines("42 Eastern Ave Dover Heights").map((l) => l.addr.state), [undefined], "nothing to inherit → unknown");
 
 // ── Sizing adapter ──────────────────────────────────────────────────────────────────────
 const base: SizingResult = {

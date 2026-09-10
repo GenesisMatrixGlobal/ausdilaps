@@ -22,6 +22,16 @@ const STATES: AuStateCode[] = ["QLD", "NSW", "VIC", "SA", "WA", "TAS", "ACT", "N
 const STATE_RE = new RegExp(`\\b(${STATES.join("|")})\\b`, "i");
 const POSTCODE_RE = /\b(\d{4})\b/;
 
+/** The postcode in a line: the LAST four-digit token that is not the leading house number.
+ *  "1234 Gympie Rd Aspley QLD" has no postcode; "1234 Gympie Rd, Aspley QLD 4034" has 4034. The
+ *  first match used to win, which made the house number the postcode. */
+function postcodeOf(work: string): string | undefined {
+  const hits = [...work.matchAll(/\b(\d{4})\b/g)].filter((m) => (m.index ?? 0) > 0);
+  return hits.length ? hits[hits.length - 1][1] : undefined;
+}
+/** Google's formatted addresses end in ", Australia"; a pasted one shouldn't lose its suburb to it. */
+const COUNTRY_TAIL_RE = /,?\s*australia\s*$/i;
+
 // Leading unit designators: "UNIT 103/8 …", "Unit 12 88 …", "U 5/10 …", "103/8 …".
 // Longest keyword first, and the unit token must be a number (so "u" can't eat the
 // "U" of "Unit" and leave "nit" as the unit).
@@ -86,6 +96,28 @@ const STATE_ALIASES: Record<string, AuStateCode> = {
   "northern territory": "NT",
 };
 
+/** The state a postcode belongs to. Australia Post ranges; the PO-box-only bands (1xxx NSW,
+ *  8xxx VIC, 9xxx QLD) are included because a pasted list occasionally carries one. */
+export function stateFromPostcode(postcode?: string | null): AuStateCode | undefined {
+  const n = Number(postcode);
+  if (!Number.isInteger(n) || n < 200 || n > 9999) return undefined;
+  if (n >= 200 && n <= 299) return "ACT";
+  if (n >= 800 && n <= 999) return "NT";
+  if (n >= 1000 && n <= 2599) return "NSW";
+  if (n >= 2600 && n <= 2618) return "ACT";
+  if (n >= 2619 && n <= 2899) return "NSW";
+  if (n >= 2900 && n <= 2920) return "ACT";
+  if (n >= 2921 && n <= 2999) return "NSW";
+  if (n >= 3000 && n <= 3999) return "VIC";
+  if (n >= 4000 && n <= 4999) return "QLD";
+  if (n >= 5000 && n <= 5999) return "SA";
+  if (n >= 6000 && n <= 6999) return "WA";
+  if (n >= 7000 && n <= 7999) return "TAS";
+  if (n >= 8000 && n <= 8999) return "VIC";
+  if (n >= 9000 && n <= 9999) return "QLD";
+  return undefined;
+}
+
 export function normalizeState(s?: string | null): AuStateCode | undefined {
   if (!s) return undefined;
   const t = s.trim();
@@ -122,7 +154,7 @@ function splitStreetSuburb(tail: string): { street: string; suburb: string } {
 export function parseAddressLine(raw: string, id?: string): ParsedAddress | null {
   const original = raw.trim();
   if (!original) return null;
-  let work = original.replace(/\s+/g, " ");
+  let work = original.replace(/\s+/g, " ").replace(COUNTRY_TAIL_RE, "");
 
   // Unit / strata.
   let unit: string | undefined;
@@ -138,8 +170,10 @@ export function parseAddressLine(raw: string, id?: string): ParsedAddress | null
     }
   }
 
-  const state = normalizeState(work.match(STATE_RE)?.[1]);
-  const postcode = work.match(POSTCODE_RE)?.[1];
+  const postcode = postcodeOf(work);
+  // A missing state is inferred from the postcode — "Dover Heights 2030" is unambiguous.
+  const explicitState = normalizeState(work.match(STATE_RE)?.[1]);
+  const state = explicitState ?? stateFromPostcode(postcode);
 
   // Split street vs suburb — prefer the last comma as the boundary.
   let street = work;
@@ -153,13 +187,17 @@ export function parseAddressLine(raw: string, id?: string): ParsedAddress | null
       .replace(POSTCODE_RE, " ")
       .replace(/\s+/g, " ")
       .trim();
-  } else if (state) {
-    // No comma: strip trailing "STATE POSTCODE", then find where the street ends.
+  } else {
+    // No comma: strip a trailing postcode and state, then find where the street ends. Works
+    // with no state at all ("42 Eastern Ave Dover Heights") — the street TYPE is the boundary.
     let tail = work;
     if (postcode) tail = tail.replace(new RegExp(`\\s*${postcode}\\s*$`), "").trim();
-    const idx = tail.toUpperCase().lastIndexOf(state);
-    if (idx > 0) {
-      const split = splitStreetSuburb(tail.slice(0, idx).trim());
+    if (explicitState) {
+      const idx = tail.toUpperCase().lastIndexOf(explicitState);
+      if (idx > 0) tail = tail.slice(0, idx).trim();
+    }
+    const split = splitStreetSuburb(tail);
+    if (split.suburb) {
       street = split.street;
       suburb = split.suburb;
     }

@@ -168,6 +168,27 @@ export async function createRecords(
   return results.map((r) => ({ id: r.id! }));
 }
 
+/**
+ * Deletes records of one type in ONE call, all-or-nothing — the undo for createRecords. Same
+ * Composite sObject Collections endpoint, same per-record `success` check, same 200-record cap.
+ */
+export async function deleteRecords(sobject: string, ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  if (ids.length > 200) throw new Error(`Salesforce deletes are capped at 200 records per call (got ${ids.length}).`);
+  const { token, instanceUrl, apiVersion } = await getAccessToken();
+  const url = new URL(`${instanceUrl}/services/data/${apiVersion}/composite/sobjects`);
+  url.searchParams.set("ids", ids.join(","));
+  url.searchParams.set("allOrNone", "true");
+  const res = await fetch(url, { method: "DELETE", headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!res.ok) throw await salesforceError(res, `Salesforce delete of ${sobject}`);
+  const results = (await res.json()) as { id?: string; success: boolean; errors?: { statusCode?: string; message?: string }[] }[];
+  const failed = results.filter((r) => !r.success);
+  if (failed.length > 0) {
+    const detail = failed.map((r) => `${r.id ?? "?"}: ${(r.errors ?? []).map((e) => [e.statusCode, e.message].filter(Boolean).join(" ")).join("; ")}`).join(" · ");
+    throw new Error(`Salesforce delete of ${sobject} failed — nothing was deleted. ${detail}`);
+  }
+}
+
 export type SalesforceLead = {
   name: string;
   email: string;

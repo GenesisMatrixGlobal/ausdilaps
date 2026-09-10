@@ -96,6 +96,11 @@ export interface LineItemRow {
   key: string;
   source: LineItemSource;
   values: LineItemDraft;
+  /** Cells the operator has touched — present in the sparse draft, whether or not the value
+   *  changed. Levels is highlighted until it is in here: a seeded storey count must be looked at
+   *  before it goes on a Quote. Clicking the cell is enough (the table writes the current value
+   *  back), and the state rides along in the save file with the draft. */
+  touched: ReadonlySet<keyof LineItemDraft>;
   /** Ticked rows are the ones a sync would create. */
   selected: boolean;
   /**
@@ -134,6 +139,7 @@ export function rowsFrom(
         key: source.key,
         source,
         values: { ...defaultDraft(source), ...drafts[source.key] },
+        touched: new Set(Object.keys(drafts[source.key] ?? {}) as (keyof LineItemDraft)[]),
         selected,
         // Counted in source order, which the adapter fixes (site -> lots -> shapes for a markup).
         number: selected ? next++ : null,

@@ -41,7 +41,7 @@ export function sourceFromSizing(result: SizingResult, index: number): LineItemS
       internalMetres: dwelling,
       externalMetres: "",
       // The storey estimate, editable like every other cell — it goes to Levels__c.
-      levels: result.levels && result.levels > 0 ? String(result.levels) : "",
+      levels: result.levels && result.levels > 0 ? String(result.levels) : "1",
     },
     included: true,
     startSelected: result.status === "ok",

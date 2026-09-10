@@ -46,7 +46,8 @@ export function sourceFromLayer(layer: MarkupLayer): LineItemSource {
       street: layer.street ?? (layer.color === "orange" ? "Council assets" : ""),
       internalMetres: layer.color === "blue" ? area : "",
       externalMetres: layer.color === "orange" ? area : "",
-      levels: "",
+      // One storey until someone says otherwise — the sheet highlights the cell until they do.
+      levels: "1",
     },
     included: layer.included,
     startSelected: true,

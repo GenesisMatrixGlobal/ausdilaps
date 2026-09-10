@@ -43,21 +43,27 @@ export interface LeadingColumn {
 function Num({
   value,
   onChange,
+  onFocus,
   label,
   placeholder,
+  title,
 }: {
   value: string;
   onChange: (v: string) => void;
+  onFocus?: () => void;
   label: string;
   placeholder?: string;
+  title?: string;
 }) {
   return (
     <input
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onFocus={onFocus}
       inputMode="decimal"
       aria-label={label}
       placeholder={placeholder}
+      title={title}
       className={cn(SHEET_INPUT, "text-right tabular-nums")}
     />
   );
@@ -265,8 +271,21 @@ export function LineItemsTable({
                     />
                   </td>
 
-                  <td className={SHEET_CELL}>
-                    <Num value={row.values.levels} onChange={(v) => onChange(row.key, "levels", v)} label="Levels" placeholder="—" />
+                  <td className={cn(SHEET_CELL, !row.touched.has("levels") && "bg-ad-orange/15")}>
+                    {/* Orange until looked at: the storey count is seeded (1, or an estimate) and
+                        has to be checked before it goes on a Quote. Focusing the cell writes the
+                        current value into the draft, which is what clears the highlight — no
+                        separate "reviewed" flag to persist. */}
+                    <Num
+                      value={row.values.levels}
+                      onChange={(v) => onChange(row.key, "levels", v)}
+                      onFocus={() => {
+                        if (!row.touched.has("levels")) onChange(row.key, "levels", row.values.levels);
+                      }}
+                      label="Levels"
+                      placeholder="—"
+                      title={row.touched.has("levels") ? undefined : "Check the storey count — click to confirm"}
+                    />
                   </td>
                   <td className={SHEET_CELL}>
                     <Num value={row.values.internalMetres} onChange={(v) => onChange(row.key, "internalMetres", v)} label="Internal m²" placeholder="—" />

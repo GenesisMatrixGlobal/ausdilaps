@@ -108,6 +108,9 @@ export function buildQuoteLineItems(
       UnitPrice: PLACEHOLDER_UNIT_PRICE,
     };
     if (assetType) record.Property_Type__c = assetTypeApiValue(assetType);
+    // The sheet's Street and Suburb cells → the org's own address fields (string(100) each).
+    if (v.street.trim()) record.Street__c = v.street.trim().slice(0, 100);
+    if (v.suburb.trim()) record.Suburb__c = v.suburb.trim().slice(0, 100);
     const levels = Math.round(parseCell(v.levels));
     if (levels > 0) record.Levels__c = levels;
     // A measurement's rate travels only with a measurement — a rate against no m² is noise.

@@ -86,6 +86,7 @@ eq(sizingSources.map((s) => s.seed.product), ["Residential House", "Residential 
 eq(sizingSources.map((s) => s.seed.internalMetres), ["187", "90", "187", ""], "dwelling → internal m²");
 eq(sizingSources.map((s) => s.seed.externalMetres), ["", "", "", ""], "external stays blank");
 eq(sizingSources.map((s) => s.seed.levels), ["2", "2", "2", "2"], "storey estimate seeds Levels");
+eq(sourcesFromSizing([{ ...base, levels: null }])[0].seed.levels, "1", "no estimate → one storey");
 eq([...initialDeselected(sizingSources)], ["sizing:2", "sizing:3"], "non-ok rows start unticked");
 const sizingRows = rowsFrom(sizingSources, {}, initialDeselected(sizingSources));
 eq(sizingRows.map((r) => r.number), [1, 2, null, null], "numbering skips unticked rows");
@@ -107,7 +108,10 @@ eq(markupSources.map((s) => s.seed.externalMetres), ["", "", "600", ""], "orange
 eq(markupSources[2].seed.street, "Council assets", "orange street default");
 eq(markupSources.map((s) => s.seed.product), ["Standard Internal", "Standard Internal", "External GPS", "Standard Internal"], "colour → product");
 eq(rowsFrom(markupSources, {}, new Set()).length, 3, "excluded layers are dropped");
-eq(markupSources.map((s) => s.seed.levels), ["", "", "", ""], "a markup seeds no levels");
+eq(markupSources.map((s) => s.seed.levels), ["1", "1", "1", "1"], "a markup seeds one storey");
+const untouched = rowsFrom(markupSources, {}, new Set())[0];
+eq(untouched.touched.has("levels"), false, "levels starts untouched");
+eq(rowsFrom(markupSources, { subject: { levels: "1" } }, new Set())[0].touched.has("levels"), true, "a click (same value written back) counts as touched");
 
 // ── Payload ─────────────────────────────────────────────────────────────────────────────
 const pricebook = new Map(SHEET_PRODUCTS.map((p) => [p.product2Id, `pbe-${p.product2Id}`]));
@@ -144,6 +148,7 @@ eq(a.PricebookEntryId, `pbe-${productByName("Residential House")!.product2Id}`, 
 eq(a.Product2Id, "01t96000000GNqD", "Product2Id");
 eq(a.Property_Type__c, "Commercial", "asset type API value");
 eq(a.Levels__c, 2, "Levels__c from the sheet's Levels cell");
+eq([a.Street__c, a.Suburb__c], ["42 EASTERN AVE", "DOVER HEIGHTS"], "Street__c / Suburb__c from the cells");
 eq(a.Internal_M2__c, 187, "internal m² rounded");
 eq(a.Internal_M2_Rate__c, 0.8, "internal rate currency");
 eq(a.Internal_Rate_PL__c, "0.80", "internal rate picklist");

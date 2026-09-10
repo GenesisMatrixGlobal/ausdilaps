@@ -43,8 +43,6 @@ const MARKUP_SLOTS = [
   { url: "Site_Mark_Up_5__c", name: "Site_Mark_Up_5_Name__c" },
 ] as const;
 
-/** Name fields are 150 chars in the org; URL fields are 255 and a Box link is well under. */
-const SLOT_NAME_MAX = 150;
 
 /** QuoteLineItem's single markup URL field.
  *
@@ -591,10 +589,9 @@ async function linkMarkupToQuote(
     }
 
     const slot = MARKUP_SLOTS[free];
-    await updateRecord("Quote", quoteId, {
-      [slot.url]: sharedLink,
-      [slot.name]: file.name.slice(0, SLOT_NAME_MAX),
-    });
+    // Only the URL. The slot's companion name field is left alone (Rhys, 2026-09-11): the file
+    // name in Box is the name, and copying it onto the Quote was one more thing to keep in step.
+    await updateRecord("Quote", quoteId, { [slot.url]: sharedLink });
     return {
       fileId: file.id,
       fileName: file.name,

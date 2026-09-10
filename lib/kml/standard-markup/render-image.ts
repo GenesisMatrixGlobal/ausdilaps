@@ -301,15 +301,18 @@ function badgesSvg(
 const COMPASS_BLUE = "46688a"; // ad-steel — the AusDilaps brand accent
 
 /**
- * How much bigger than its natural size the legend and north arrow are drawn.
+ * How the legend and north arrow are scaled from their natural size.
  *
- * These are read on a ~1400px-wide export, often printed inside a report, and at 1x the key was
- * a postage stamp in the corner. NOT tied to the image width on purpose: the export's dimensions
- * follow the operator's viewport aspect through the tiling planner, so a proportional rule would
- * make the key a different size on every drawing of the same job.
+ * Both were 2x (2026-09-08) — at 1x the key was a postage stamp on a ~1400px export. Rhys
+ * looked at real exports on 2026-09-11 and asked for the key at a THIRD of that and the arrow
+ * at HALF: on a drawing an estimator cross-references, the chrome was crowding the lots. NOT
+ * tied to the image width on purpose: the export's dimensions follow the operator's viewport
+ * aspect through the tiling planner, so a proportional rule would make the key a different
+ * size on every drawing of the same job.
  */
-const OVERLAY_SCALE = 2;
-/** Inset from the image edge, in FINAL pixels — so it is unaffected by OVERLAY_SCALE. */
+const LEGEND_SCALE = 2 / 3;
+const NORTH_ARROW_SCALE = 1;
+/** Inset from the image edge, in FINAL pixels — so it is unaffected by either scale. */
 const MARGIN = 20;
 
 /**
@@ -369,18 +372,17 @@ function legendSvg(keys: [string, string][]): string {
     ),
   ].join("\n      ");
 
-  return `<g transform="translate(${MARGIN}, ${MARGIN}) scale(${OVERLAY_SCALE})">
+  return `<g transform="translate(${MARGIN}, ${MARGIN}) scale(${LEGEND_SCALE})">
       ${inner}
     </g>`;
 }
 
 function northArrowSvg(nativeSize: number): string {
   const r = 32;
-  // Scaled with the legend so the two corners look like they belong to the same drawing. Placed
-  // by its scaled footprint, or it would run off the right edge.
-  const cx = (nativeSize - MARGIN) / OVERLAY_SCALE - r;
-  const cy = MARGIN / OVERLAY_SCALE + r;
-  return `<g transform="scale(${OVERLAY_SCALE})">
+  // Placed by its scaled footprint, or it would run off the right edge.
+  const cx = (nativeSize - MARGIN) / NORTH_ARROW_SCALE - r;
+  const cy = MARGIN / NORTH_ARROW_SCALE + r;
+  return `<g transform="scale(${NORTH_ARROW_SCALE})">
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="white" fill-opacity="0.95" stroke="#${COMPASS_BLUE}" stroke-width="2.5" />
       <polygon points="${cx},${cy - 18} ${cx - 10},${cy - 2} ${cx + 10},${cy - 2}" fill="#${COMPASS_BLUE}" />
       <path transform="translate(${cx}, ${cy + 18})" d="${COMPASS_N_PATH}" fill="#${COMPASS_BLUE}" />

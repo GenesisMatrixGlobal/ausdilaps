@@ -267,7 +267,21 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
   // title boundary rather than a geocoder's guess — but the Places point covers the gap before
   // Generate, so the address can be looked at the moment it is typed.
   const subjectLayer = layers.find((l) => l.kind === "subject");
-  const sitePoint = (subjectLayer ? layerAnchor(subjectLayer) : null) ?? addressPoint;
+  // Multi mode has no subject. With exactly ONE address in the list, Street View aims at that
+  // property — the red lot if the address brought its neighbours in, else the only lot. With
+  // several addresses there is no single place to look, so the button stays greyed out.
+  const listedAddresses = multi ? addressBlock.split(/\r?\n/).filter((l) => l.trim()).length : 0;
+  const singleLot =
+    multi && result && listedAddresses === 1
+      ? (result.neighbours.find((n) => n.color === "red") ?? result.neighbours[0] ?? null)
+      : null;
+  const singleLotLayer = singleLot ? layers.find((l) => l.key === lotKey(singleLot.id)) ?? null : null;
+  const sitePoint = multi
+    ? singleLotLayer
+      ? layerAnchor(singleLotLayer)
+      : null
+    : ((subjectLayer ? layerAnchor(subjectLayer) : null) ?? addressPoint);
+  const streetViewLabel = multi ? (singleLot?.street ?? "the property") : (street.trim() || "the project site");
   // A primitive key, not the object: sitePoint is derived every render, so depending on its
   // identity would refetch forever.
   const sitePointKey = sitePoint ? `${sitePoint.lat.toFixed(6)},${sitePoint.lng.toFixed(6)}` : null;
@@ -1062,7 +1076,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
         <StreetViewLink
           at={sitePoint}
           heading={siteHeading}
-          label={street.trim() || "the project site"}
+          label={streetViewLabel}
           className={cn(buttonVariants({ variant: "outline", size: "md" }), "gap-1.5")}
           iconSize={15}
         >

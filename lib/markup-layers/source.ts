@@ -39,6 +39,8 @@ export interface LineItemSource {
     street: string;
     internalMetres: string;
     externalMetres: string;
+    /** Storeys, as a string cell. Sizing seeds its estimate; a markup has nothing to offer. */
+    levels: string;
   };
   /** False for something the operator removed from the job upstream (an unticked lot). Excluded
    *  sources are dropped from the sheet, not greyed. */

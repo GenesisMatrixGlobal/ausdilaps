@@ -145,7 +145,7 @@ export function LineItemsTable({
   title = "Quote line items",
 }: LineItemsTableProps) {
   const selectedCount = rows.filter((r) => r.selected).length;
-  const columnCount = 2 + leading.length + 9;
+  const columnCount = 2 + leading.length + 10;
 
   return (
     <div className={cn("mt-6 rounded-xl border border-ad-border bg-white", breakout && BREAKOUT_XL)}>
@@ -180,6 +180,7 @@ export function LineItemsTable({
               <th className={cn(SHEET_HEAD, "text-left")}>Suburb</th>
               <th className={cn(SHEET_HEAD, "text-left")}>Product</th>
               <th className={cn(SHEET_HEAD, "text-left")}>Asset type</th>
+              <th className={cn(SHEET_HEAD, "w-[4.5rem] text-right")}>Levels</th>
               <th className={cn(SHEET_HEAD, NUM_COL, "text-right")}>Internal m²</th>
               <th className={cn(SHEET_HEAD, NUM_COL, "text-right")}>External m²</th>
               <th className={cn(SHEET_HEAD, RATE_COL, "text-right")}>Internal $/m²</th>
@@ -254,6 +255,9 @@ export function LineItemsTable({
                     />
                   </td>
 
+                  <td className={SHEET_CELL}>
+                    <Num value={row.values.levels} onChange={(v) => onChange(row.key, "levels", v)} label="Levels" placeholder="—" />
+                  </td>
                   <td className={SHEET_CELL}>
                     <Num value={row.values.internalMetres} onChange={(v) => onChange(row.key, "internalMetres", v)} label="Internal m²" placeholder="—" />
                   </td>

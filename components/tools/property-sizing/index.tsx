@@ -44,8 +44,10 @@ function sizingOf(row: { source: { detail: { kind: string } } }): SizingResult |
 }
 
 /** What Bulk Property Sizing knows about a property, ahead of the sheet's own columns: lot size
- *  (with the matched address and any flags under it), levels and dwelling area. Everything else
- *  the old results table showed — ref, lot/plan, match %, notes — folds into the sub-line. */
+ *  (with the storey estimate, matched address and any flags under it) and dwelling area. The
+ *  storey count itself is a SHEET column now — seeded from the estimate, editable, sent to
+ *  Levels__c — so it isn't shown twice. Everything else the old results table showed — ref,
+ *  lot/plan, match %, notes — folds into the sub-line. */
 const SIZING_LEADING_COLUMNS: LeadingColumn[] = [
   {
     header: "Lot size (m²)",
@@ -54,7 +56,9 @@ const SIZING_LEADING_COLUMNS: LeadingColumn[] = [
       const r = sizingOf(row);
       if (!r) return null;
       const ok = r.status === "ok";
-      const sub = [r.lotPlan, r.matchedAddress, ...r.flags].filter(Boolean).join(" · ");
+      const levels =
+        r.levels != null ? `≈${r.levels} level${r.levels === 1 ? "" : "s"}${r.levelsConfidence != null ? ` (${r.levelsConfidence}%)` : ""}` : null;
+      const sub = [r.lotPlan, levels, r.matchedAddress, ...r.flags].filter(Boolean).join(" · ");
       return (
         <span className="block">
           <span className={cn("block text-right font-semibold tabular-nums", ok ? "text-ad-ink" : "text-ad-orange")}>
@@ -65,19 +69,6 @@ const SIZING_LEADING_COLUMNS: LeadingColumn[] = [
           </span>
         </span>
       );
-    },
-  },
-  {
-    header: "Levels",
-    className: "w-[5.5rem] text-right",
-    cell: (row) => {
-      const r = sizingOf(row);
-      return r ? (
-        <span className="block text-right tabular-nums text-ad-muted">
-          {r.levels ?? "—"}
-          {r.levelsConfidence != null && <span className="ml-1 text-xs">{r.levelsConfidence}%</span>}
-        </span>
-      ) : null;
     },
   },
   {
@@ -211,7 +202,7 @@ export function PropertySizingTool() {
             ...rows.map((row) => [row.values.street, row.values.suburb, fmtArea(sizingOf(row)?.lotSizeSqm ?? null)]),
           ]
         : [
-            ["#", "Street", "Suburb", "Lot Size (m2)", "Lot/Plan", "Matched address", "Levels", "Levels conf %", "Dwelling Area (m2)", "Dwelling conf %", "Product", "Asset type", "Internal m2", "External m2", "Internal $/m2", "External $/m2", "Qty", "Notes"],
+            ["#", "Street", "Suburb", "Lot Size (m2)", "Lot/Plan", "Matched address", "Levels", "Levels est.", "Levels conf %", "Dwelling Area (m2)", "Dwelling conf %", "Product", "Asset type", "Internal m2", "External m2", "Internal $/m2", "External $/m2", "Qty", "Notes"],
             ...rows.map((row) => {
               const r = sizingOf(row);
               const v = row.values;
@@ -222,6 +213,7 @@ export function PropertySizingTool() {
                 fmtArea(r?.lotSizeSqm ?? null),
                 r?.lotPlan ?? "",
                 r?.matchedAddress ?? "",
+                v.levels,
                 r?.levels == null ? "" : String(r.levels),
                 r?.levelsConfidence == null ? "" : String(r.levelsConfidence),
                 fmtArea(r?.dwellingAreaSqm ?? null),

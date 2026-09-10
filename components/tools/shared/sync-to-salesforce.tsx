@@ -12,6 +12,8 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
+import type { LineItemRow } from "@/lib/markup-layers/line-items";
+import { rowReason, type Refusal } from "@/lib/quote-lines/payload";
 
 interface ResolvedTarget {
   quoteId: string;
@@ -56,6 +58,15 @@ export interface SyncToSalesforceProps {
    *  confirmed PNG filename (extension included) so the pair share a stem in Box. Omit on
    *  a tool that has nothing reopenable to save. */
   getSidecar?: (imageFilename: string) => Promise<{ filename: string; contentBase64: string; contentType?: string }>;
+  /** The Quote Line Item sheet's rows. When given, the same sync also creates one QuoteLineItem
+   *  per TICKED row on the Quote (opt-out with a checkbox) — one paste does the whole job.
+   *  Rows that can't sync are listed and block the create until fixed or unticked. */
+  lineItems?: { rows: LineItemRow[] };
+}
+
+interface LinesResult {
+  created: { key: string; id: string }[];
+  quoteUrl: string | null;
 }
 
 export function SyncToSalesforce({
@@ -63,6 +74,7 @@ export function SyncToSalesforce({
   fallbackName,
   disabled,
   getSidecar,
+  lineItems,
 }: SyncToSalesforceProps) {
   const [open, setOpen] = useState(false);
   const [quoteInput, setQuoteInput] = useState("");
@@ -73,12 +85,52 @@ export function SyncToSalesforce({
   const [busy, setBusy] = useState<"find" | "upload" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
+  const [createLines, setCreateLines] = useState(true);
+  const [linesResult, setLinesResult] = useState<LinesResult | null>(null);
+  const [linesError, setLinesError] = useState<string | null>(null);
+  const [linesRefused, setLinesRefused] = useState<Refusal[]>([]);
+
+  const ticked = lineItems?.rows.filter((r) => r.selected) ?? [];
+  const blocked = ticked
+    .map((r) => ({ row: r, reason: rowReason(r.values) }))
+    .filter((x): x is { row: LineItemRow; reason: string } => x.reason !== null);
+  const linesReady = ticked.length - blocked.length;
+  const wantLines = !!lineItems && createLines && ticked.length > 0;
 
   function reset() {
     setTarget(null);
     setResult(null);
     setError(null);
     setManualFolderUrl("");
+    setLinesResult(null);
+    setLinesError(null);
+    setLinesRefused([]);
+  }
+
+  /** One QuoteLineItem per ticked row, all or nothing — see lib/quote-lines/payload.ts. Runs
+   *  after the PNG is filed; a failure here is reported beside the upload result, never as a
+   *  reason to re-upload. */
+  async function createLineItems(quoteId: string) {
+    setLinesError(null);
+    setLinesRefused([]);
+    try {
+      const res = await fetch("/api/salesforce/quote-lines/create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ quoteId, rows: ticked.map((r) => ({ key: r.key, values: r.values })) }),
+      });
+      const json = (await res.json().catch(() => null)) as
+        | { ok: boolean; result?: LinesResult; refused?: Refusal[]; error?: string }
+        | null;
+      if (!res.ok || !json?.result) {
+        setLinesError(json?.error ?? "Creating the line items failed.");
+        setLinesRefused(json?.refused ?? []);
+        return;
+      }
+      setLinesResult(json.result);
+    } catch (e) {
+      setLinesError((e as Error).message);
+    }
   }
 
   async function find(boxFolderUrl?: string) {
@@ -147,6 +199,7 @@ export function SyncToSalesforce({
         return;
       }
       setResult(json.result);
+      if (wantLines) await createLineItems(target.quoteId);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -278,12 +331,42 @@ export function SyncToSalesforce({
                     ? `All ${target.markupSlotsTotal} Site Mark Up slots are full — upload only`
                     : `Link it to Site Mark Up ${target.nextMarkupSlot} (${target.markupSlotsUsed} of ${target.markupSlotsTotal} used)`}
               </label>
+              {lineItems && (
+                <div className="space-y-1">
+                  <label className="flex items-center gap-2 font-medium text-ad-ink">
+                    <input
+                      type="checkbox"
+                      checked={createLines}
+                      onChange={(e) => setCreateLines(e.target.checked)}
+                      disabled={ticked.length === 0}
+                      className="h-4 w-4 rounded border-ad-border"
+                    />
+                    {ticked.length === 0
+                      ? "No sheet rows are ticked — nothing to create on the Quote"
+                      : `Create ${linesReady} quote line item${linesReady === 1 ? "" : "s"} from the ticked rows`}
+                  </label>
+                  {createLines && blocked.length > 0 && (
+                    <ul className="list-disc pl-9 text-ad-orange">
+                      {blocked.map(({ row, reason }) => (
+                        <li key={row.key}>
+                          {row.number !== null ? `${row.number} · ` : ""}
+                          {row.values.street || row.source.label}: {reason} — fix or untick it
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="pl-6 text-xs text-ad-muted">
+                    Unit price goes in as a $1 placeholder — pricing is finalised in Salesforce.
+                  </p>
+                </div>
+              )}
               <button
                 className={cn(buttonVariants({ variant: "primary", size: "md" }))}
                 onClick={upload}
-                disabled={busy !== null || !filename.trim()}
+                disabled={busy !== null || !filename.trim() || (wantLines && blocked.length > 0)}
+                title={wantLines && blocked.length > 0 ? "Untick or fix the rows that can't sync, or untick 'Create line items'" : undefined}
               >
-                {busy === "upload" ? "Uploading…" : "Upload to Box"}
+                {busy === "upload" ? (wantLines ? "Uploading and creating…" : "Uploading…") : wantLines ? "Upload and create line items" : "Upload to Box"}
               </button>
             </>
           )}
@@ -339,6 +422,35 @@ export function SyncToSalesforce({
             >
               Open in Box
             </a>
+          )}
+          {linesResult && (
+            <p className="mt-2 border-t border-ad-border pt-2 text-ad-ink">
+              Created {linesResult.created.length} quote line item{linesResult.created.length === 1 ? "" : "s"} on the Quote.
+              {linesResult.quoteUrl && (
+                <>
+                  {" "}
+                  <a href={linesResult.quoteUrl} target="_blank" rel="noreferrer" className="text-ad-steel underline">
+                    Open the Quote
+                  </a>
+                </>
+              )}
+            </p>
+          )}
+          {linesError && (
+            // The PNG is filed; only the line items failed. Said precisely so the operator does
+            // not re-upload the image to retry the lines.
+            <div className="mt-2 border-t border-ad-border pt-2 text-ad-orange">
+              <p>The markup is filed, but creating the line items failed: {linesError}</p>
+              {linesRefused.length > 0 && (
+                <ul className="mt-1 list-disc pl-5">
+                  {linesRefused.map((r) => (
+                    <li key={r.key}>
+                      {r.street || r.key}: {r.reason}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </div>
       )}

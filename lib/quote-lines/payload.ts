@@ -102,6 +102,8 @@ export function buildQuoteLineItems(
       UnitPrice: PLACEHOLDER_UNIT_PRICE,
     };
     if (assetType) record.Property_Type__c = assetTypeApiValue(assetType);
+    const levels = Math.round(parseCell(v.levels));
+    if (levels > 0) record.Levels__c = levels;
     // A measurement's rate travels only with a measurement — a rate against no m² is noise.
     if (internal > 0) {
       record.Internal_M2__c = internal;

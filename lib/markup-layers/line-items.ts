@@ -32,6 +32,8 @@ export interface LineItemDraft {
   internalRate: string;
   externalRate: string;
   quantity: string;
+  /** Storeys — QuoteLineItem.Levels__c. Blank means "not sent". */
+  levels: string;
 }
 
 export const LINE_ITEM_FIELDS: readonly (keyof LineItemDraft)[] = [
@@ -44,6 +46,7 @@ export const LINE_ITEM_FIELDS: readonly (keyof LineItemDraft)[] = [
   "internalRate",
   "externalRate",
   "quantity",
+  "levels",
 ];
 
 /** Sparse: an absent key, or an absent field, means "still on the default". That is what lets
@@ -65,6 +68,7 @@ export function defaultDraft(source: LineItemSource): LineItemDraft {
     internalRate: DEFAULT_INTERNAL_RATE.toFixed(2),
     externalRate: DEFAULT_EXTERNAL_RATE.toFixed(2),
     quantity: String(DEFAULT_QUANTITY),
+    levels: source.seed.levels,
   };
 }
 

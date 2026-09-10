@@ -43,6 +43,7 @@ export function AddressSearch({
   requireAddress = true,
   placeholder = "Start typing an address…",
   onPastedLocation,
+  clearOnSelect = false,
 }: {
   onSelect: (place: PlaceSelection) => void;
   /** Residential needs a parseable street address because the cadastre lookup does.
@@ -56,6 +57,8 @@ export function AddressSearch({
    *  coordinate). Keeps link-pasting and address search in one box without the
    *  Residential tab having to know link-pasting exists. */
   onPastedLocation?: (text: string) => boolean | string | Promise<boolean | string>;
+  /** Empty the box after a pick — for a search that ADDS to a list rather than fills a form. */
+  clearOnSelect?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
@@ -172,6 +175,8 @@ export function AddressSearch({
         location: json.location ?? null,
         viewport: json.viewport ?? null,
       });
+      // An empty query never searches (see the length check above), so no suppress is needed.
+      if (clearOnSelect) setQuery("");
     } catch (e) {
       setError((e as Error).message);
     }

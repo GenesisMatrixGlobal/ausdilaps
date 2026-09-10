@@ -106,6 +106,7 @@ const LINE_ITEM_FIELDS = new Set([
   "internalRate",
   "externalRate",
   "quantity",
+  "levels",
 ]);
 
 const MODES: ShapeMode[] = ["line", "area"];

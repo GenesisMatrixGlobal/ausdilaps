@@ -67,6 +67,7 @@ const sizingSources = sourcesFromSizing(sizing);
 eq(sizingSources.map((s) => s.seed.product), ["Residential House", "Residential Unit", "Residential House", "Residential House"], "sizing products");
 eq(sizingSources.map((s) => s.seed.internalMetres), ["187", "90", "187", ""], "dwelling → internal m²");
 eq(sizingSources.map((s) => s.seed.externalMetres), ["", "", "", ""], "external stays blank");
+eq(sizingSources.map((s) => s.seed.levels), ["2", "2", "2", "2"], "storey estimate seeds Levels");
 eq([...initialDeselected(sizingSources)], ["sizing:2", "sizing:3"], "non-ok rows start unticked");
 const sizingRows = rowsFrom(sizingSources, {}, initialDeselected(sizingSources));
 eq(sizingRows.map((r) => r.number), [1, 2, null, null], "numbering skips unticked rows");
@@ -88,6 +89,7 @@ eq(markupSources.map((s) => s.seed.externalMetres), ["", "", "600", ""], "orange
 eq(markupSources[2].seed.street, "Council assets", "orange street default");
 eq(markupSources.map((s) => s.seed.product), ["Standard Internal", "Standard Internal", "External GPS", "Standard Internal"], "colour → product");
 eq(rowsFrom(markupSources, {}, new Set()).length, 3, "excluded layers are dropped");
+eq(markupSources.map((s) => s.seed.levels), ["", "", "", ""], "a markup seeds no levels");
 
 // ── Payload ─────────────────────────────────────────────────────────────────────────────
 const pricebook = new Map(SHEET_PRODUCTS.map((p) => [p.product2Id, `pbe-${p.product2Id}`]));
@@ -102,7 +104,7 @@ const { records, refused } = buildQuoteLineItems(
     { key: "e", values: draft({ product: "Mobilisation" }) },
     { key: "f", values: draft({ quantity: "0" }) },
     { key: "g", values: draft({ product: "Video Roadways" }) },
-    { key: "h", values: draft({ assetType: "Other", internalMetres: "50", externalMetres: "20" }) },
+    { key: "h", values: draft({ assetType: "Other", internalMetres: "50", externalMetres: "20", levels: "" }) },
   ],
   { quoteId: "0Q0TEST", pricebookEntryByProduct2Id: pricebook }
 );
@@ -121,6 +123,7 @@ eq(a.QuoteId, "0Q0TEST", "QuoteId");
 eq(a.PricebookEntryId, `pbe-${productByName("Residential House")!.product2Id}`, "PBE from the Quote's book");
 eq(a.Product2Id, "01t96000000GNqD", "Product2Id");
 eq(a.Property_Type__c, "Commercial", "asset type API value");
+eq(a.Levels__c, 2, "Levels__c from the sheet's Levels cell");
 eq(a.Internal_M2__c, 187, "internal m² rounded");
 eq(a.Internal_M2_Rate__c, 0.8, "internal rate currency");
 if ("External_M2__c" in a || "External_Rate__c" in a) fail("blank external must not send external fields");
@@ -132,6 +135,7 @@ eq(b.Property_Type__c, "External_GPS", "External GPS API value");
 if ("Internal_M2__c" in b) fail("blank internal must not send internal fields");
 eq(h.Property_Type__c, "Other", "asset type override wins");
 eq([h.Internal_M2__c, h.External_M2__c], [50, 20], "both measurements on one line");
+if ("Levels__c" in h) fail("blank Levels must not be sent");
 eq(rowReason(draft({})), null, "a default sizing row is sendable");
 
 if (failures) {

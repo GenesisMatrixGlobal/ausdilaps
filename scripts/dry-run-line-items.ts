@@ -86,14 +86,14 @@ function printSheet(sources: LineItemSource[], rows: LineItemRow[]) {
   console.log("\nQUOTE LINE ITEMS");
   console.log(
     `  ${pad("", 2)}${pad("ITEM", 14)}${pad("STREET", 24)}${pad("SUBURB", 14)}` +
-      `${pad("PRODUCT", 26)}${pad("ASSET TYPE", 34)}${pad("INT m²", 8)}${pad("EXT m²", 8)}` +
+      `${pad("PRODUCT", 26)}${pad("ASSET TYPE", 34)}${pad("LVL", 5)}${pad("INT m²", 8)}${pad("EXT m²", 8)}` +
       `${pad("INT $", 7)}${pad("EXT $", 7)}QTY`
   );
   for (const r of rows) {
     const v = r.values;
     console.log(
       `  ${pad(r.selected ? "☑" : "☐", 2)}${pad(`${r.number ?? "—"} · ${r.source.label}`, 14)}${pad(v.street || "—", 24)}` +
-        `${pad(v.suburb || "—", 14)}${pad(v.product || "— none —", 26)}${pad(assetTypeFor(v) || "—", 34)}` +
+        `${pad(v.suburb || "—", 14)}${pad(v.product || "— none —", 26)}${pad(assetTypeFor(v) || "—", 34)}${pad(v.levels || "—", 5)}` +
         `${pad(v.internalMetres || "—", 8)}${pad(v.externalMetres || "—", 8)}` +
         `${pad(v.internalRate, 7)}${pad(v.externalRate, 7)}${v.quantity}`
     );

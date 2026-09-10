@@ -46,6 +46,7 @@ export function sourceFromLayer(layer: MarkupLayer): LineItemSource {
       street: layer.street ?? (layer.color === "orange" ? "Council assets" : ""),
       internalMetres: layer.color === "blue" ? area : "",
       externalMetres: layer.color === "orange" ? area : "",
+      levels: "",
     },
     included: layer.included,
     startSelected: true,

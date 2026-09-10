@@ -30,6 +30,8 @@ const rowSchema = z.object({
     internalRate: cell,
     externalRate: cell,
     quantity: cell,
+    // Defaulted so a sheet that was open before the column shipped still syncs.
+    levels: cell.default(""),
   }),
 });
 

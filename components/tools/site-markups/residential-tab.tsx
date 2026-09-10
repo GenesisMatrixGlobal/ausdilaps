@@ -352,7 +352,20 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
     setFitRequest({ key: crypto.randomUUID(), rings: rings.filter((r) => r.length >= 3) });
   }
 
-  function handleAddressSelect(parsed: PlaceSelection) {
+  // A callback rather than a plain function because applyTarget below memoises over it — and
+  // it now reads `multi`, so it has to be a dependency instead of a closure that could go stale.
+  const handleAddressSelect = useCallback((parsed: PlaceSelection) => {
+    if (multi) {
+      // Multi mode: a searched address joins the list rather than becoming THE address.
+      const line = [parsed.street, [parsed.suburb, parsed.state, parsed.postcode].filter(Boolean).join(" ")]
+        .filter(Boolean)
+        .join(", ");
+      if (!line) return;
+      setAddressBlock((prev) => (prev.trim() ? `${prev.replace(/\s+$/, "")}\n${line}` : line));
+      setAddressError(null);
+      setAddressNote(null);
+      return;
+    }
     // Kept only so Street View can be opened on the typed address before a snapshot exists.
     // Nothing else uses it: the cadastre lookup goes by address text and the map frames itself
     // from the resolved rings, so a Places centroid has no say in either.
@@ -371,7 +384,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
     } else {
       setAddressError(`This tool doesn't support ${parsed.state || "that state"} yet — enter the address manually.`);
     }
-  }
+  }, [multi]);
 
   /**
    * A pasted Google Maps link or `lat, lng` pair, handled the same way the Measure tab handles
@@ -430,7 +443,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
     }
     handleAddressSelect(json);
     return true;
-  }, []);
+  }, [handleAddressSelect]);
 
   const handlePaste = useCallback(
     async (text: string): Promise<boolean | string> => {
@@ -733,7 +746,18 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
 
       {multi ? (
         <div className="mt-4 rounded-xl border border-ad-border bg-white p-5">
-          <label className="block text-sm font-medium text-ad-ink">
+          {/* The same search box as Building Markup, adding to the list instead of filling a
+              form — so one-off addresses don't have to be typed into the block by hand. */}
+          <p className="text-sm font-medium text-ad-ink">Add an address</p>
+          <AddressSearch
+            onSelect={handleAddressSelect}
+            onPastedLocation={handlePaste}
+            clearOnSelect
+            placeholder="Search an address to add it to the list, or paste a Google Maps link…"
+          />
+          {addressNote && <p className="mt-1 text-xs text-ad-muted">{addressNote}</p>}
+          {addressError && <p className="mt-1 text-xs text-ad-orange">{addressError}</p>}
+          <label className="mt-4 block text-sm font-medium text-ad-ink">
             Addresses
             <textarea
               value={addressBlock}
@@ -914,6 +938,9 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
           }}
           fallbackName={`${slugify(street)}-${slugify(suburb)}-standard-markup.png`}
           disabled={!result}
+          // The ticked sheet rows: the same paste of a Quote files the PNG AND creates the
+          // line items, so there is one Sync surface on the page rather than two.
+          lineItems={{ rows }}
         />
         {error && <span className="text-sm text-ad-orange">{error}</span>}
       </div>
@@ -1058,7 +1085,8 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
           onToggleAll={toggleAllRows}
           breakout
           emptyText="Nothing included on the markup yet."
-          sync={{}}
+          // No footer here: the toolbar's Sync To Salesforce creates the line items along with
+          // the PNG. Bulk Property Sizing, which has no image, keeps the footer.
         />
         </>
       )}

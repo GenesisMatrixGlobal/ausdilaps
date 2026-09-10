@@ -120,6 +120,7 @@ export function QuoteForm() {
     handleSubmit,
     reset,
     watch,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     // Every field needs a default. react-hook-form only registers what is rendered,
@@ -193,7 +194,20 @@ export function QuoteForm() {
         reset();
       } else {
         setStatus("error");
-        setServerError(data.error ?? "Something went wrong. Please try again or call us.");
+        // The route answers a validation failure with per-field `errors`, but this
+        // only ever read `error` (singular) — so a rejected field showed as a generic
+        // "something went wrong" with no clue which one. Put them back on the fields.
+        const fieldErrors = data.errors as Record<string, string[]> | undefined;
+        if (fieldErrors) {
+          for (const [field, messages] of Object.entries(fieldErrors)) {
+            if (messages?.[0]) {
+              setError(field as keyof FormValues, { type: "server", message: messages[0] });
+            }
+          }
+          setServerError("Please check the highlighted fields and try again.");
+        } else {
+          setServerError(data.error ?? "Something went wrong. Please try again or call us.");
+        }
       }
     } catch (e) {
       // This catch covers the whole body, not just the fetch — a client-side throw

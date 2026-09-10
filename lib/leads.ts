@@ -28,6 +28,13 @@ export type AssetCountRange = (typeof ASSET_COUNT_RANGES)[number];
  *  fields; the other three are lighter-weight enquiries. All branch-specific
  *  fields stay optional server-side since the client only shows/requires the
  *  ones for the selected branch. */
+/** An unchosen `<select>` posts "", which `z.enum().optional()` rejects outright —
+ *  optional accepts `undefined`, not the empty string. Every optional dropdown on the
+ *  form goes through this, so "not answered" is accepted from any client, including a
+ *  cached bundle still sending "". */
+const optionalEnum = <T extends readonly [string, ...string[]]>(values: T) =>
+  z.preprocess((v) => (v === "" ? undefined : v), z.enum(values).optional());
+
 export const quoteSchema = z.object({
   inquiryType: z.enum(INQUIRY_TYPES),
   name: z.string().trim().min(2, "Please enter your name"),
@@ -38,9 +45,9 @@ export const quoteSchema = z.object({
   projectName: z.string().trim().optional().default(""),
   projectLocation: z.string().trim().optional().default(""),
   /** approx. number of assets (adjoining properties, culverts, etc.) requiring inspection */
-  assetCount: z.enum(ASSET_COUNT_RANGES).optional(),
+  assetCount: optionalEnum(ASSET_COUNT_RANGES),
   // "I Received An Access Letter" branch
-  propertyRole: z.enum(PROPERTY_ROLES).optional(),
+  propertyRole: optionalEnum(PROPERTY_ROLES),
   // "Report Inquiry" / "General Inquiry" branches
   projectNumber: z.string().trim().optional().default(""),
   documentId: z.string().trim().optional().default(""),

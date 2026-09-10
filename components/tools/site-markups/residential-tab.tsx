@@ -111,6 +111,9 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
    *  kinds of line — a job site with its neighbours, a listed property on its own — sit in one
    *  box and the server can tell them apart. A pasted list never gets the marker. */
   const [preselectSurrounding, setPreselectSurrounding] = useState(true);
+  /** Multi mode: the address card folds away to one line once a markup exists — most jobs are
+   *  a single address, and the list is in the way while the quote is being worked. */
+  const [addressesOpen, setAddressesOpen] = useState(true);
   const [street, setStreet] = useState("");
   const [suburb, setSuburb] = useState("");
   const [postcode, setPostcode] = useState("");
@@ -559,6 +562,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
       frameGeometry([], json.parcels, new Set());
       setPicking(false);
       setPickMessage(null);
+      setAddressesOpen(false);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -744,18 +748,45 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
 
   return (
     <div className="mt-8">
-      <p className="text-ad-muted">
-        {multi
-          ? "Paste a list of addresses — straight from Excel — and every one becomes a lot on one markup, with a sheet row each. No project site: this is a street survey, not a job site."
-          : "Snapshot an address with its surrounding lots highlighted in blue, auto-scoped to the property."}
-      </p>
+      {!multi && (
+        <p className="text-ad-muted">
+          Snapshot an address with its surrounding lots highlighted in blue, auto-scoped to the property.
+        </p>
+      )}
 
-      {multi ? (
+      {multi && result && !addressesOpen ? (
+        // Folded: one line, and a + to get the list back. The markup and the sheet are the work
+        // now; the addresses that made them are a detail.
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-ad-border bg-white px-4 py-2.5">
+          <p className="text-sm text-ad-muted">
+            <span className="font-medium text-ad-ink">{addressBlock.split(/\r?\n/).filter((l) => l.trim()).length}</span>{" "}
+            address{addressBlock.split(/\r?\n/).filter((l) => l.trim()).length === 1 ? "" : "es"} on this markup
+          </p>
+          <button
+            type="button"
+            onClick={() => setAddressesOpen(true)}
+            aria-label="Add or edit addresses"
+            title="Add or edit addresses"
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-ad-border text-lg leading-none text-ad-ink hover:bg-ad-surface"
+          >
+            +
+          </button>
+        </div>
+      ) : multi ? (
         <div className="mt-4 rounded-xl border border-ad-border bg-white p-5">
           {/* The same search box as Building Markup, adding to the list instead of filling a
-              form — so one-off addresses don't have to be typed into the block by hand. */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm font-medium text-ad-ink">Add an address</p>
+              form — so one-off addresses don't have to be typed into the block by hand. No
+              labels: the placeholders say it, and the switch shares the row so the bar isn't a
+              full-width runway. */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="min-w-[18rem] flex-1">
+              <AddressSearch
+                onSelect={handleAddressSelect}
+                onPastedLocation={handlePaste}
+                clearOnSelect
+                placeholder="Add an address, or paste a Google Maps link…"
+              />
+            </div>
             {/* A switch, on by default: the searched address is usually a job site, and a job
                 site is quoted with its neighbours. Pasted lists are unaffected either way. */}
             <button
@@ -782,29 +813,25 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
               Pre-select surrounding assets
             </button>
           </div>
-          <AddressSearch
-            onSelect={handleAddressSelect}
-            onPastedLocation={handlePaste}
-            clearOnSelect
-            placeholder="Search an address to add it to the list, or paste a Google Maps link…"
-          />
           {addressNote && <p className="mt-1 text-xs text-ad-muted">{addressNote}</p>}
           {addressError && <p className="mt-1 text-xs text-ad-orange">{addressError}</p>}
-          <label className="mt-4 block text-sm font-medium text-ad-ink">
-            Addresses
-            <textarea
-              value={addressBlock}
-              onChange={(e) => setAddressBlock(e.target.value)}
-              rows={8}
-              placeholder={"One per line, e.g.\n42\tEastern Ave\tDover Heights NSW 2030\n11 Craig Ave, Vaucluse NSW 2030"}
-              className="mt-1 w-full resize-y rounded-lg border border-ad-border p-3 font-mono text-sm font-normal text-ad-ink outline-none focus:border-ad-steel"
-            />
-          </label>
-          <p className="mt-1 text-xs text-ad-muted">
-            Up to 60 addresses. Each is looked up on its own, so a row that doesn&apos;t resolve is
-            reported, not silently dropped. A line starting with <span className="font-mono">+</span> also
-            brings in the lots adjoining that address.
-          </p>
+          <textarea
+            value={addressBlock}
+            onChange={(e) => setAddressBlock(e.target.value)}
+            rows={addressBlock.split(/\r?\n/).length > 4 ? 8 : 4}
+            aria-label="Addresses"
+            placeholder={"Or paste addresses, one per line — straight from Excel. A line starting with + also brings in its adjoining lots."}
+            className="mt-3 w-full resize-y rounded-lg border border-ad-border p-3 font-mono text-sm text-ad-ink outline-none focus:border-ad-steel"
+          />
+          {result && (
+            <button
+              type="button"
+              onClick={() => setAddressesOpen(false)}
+              className="mt-2 text-xs text-ad-steel underline underline-offset-2 hover:text-ad-ink"
+            >
+              Hide addresses
+            </button>
+          )}
         </div>
       ) : (
       <div className="mt-4 grid gap-4 rounded-xl border border-ad-border bg-white p-5 sm:grid-cols-2">

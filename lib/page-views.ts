@@ -18,9 +18,14 @@ export const SAMPLES_VIEW_PATH = "/dilapidation-reports/samples";
 
 /** Things that are not a person reading the page. Crawlers, link previewers, uptime
  *  checks, Vercel's own screenshot bot, Lighthouse, and headless browsers (which is what
- *  our own tests drive — they must not count either). Case-insensitive. */
+ *  our own tests drive — they must not count either). Case-insensitive.
+ *
+ *  `ms-office` / `Mozilla/4.0`: within twenty minutes of the table existing, 53 of its 56
+ *  rows were `Mozilla/4.0 (compatible; ms-office; MSOffice 16)` — Outlook's Safe Links
+ *  scanner opening the samples URL out of every email that carries it. No modern browser
+ *  identifies as Mozilla/4.0, so the whole prefix is treated as automation. */
 const BOT_UA =
-  /bot|crawl|spider|slurp|preview|fetch|monitor|lighthouse|pagespeed|headless|vercel|curl|wget|python|node|go-http|axios|okhttp/i;
+  /bot|crawl|spider|slurp|preview|fetch|monitor|lighthouse|pagespeed|headless|vercel|curl|wget|python|node|go-http|axios|okhttp|ms-office|msoffice|^Mozilla\/4\.0|electron|claude/i;
 
 export function looksLikeBot(userAgent: string | null | undefined): boolean {
   if (!userAgent) return true;

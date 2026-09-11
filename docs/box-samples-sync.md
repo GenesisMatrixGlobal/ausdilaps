@@ -44,6 +44,37 @@ underscores, and `_Redacted` → "(redacted)". So
 `AusDilaps Sample 2026 - Hospital External.pdf` shows as **Hospital External ·
 PDF · 8.3 MB · 2026**. Name files for the reader and the page follows.
 
+## The access gate (2026-09-11)
+
+The library sits behind a **courtesy gate** — a speed bump against lazy crawling and
+bulk download, not a secret. `lib/samples-access.ts` + `samplesGate()` in `proxy.ts`.
+
+- **Two static pages, one URL.** `/dilapidation-reports/samples` is the LOCKED teaser
+  and the only route Google sees. `/dilapidation-reports/samples/library` is the real
+  list — noindex, not in the sitemap, disallowed in robots. The middleware REWRITES a
+  browser holding the cookie to the library (URL unchanged) and redirects a direct hit
+  on the library without the cookie back to the teaser. Both stay ISR pages: neither
+  reads cookies or searchParams, so the Box-outage protection is untouched.
+- **The code travels in the URL.** Quotes and emails link to
+  `https://ausdilaps.com.au/samples?code=XXXX` (the `/samples` redirect keeps the query).
+  The middleware validates it, sets the `ad_samples` cookie (httpOnly, six months, a
+  SHA-256 of the code — never the code) and redirects to the clean URL. Codes are
+  case-insensitive and dashes are optional. A wrong code redirects with `?error=code`,
+  which the unlock form reads in the browser.
+- **Email fallback.** No code → name + work email → `POST /api/samples/unlock` records a
+  `leads` row (`routing = 'samples-unlock'`), emails `SALES_NOTIFY_EMAIL`/`ADMIN_EMAIL`,
+  sets the same cookie and redirects. Best effort: the visitor gets in even if the row or
+  the email fails. Honeypot on `company_website`.
+- **`Public` subfolder = teasers.** Anything in a Box subfolder named `Public` shows to
+  everyone, unlocked. Other categories appear on the locked page as a name and a count,
+  no links. Drop files in `Public` to decide what cold visitors and Google see.
+- **`SAMPLES_ACCESS_CODE`** (Vercel Production + Preview, and `.env.local`). Comma-separate
+  two codes during a rotation so quotes already out keep working. **Unset = no gate** —
+  fail open, because a missing variable must never hide the library from clients.
+- Test the whole flow headlessly against a dev server with the script in the session
+  scratchpad pattern: locked → library-direct redirect → wrong code → right code →
+  revisit → email unlock. Every step was green on 2026-09-11.
+
 **The page is a library, not a landing page.** People opening samples mostly
 already hold a quote, so the page carries no "Request a Quote" button of its own
 (the site header still does) — just phone and email in the hero and a quiet

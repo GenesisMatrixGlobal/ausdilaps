@@ -8,13 +8,25 @@
 //      real page instead of a redirect.
 //   3. Send /staff/<department> to its Tools tab. This HAS to happen here rather
 //      than in a page — see departmentIndexRedirect() below.
+//   4. The samples gate — see samplesGate() below. Lives here and not in the page so
+//      both samples routes stay static ISR pages.
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createProxyClient, supabaseConfigured } from "@/lib/supabase/proxy";
 import { isDepartmentSlug } from "@/lib/departments";
+import {
+  SAMPLES_COOKIE,
+  SAMPLES_COOKIE_OPTIONS,
+  SAMPLES_LIBRARY_PATH,
+  SAMPLES_PATH,
+  cookieValueFor,
+  gateEnabled,
+  isValidCode,
+  isValidCookie,
+} from "@/lib/samples-access";
 
 export const config = {
-  matcher: ["/staff/:path*", "/admin/:path*"],
+  matcher: ["/staff/:path*", "/admin/:path*", "/dilapidation-reports/samples/:path*"],
 };
 
 /** Reachable without a session — the login form and the magic-link landing. */
@@ -22,6 +34,11 @@ const PUBLIC_PATHS = ["/staff/login", "/staff/auth/callback", "/staff/no-access"
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  if (pathname === SAMPLES_PATH || pathname.startsWith(`${SAMPLES_PATH}/`)) {
+    return samplesGate(req);
+  }
+
   const res = NextResponse.next({ request: req });
 
   // Local-only sign-in bypass — matches previewUser() in lib/auth/session.ts. Both are
@@ -79,6 +96,51 @@ function departmentIndexRedirect(req: NextRequest): NextResponse | null {
   const url = req.nextUrl.clone();
   url.pathname = `/staff/${segments[1]}/tools`;
   return NextResponse.redirect(url);
+}
+
+/** The access gate on the sample report library (lib/samples-access.ts).
+ *
+ *  Two static pages, one URL. /dilapidation-reports/samples is the locked teaser and the
+ *  only route Google sees; /dilapidation-reports/samples/library is the real list. A
+ *  browser holding the cookie is REWRITTEN to the library (URL unchanged), one without it
+ *  that hits the library directly is sent back. `?code=` — how every quote links here —
+ *  is validated, turned into the cookie, and redirected to the clean URL, so the code never
+ *  sits in the address bar to be shared on. A wrong code redirects with `?error=code`,
+ *  which the page's unlock form reads in the browser (the server page never reads
+ *  searchParams — that would make it dynamic and lose the ISR cache).
+ *
+ *  No codes configured = no gate: everything rewrites to the library. Fail open, because a
+ *  missing env var must not hide the library from the clients it exists for. */
+async function samplesGate(req: NextRequest): Promise<NextResponse> {
+  const url = req.nextUrl;
+  const clean = new URL(SAMPLES_PATH, req.url);
+
+  if (!gateEnabled()) {
+    return url.pathname === SAMPLES_LIBRARY_PATH
+      ? NextResponse.next()
+      : NextResponse.rewrite(new URL(SAMPLES_LIBRARY_PATH, req.url));
+  }
+
+  const code = url.searchParams.get("code");
+  if (code !== null) {
+    if (isValidCode(code)) {
+      const res = NextResponse.redirect(clean, 303);
+      res.cookies.set(SAMPLES_COOKIE, await cookieValueFor(code), SAMPLES_COOKIE_OPTIONS);
+      return res;
+    }
+    clean.searchParams.set("error", "code");
+    return NextResponse.redirect(clean, 303);
+  }
+
+  const unlocked = await isValidCookie(req.cookies.get(SAMPLES_COOKIE)?.value);
+
+  if (url.pathname === SAMPLES_LIBRARY_PATH) {
+    return unlocked ? NextResponse.next() : NextResponse.redirect(clean, 303);
+  }
+  if (url.pathname === SAMPLES_PATH && unlocked) {
+    return NextResponse.rewrite(new URL(SAMPLES_LIBRARY_PATH, req.url));
+  }
+  return NextResponse.next();
 }
 
 function loginUrl(req: NextRequest, next: string): URL {

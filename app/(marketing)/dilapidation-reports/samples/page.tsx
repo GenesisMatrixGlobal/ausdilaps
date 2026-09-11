@@ -1,21 +1,20 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-import { Container } from "@/components/marketing/container";
-import { Breadcrumbs } from "@/components/marketing/breadcrumbs";
 import { FaqSection } from "@/components/marketing/faq-accordion";
 import { SamplesLibrary } from "@/components/marketing/samples-library";
+import {
+  SamplesContactBand,
+  SamplesHeader,
+  SAMPLES_CRUMBS,
+} from "@/components/marketing/samples-page-parts";
+import { SamplesUnlock } from "@/components/marketing/samples-unlock";
 import { JsonLd } from "@/components/seo/json-ld";
 import { faqPageSchema, breadcrumbSchema } from "@/lib/seo";
-import { SITE } from "@/lib/site";
-import type { FaqItem } from "@/data/faq";
-import { listBoxFolderCategories, type BoxCategory } from "@/lib/box";
-import { orderCategories } from "@/lib/samples";
-
-const CRUMBS = [
-  { name: "Home", path: "/" },
-  { name: "Dilapidation Reports", path: "/dilapidation-reports" },
-  { name: "Samples", path: "/dilapidation-reports/samples" },
-];
+import {
+  getSampleCategories,
+  isPublicCategory,
+  SAMPLES_FAQ,
+  SAMPLES_REVALIDATE,
+} from "@/lib/samples-data";
 
 export const metadata: Metadata = {
   title: "Sample Dilapidation Reports | Examples, Formats & What's Included",
@@ -24,120 +23,79 @@ export const metadata: Metadata = {
   alternates: { canonical: "/dilapidation-reports/samples" },
 };
 
-// Live-synced from a Box folder every 30 min (see lib/box.ts + docs/box-samples-sync.md).
-// Drop a file into a category subfolder in Box and it shows up here on the next
-// revalidation — no redeploy needed. Box is the ONLY source: there is deliberately
-// no static fallback, because the old one linked PDFs on the WordPress origin and
-// those 404 the moment ausdilaps.com.au points at Vercel. If Box can't be read the
-// page 404s instead of showing dead links, and ISR keeps serving the last good
-// render, so a transient Box outage never reaches a visitor.
+// This is the LOCKED view and the only one Google sees. A visitor with the access cookie
+// never renders it — proxy.ts rewrites them to ./library. It stays a static ISR page: it
+// reads neither cookies nor searchParams (the unlock form's error message is read from the
+// URL in the browser), so a Box outage still serves the last good render.
 //
-// This page is a LIBRARY, not a landing page. Whoever is here most likely already has a
-// quote and wants to see what the deliverable looks like — so there is no "Request a
-// Quote" button on the page itself (the site header still carries one), just phone and
-// email for anyone who can't find the sample they need.
-const BOX_SAMPLES_FOLDER_ID = process.env.BOX_SAMPLES_FOLDER_ID ?? "405950982690";
-export const revalidate = 1800;
-
-async function getCategories(): Promise<BoxCategory[]> {
-  let live: BoxCategory[];
-  try {
-    live = await listBoxFolderCategories(BOX_SAMPLES_FOLDER_ID);
-  } catch (e) {
-    // Next signals its own control flow by throwing (dynamic-rendering bailouts,
-    // notFound(), redirect()) and tags those errors with `digest`. Swallowing one
-    // would silently turn a framework signal into a hard 404, so re-throw it and
-    // only treat a genuine Box failure as "no samples".
-    if (e && typeof e === "object" && "digest" in e) throw e;
-    console.error("[samples] Box fetch failed:", e);
-    notFound();
-  }
-  // Reachable but empty — folder cleared, or every file failed to resolve a link.
-  if (live.length === 0) {
-    console.error("[samples] Box returned no categories");
-    notFound();
-  }
-  return live;
-}
-
-const SAMPLES_FAQ: FaqItem[] = [
-  {
-    q: "Can I see a sample dilapidation report?",
-    a: "Yes. We publish real sample reports across every capture type — residential and commercial pre/post-construction surveys, GPS and council-asset surveys, roadway video, tunnels, drone, culvert, and engineering reports (DOA, SIA, DCA). Browse them above.",
-  },
-  {
-    q: "Is there a dilapidation report template or checklist?",
-    a: "Every AusDilaps report follows a consistent, AS 4349.0-compliant structure — a description of each property, existing damage and defects recorded with severity and location, location-referenced photography, and a summary of findings with engineer sign-off. Rather than a blank template, our samples show the finished standard.",
-  },
-  {
-    q: "What's included in a dilapidation report?",
-    a: "A detailed description of each inspected structure, all existing damage and defects (cracks, settling, movement, leaks, wear), high-resolution geo-referenced photographic and video records, repair or maintenance recommendations where issues are found, and a clear summary signed off by our engineers.",
-  },
-  {
-    q: "Can I get a sample for my specific project type?",
-    a: "Yes — request the full sample pack and tell us your project type, and we'll send the most relevant examples along with our capability statement.",
-  },
-];
+// What it shows: anything in Box's "Public" subfolder, fully open; every other category
+// as a name and a count with no links; and the two ways in — the code from a quote, or an
+// email. People opening samples usually already hold a quote, so there is no "Request a
+// Quote" button on the page itself (the site header still carries one).
+export const revalidate = SAMPLES_REVALIDATE;
 
 export default async function SamplesPage() {
-  const categories = orderCategories(await getCategories());
-  const phoneHref = `tel:${SITE.phone.replace(/\s/g, "")}`;
+  const categories = await getSampleCategories();
+  const open = categories.filter(isPublicCategory);
+  const locked = categories.filter((c) => !isPublicCategory(c));
+  const lockedCount = locked.reduce((n, c) => n + c.items.length, 0);
 
   return (
     <>
-      <JsonLd data={[faqPageSchema(SAMPLES_FAQ), breadcrumbSchema(CRUMBS)]} />
+      <JsonLd data={[faqPageSchema(SAMPLES_FAQ), breadcrumbSchema(SAMPLES_CRUMBS)]} />
 
-      {/* Slim header on purpose (Rhys, 2026-09-11): breadcrumbs, a heading, one contact line,
-          then the list. No eyebrow, no intro paragraph, no PageHero — people are here to open a
-          file, not to read about it. */}
-      <section className="pt-10 lg:pt-14">
-        <Container className="max-w-4xl">
-          <Breadcrumbs crumbs={CRUMBS} />
-          <div className="mt-6 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-            <h1 className="font-heading text-3xl font-semibold tracking-tight text-ad-ink sm:text-4xl">
-              Sample reports
-            </h1>
-            <p className="text-sm text-ad-muted">
-              Questions about your quote?{" "}
-              <a href={phoneHref} className="font-medium text-ad-ink underline-offset-4 hover:underline">
-                {SITE.phone}
-              </a>{" "}
-              ·{" "}
-              <a
-                href={`mailto:${SITE.email}`}
-                className="font-medium text-ad-ink underline-offset-4 hover:underline"
+      <SamplesHeader>
+        <SamplesUnlock />
+
+        {open.length > 0 && (
+          <div className="mt-10">
+            <SamplesLibrary categories={open} />
+          </div>
+        )}
+
+        {locked.length > 0 && (
+          <section className="mt-10" aria-labelledby="locked-heading">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2
+                id="locked-heading"
+                className="font-heading text-lg font-semibold tracking-tight text-ad-ink"
               >
-                {SITE.email}
-              </a>
-            </p>
-          </div>
-          <div className="mt-8 pb-16 lg:pb-20">
-            <SamplesLibrary categories={categories} />
-          </div>
-        </Container>
-      </section>
+                In the library
+              </h2>
+              <span className="text-sm text-ad-muted">
+                {lockedCount} {lockedCount === 1 ? "file" : "files"}
+              </span>
+            </div>
+            <ul className="mt-3 divide-y divide-ad-border rounded-xl border border-ad-border bg-white">
+              {locked.map((c) => (
+                <li key={c.name} className="flex items-center gap-3 px-4 py-2.5 sm:gap-4 sm:px-5">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-ad-surface text-ad-muted">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                    >
+                      <rect x="5" y="10.5" width="14" height="10" rx="1.5" />
+                      <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" />
+                    </svg>
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-heading text-[0.95rem] font-medium text-ad-ink">
+                    {c.name}
+                  </span>
+                  <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-ad-muted">
+                    {c.items.length} {c.items.length === 1 ? "file" : "files"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </SamplesHeader>
 
       <FaqSection items={SAMPLES_FAQ} heading="Sample reports, answered." seeAllHref="/faq" />
-
-      {/* Quiet contact band — no orange quote button. Sample readers usually have a quote. */}
-      <section className="bg-ad-navy-deep py-16 text-ad-on-dark lg:py-20">
-        <Container className="text-center">
-          <h2 className="mx-auto max-w-2xl text-balance font-heading text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-            Can&rsquo;t find the sample you need?
-          </h2>
-          <p className="mx-auto mt-4 max-w-xl text-ad-on-dark-muted">
-            Tell us your project type and we&rsquo;ll send the closest examples.
-          </p>
-          <p className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-base font-medium">
-            <a href={phoneHref} className="text-white hover:text-ad-accent-2">
-              {SITE.phone}
-            </a>
-            <a href={`mailto:${SITE.email}`} className="text-white hover:text-ad-accent-2">
-              {SITE.email}
-            </a>
-          </p>
-        </Container>
-      </section>
+      <SamplesContactBand />
     </>
   );
 }

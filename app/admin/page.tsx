@@ -6,6 +6,7 @@ import { StatTiles, type Stat } from "@/components/staff/stat-tiles";
 import { Sparkline } from "@/components/staff/sparkline";
 import { ComingSoon } from "@/components/staff/coming-soon";
 import { ASSET_COUNT_RANGES } from "@/lib/leads";
+import type { SamplesStats } from "@/lib/page-views";
 
 /**
  * The GM's dashboard.
@@ -171,6 +172,27 @@ function ScoreRow({ label, scores, error }: {
   );
 }
 
+/** Visits to the sample report library this week (migration 0015, lib/page-views.ts).
+ *  Bots, prefetches and our own headless tests are filtered before a row is written, so
+ *  this is people. Unlocks are the code-from-a-quote and the email fallback combined. */
+function samplesTile(s: SamplesStats): Stat {
+  if (s.unavailable) {
+    return { label: "Samples viewed · 7d", value: "—", sub: s.unavailable, tone: "warn" };
+  }
+  const unlocks = s.unlocksCode7d + s.unlocksEmail7d;
+  const delta = s.views7d - s.viewsPrev7d;
+  const parts = [
+    unlocks === 0 ? "no unlocks" : `${unlocks} unlock${unlocks === 1 ? "" : "s"}`,
+    s.views7d === 0 && s.viewsPrev7d === 0 ? null : `${delta >= 0 ? "+" : ""}${delta} vs last week`,
+  ].filter(Boolean);
+  return {
+    label: "Samples viewed · 7d",
+    value: s.views7d,
+    sub: parts.join(" · "),
+    tone: delta > 0 ? "ok" : delta < 0 ? "warn" : "default",
+  };
+}
+
 export default async function AdminHomePage() {
   await requireAdmin("/admin");
 
@@ -204,6 +226,7 @@ export default async function AdminHomePage() {
           : `last one ${e.daysSinceLast} day${e.daysSinceLast === 1 ? "" : "s"} ago`,
       tone: e.daysSinceLast !== null && e.daysSinceLast >= 14 ? "warn" : "default",
     },
+    samplesTile(d.samples),
     { label: "Tool uses · 7d", value: tools.usedThisWeek, sub: `${tools.usedLast30} in the last 30 days` },
     {
       label: "Staff active · 7d",

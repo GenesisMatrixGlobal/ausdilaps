@@ -2,6 +2,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadToolUsage } from "@/lib/tools/usage";
+import { loadSamplesStats, type SamplesStats } from "@/lib/page-views";
 import { GAME_SLUGS } from "@/lib/tools/registry";
 import { loadPageSpeed, PAGESPEED_TARGETS, type PageSpeedScore } from "@/lib/pagespeed";
 import { ASSET_COUNT_RANGES } from "@/lib/leads";
@@ -64,7 +65,14 @@ type LeadRow = {
   tier: string | null;
   asset_count: string | null;
   emailed: boolean | null;
+  routing: string | null;
 };
+
+/** Rows written by the samples gate's email fallback (app/api/samples/unlock). A name and
+ *  email left to open the library is a warm contact, not an enquiry — counting it here
+ *  would inflate the figure the moment the gate went live. It is reported on the samples
+ *  tile instead. */
+const SAMPLES_UNLOCK_ROUTING = "samples-unlock";
 
 function tally(
   rows: LeadRow[],
@@ -94,20 +102,23 @@ export async function loadDashboard(origin: string) {
     const db = createAdminClient();
     const since90 = new Date(now - 90 * DAY).toISOString();
 
-    const [leadsRes, staffRes, usage, speed] = await Promise.all([
+    const [leadsRes, staffRes, usage, speed, samples] = await Promise.all([
       db
         .from("leads")
         // Only the columns still rendered — inquiry_type, source_page and salesforce_synced
         // went with the panels that used them.
-        .select("created_at, tier, asset_count, emailed")
+        .select("created_at, tier, asset_count, emailed, routing")
         .gte("created_at", since90)
         .order("created_at", { ascending: false }),
       db.from("profiles").select("is_active, last_seen_at"),
       loadToolUsage(),
       cachedPageSpeed(origin).catch(() => [] as PageSpeedScore[]),
+      loadSamplesStats(),
     ]);
 
-    const leads = (leadsRes.data ?? []) as LeadRow[];
+    const leads = ((leadsRes.data ?? []) as LeadRow[]).filter(
+      (l) => l.routing !== SAMPLES_UNLOCK_ROUTING
+    );
     const staff = staffRes.data ?? [];
 
     const inWindow = (from: number, to: number) =>
@@ -222,6 +233,7 @@ export async function loadDashboard(origin: string) {
         byTool: usage,
       },
       pageSpeed: speed,
+      samples,
     };
   } catch (e) {
     const message = (e as Error).message;
@@ -256,5 +268,14 @@ function empty(unavailable: string, now: number) {
       byTool: new Map<string, { toolSlug: string; last30Days: number; last7Days: number; lastUsedAt: string | null }>(),
     },
     pageSpeed: [] as PageSpeedScore[],
+    samples: {
+      views7d: 0,
+      viewsPrev7d: 0,
+      views30d: 0,
+      libraryViews7d: 0,
+      unlocksCode7d: 0,
+      unlocksEmail7d: 0,
+      unavailable,
+    } as SamplesStats,
   };
 }

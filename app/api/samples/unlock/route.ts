@@ -2,7 +2,7 @@
 // enquiry lands in `leads` so someone can follow it up. Form-encoded POST from a plain
 // <form> — no JavaScript needed on the page.
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -12,6 +12,7 @@ import {
   gateEnabled,
   unlockCookieValue,
 } from "@/lib/samples-access";
+import { recordPageView } from "@/lib/page-views";
 
 const schema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -67,11 +68,28 @@ export async function POST(req: NextRequest) {
     console.error("[samples/unlock] lead insert failed:", e);
   }
 
+  let emailed = false;
   try {
-    await notify(d, leadId);
+    emailed = await notify(d, leadId);
   } catch (e) {
     console.error("[samples/unlock] notify failed:", e);
   }
+  // `emailed` is what /admin's "nobody was notified" alert reads; leaving it false on a
+  // row whose email did send would raise a false alarm on every samples unlock.
+  if (leadId) {
+    try {
+      await createAdminClient().from("leads").update({ emailed }).eq("id", leadId);
+    } catch (e) {
+      console.error("[samples/unlock] emailed flag update failed:", e);
+    }
+  }
+
+  after(() =>
+    recordPageView("unlock_email", {
+      referrer: req.headers.get("referer"),
+      userAgent,
+    })
+  );
 
   const res = NextResponse.redirect(back, 303);
   if (gateEnabled()) {
@@ -81,9 +99,9 @@ export async function POST(req: NextRequest) {
   return res;
 }
 
-async function notify(d: z.infer<typeof schema>, leadId: string | null) {
+async function notify(d: z.infer<typeof schema>, leadId: string | null): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
-  if (!key) return;
+  if (!key) return false;
   const from = process.env.RESEND_FROM_EMAIL ?? "AusDilaps <no-reply@ausdilaps.com.au>";
   const to = process.env.SALES_NOTIFY_EMAIL || process.env.ADMIN_EMAIL || "info@ausdilaps.com.au";
   const when = new Intl.DateTimeFormat("en-AU", {
@@ -102,7 +120,7 @@ async function notify(d: z.infer<typeof schema>, leadId: string | null) {
       <tr><td><strong>Lead id</strong></td><td>${esc(leadId ?? "not saved")}</td></tr>
     </table>`;
 
-  await fetch("https://api.resend.com/emails", {
+  const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -112,4 +130,5 @@ async function notify(d: z.infer<typeof schema>, leadId: string | null) {
       html,
     }),
   });
+  return res.ok;
 }

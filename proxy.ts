@@ -11,7 +11,7 @@
 //   4. The samples gate — see samplesGate() below. Lives here and not in the page so
 //      both samples routes stay static ISR pages.
 
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, after, type NextRequest } from "next/server";
 import { createProxyClient, supabaseConfigured } from "@/lib/supabase/proxy";
 import { isDepartmentSlug } from "@/lib/departments";
 import {
@@ -24,6 +24,7 @@ import {
   isValidCode,
   isValidCookie,
 } from "@/lib/samples-access";
+import { looksLikeBot, recordPageView, type PageViewEvent } from "@/lib/page-views";
 
 export const config = {
   matcher: ["/staff/:path*", "/admin/:path*", "/dilapidation-reports/samples/:path*"],
@@ -115,7 +116,23 @@ async function samplesGate(req: NextRequest): Promise<NextResponse> {
   const url = req.nextUrl;
   const clean = new URL(SAMPLES_PATH, req.url);
 
+  // Counts a person looking at the page, for the /admin tile. Only top-level document
+  // requests from something that is not a bot: prefetches, link previewers, crawlers and
+  // our own headless tests would otherwise triple the number and make it worthless.
+  const ua = req.headers.get("user-agent");
+  const countable =
+    req.method === "GET" &&
+    (req.headers.get("sec-fetch-dest") ?? "document") === "document" &&
+    !req.headers.get("next-router-prefetch") &&
+    !looksLikeBot(ua);
+  const count = (event: PageViewEvent) => {
+    if (!countable) return;
+    const referrer = req.headers.get("referer");
+    after(() => recordPageView(event, { referrer, userAgent: ua }));
+  };
+
   if (!gateEnabled()) {
+    count("view_library");
     return url.pathname === SAMPLES_LIBRARY_PATH
       ? NextResponse.next()
       : NextResponse.rewrite(new URL(SAMPLES_LIBRARY_PATH, req.url));
@@ -124,10 +141,12 @@ async function samplesGate(req: NextRequest): Promise<NextResponse> {
   const code = url.searchParams.get("code");
   if (code !== null) {
     if (isValidCode(code)) {
+      count("unlock_code");
       const res = NextResponse.redirect(clean, 303);
       res.cookies.set(SAMPLES_COOKIE, await cookieValueFor(code), SAMPLES_COOKIE_OPTIONS);
       return res;
     }
+    count("unlock_code_failed");
     clean.searchParams.set("error", "code");
     return NextResponse.redirect(clean, 303);
   }
@@ -135,10 +154,12 @@ async function samplesGate(req: NextRequest): Promise<NextResponse> {
   const unlocked = await isValidCookie(req.cookies.get(SAMPLES_COOKIE)?.value);
 
   if (url.pathname === SAMPLES_LIBRARY_PATH) {
+    if (unlocked) count("view_library");
     return unlocked ? NextResponse.next() : NextResponse.redirect(clean, 303);
   }
-  if (url.pathname === SAMPLES_PATH && unlocked) {
-    return NextResponse.rewrite(new URL(SAMPLES_LIBRARY_PATH, req.url));
+  if (url.pathname === SAMPLES_PATH) {
+    count(unlocked ? "view_library" : "view_locked");
+    if (unlocked) return NextResponse.rewrite(new URL(SAMPLES_LIBRARY_PATH, req.url));
   }
   return NextResponse.next();
 }

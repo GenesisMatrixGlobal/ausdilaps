@@ -71,6 +71,13 @@ bulk download, not a secret. `lib/samples-access.ts` + `samplesGate()` in `proxy
 - **`SAMPLES_ACCESS_CODE`** (Vercel Production + Preview, and `.env.local`). Comma-separate
   two codes during a rotation so quotes already out keep working. **Unset = no gate** —
   fail open, because a missing variable must never hide the library from clients.
+- **Visits are counted** (`lib/page-views.ts`, table `page_views`, migration `0015`).
+  `samplesGate()` records `view_locked` / `view_library` / `unlock_code` /
+  `unlock_code_failed` through `after()`, and the email route records `unlock_email`.
+  Bots, prefetches (`sec-fetch-dest`, `next-router-prefetch`) and headless browsers are
+  filtered before a row is written, so the figure is people. `/admin` shows
+  "Samples viewed · 7d" with unlocks and the week-on-week delta; until `0015` is applied
+  the tile says so instead of a number. No IP, no user — volume only.
 - Test the whole flow headlessly against a dev server with the script in the session
   scratchpad pattern: locked → library-direct redirect → wrong code → right code →
   revisit → email unlock. Every step was green on 2026-09-11.

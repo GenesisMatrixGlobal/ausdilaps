@@ -126,7 +126,7 @@ keep that from being a real risk:
   Only a cold build with Box down would 404.
 - **Partial failures don't cascade.** `resolveSamples()` and the category fan-out
   in `lib/box.ts` both use `Promise.allSettled`, so one file whose shared-link PUT
-  fails (typically the service account holding Viewer where it needs Editor), or
+  fails (a file the service account can't see, or a Box hiccup), or
   one unreadable subfolder, drops that row and logs it rather than taking down the
   whole page.
 

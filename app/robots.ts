@@ -6,7 +6,9 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: "*",
       allow: "/",
-      disallow: ["/api/", "/admin", "/staff", "/inspector-links", "/qr"],
+      // /email/ holds the email-signature images: public by necessity (mail clients fetch
+      // them) but linked from no page, so keep crawlers off them.
+      disallow: ["/api/", "/admin", "/staff", "/inspector-links", "/qr", "/email/"],
     },
     sitemap: absoluteUrl("/sitemap.xml"),
     host: SITE_URL,

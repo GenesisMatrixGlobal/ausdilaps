@@ -12,8 +12,7 @@ import { faqPageSchema, breadcrumbSchema } from "@/lib/seo";
 import {
   getSampleCategories,
   isPublicCategory,
-  SAMPLES_FAQ,
-  SAMPLES_REVALIDATE,
+  SAMPLES_FAQ
 } from "@/lib/samples-data";
 
 export const metadata: Metadata = {
@@ -32,7 +31,10 @@ export const metadata: Metadata = {
 // as a name and a count with no links; and the two ways in — the code from a quote, or an
 // email. People opening samples usually already hold a quote, so there is no "Request a
 // Quote" button on the page itself (the site header still carries one).
-export const revalidate = SAMPLES_REVALIDATE;
+// A LITERAL, not the shared constant: Next only accepts statically analysable values for
+// segment config, and the import form failed the Vercel build ("Invalid segment
+// configuration export"). Keep in step with SAMPLES_REVALIDATE in lib/samples-data.ts.
+export const revalidate = 1800;
 
 export default async function SamplesPage() {
   const categories = await getSampleCategories();

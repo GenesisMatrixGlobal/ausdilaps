@@ -14,7 +14,9 @@ import type { FaqItem } from "@/data/faq";
 // serving the last good render, so a transient Box outage never reaches a visitor.
 const BOX_SAMPLES_FOLDER_ID = process.env.BOX_SAMPLES_FOLDER_ID ?? "405950982690";
 
-/** Keep in sync with `export const revalidate` on both samples routes. */
+/** Both samples routes export `revalidate = 1800` as a LITERAL (Next rejects an imported
+ *  constant there); this is the single place that documents the value they must match,
+ *  and it is what lib/box.ts uses for its fetch-level revalidate. */
 export const SAMPLES_REVALIDATE = 1800;
 
 /** A Box subfolder with this name is shown to EVERYONE, gate or not. Rhys decides the

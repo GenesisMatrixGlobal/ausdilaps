@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { SamplesLibrary } from "@/components/marketing/samples-library";
 import { SamplesContactBand, SamplesHeader } from "@/components/marketing/samples-page-parts";
-import { getSampleCategories, SAMPLES_REVALIDATE } from "@/lib/samples-data";
+import { getSampleCategories } from "@/lib/samples-data";
 import { SAMPLES_PATH } from "@/lib/samples-access";
 
 // The UNLOCKED library. Never linked and never indexed: proxy.ts rewrites
@@ -14,7 +14,10 @@ export const metadata: Metadata = {
   alternates: { canonical: SAMPLES_PATH },
 };
 
-export const revalidate = SAMPLES_REVALIDATE;
+// A LITERAL, not the shared constant: Next only accepts statically analysable values for
+// segment config, and the import form failed the Vercel build ("Invalid segment
+// configuration export"). Keep in step with SAMPLES_REVALIDATE in lib/samples-data.ts.
+export const revalidate = 1800;
 
 export default async function SamplesLibraryPage() {
   const categories = await getSampleCategories();

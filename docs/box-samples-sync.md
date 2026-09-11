@@ -5,8 +5,9 @@ hardcoded list. Drop a file into a category subfolder in Box and it appears
 on the site on the next revalidation — no redeploy needed. Remove it and it
 disappears the same way.
 
-- **Client:** `lib/box.ts`
+- **Client:** `lib/box.ts` (Box API) + `lib/samples.ts` (pure: titles, years, sizes, category order)
 - **Page:** `app/(marketing)/dilapidation-reports/samples/page.tsx`
+- **Library UI:** `components/marketing/samples-library.tsx` (category chips + search + cards, client island)
 - **Target folder:** `https://ausdilaps.app.box.com/folder/405950982690`
 - **Refresh:** Next.js ISR, `revalidate = 1800` (30 min)
 
@@ -22,8 +23,31 @@ shows up, grouped under a trailing **"Other"** category — nothing silently
 disappears, it just won't be sorted until you move it into a subfolder.
 
 To add a new category, just create a subfolder in Box with the name you want
-shown on the site. To reorder or rename a category, rename/reorder the
-subfolder in Box.
+shown on the site. To rename a category, rename the subfolder.
+
+**Order is fixed in code**, not alphabetical: `CATEGORY_ORDER` in `lib/samples.ts`
+(Residential, Commercial, GPS & Council Assets, Roadways, Specialised Surveys,
+Case Studies, General). Box lists folders A–Z, which put "Case Studies" and
+"General" ahead of the reports people come for. A folder not in that list is
+appended alphabetically; "Other" is always last. Matching is case-insensitive.
+
+**Only sample file types are published:** `pdf`, `png`, `jpg`/`jpeg`, `mp4`,
+`mov` (`SAMPLE_EXTENSIONS` in `lib/box.ts`). Anything else in the folder — a
+stray `.xlsx`, `.docx`, `.zip` — is logged and left out, and no shared link is
+created for it. This exists because the page makes every file it publishes a
+*public* download and several people hold Editor on the folder.
+
+**Titles come from filenames**, with the boilerplate stripped
+(`titleFromFilename` in `lib/samples.ts`): a leading "AusDilaps Sample" /
+"AusDilaps" / "Case Study", any four-digit year (shown separately as the year),
+underscores, and `_Redacted` → "(redacted)". So
+`AusDilaps Sample 2026 - Hospital External.pdf` shows as **Hospital External ·
+PDF · 8.3 MB · 2026**. Name files for the reader and the page follows.
+
+**The page is a library, not a landing page.** People opening samples mostly
+already hold a quote, so the page carries no "Request a Quote" button of its own
+(the site header still does) — just phone and email in the hero and a quiet
+contact band at the foot.
 
 ## On "daily" freshness
 
@@ -57,13 +81,20 @@ service-to-service Box Custom App, no user login involved.
    (an email like `AutomationUser_XXXX@boxdevedition.com`). Copy it.
 5. In Box, open the target folder
    (`https://ausdilaps.app.box.com/folder/405950982690`) → **Share** → invite
-   the Service Account email as a **Viewer** (or Editor if you want the app
-   able to create shared links on files it didn't create — it needs at least
-   enough access to add a shared link per file, so use **Editor** if Viewer
-   turns out to be insufficient for `PUT /files/:id`).
+   the Service Account email as an **Editor**. Viewer is NOT enough: the page
+   creates a shared link on any file that lacks one (`PUT /files/:id`), and a
+   Viewer's PUT fails, so a freshly dropped file is silently left off the page
+   (logged as `[box] skipped file`). ⚠️ As of 2026-09-11 the service account
+   held **Viewer** on this folder — it only worked because every file already
+   had a link.
+   - **Who else holds Editor matters.** Editor on this folder = the ability to
+     publish a public download on ausdilaps.com.au within 30 minutes. Keep it
+     to one or two internal people; external collaborators should be Viewers.
 6. Grab the **Enterprise ID** from Box Admin Console → Account & Billing.
-7. Set these in `.env.local` (and in Vercel → Project → Settings →
-   Environment Variables for production):
+7. Set these in `.env.local` and in Vercel → Project → Settings →
+   Environment Variables for **Production AND Preview** — without the Preview
+   copy every branch preview 404s this page (`BoxConfigError` → `notFound()`),
+   which is how it stood until 2026-09-11:
 
    ```
    BOX_CLIENT_ID=...

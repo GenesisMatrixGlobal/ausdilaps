@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Container } from "@/components/marketing/container";
-import { Eyebrow } from "@/components/marketing/eyebrow";
 import { PageHero } from "@/components/marketing/page-hero";
 import { FaqSection } from "@/components/marketing/faq-accordion";
-import { CtaBand } from "@/components/marketing/cta-band";
+import { SamplesLibrary } from "@/components/marketing/samples-library";
 import { JsonLd } from "@/components/seo/json-ld";
 import { faqPageSchema, breadcrumbSchema } from "@/lib/seo";
+import { SITE } from "@/lib/site";
 import type { FaqItem } from "@/data/faq";
 import { listBoxFolderCategories, type BoxCategory } from "@/lib/box";
+import { orderCategories } from "@/lib/samples";
 
 const CRUMBS = [
   { name: "Home", path: "/" },
@@ -30,20 +31,13 @@ export const metadata: Metadata = {
 // those 404 the moment ausdilaps.com.au points at Vercel. If Box can't be read the
 // page 404s instead of showing dead links, and ISR keeps serving the last good
 // render, so a transient Box outage never reaches a visitor.
+//
+// This page is a LIBRARY, not a landing page. Whoever is here most likely already has a
+// quote and wants to see what the deliverable looks like — so there is no "Request a
+// Quote" button on the page itself (the site header still carries one), just phone and
+// email for anyone who can't find the sample they need.
 const BOX_SAMPLES_FOLDER_ID = process.env.BOX_SAMPLES_FOLDER_ID ?? "405950982690";
 export const revalidate = 1800;
-
-function titleFromFilename(name: string): string {
-  return name
-    .replace(/\.[^.]+$/, "")
-    .replace(/[-_]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function slugify(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-}
 
 async function getCategories(): Promise<BoxCategory[]> {
   let live: BoxCategory[];
@@ -86,7 +80,8 @@ const SAMPLES_FAQ: FaqItem[] = [
 ];
 
 export default async function SamplesPage() {
-  const categories = await getCategories();
+  const categories = orderCategories(await getCategories());
+  const phoneHref = `tel:${SITE.phone.replace(/\s/g, "")}`;
 
   return (
     <>
@@ -95,75 +90,52 @@ export default async function SamplesPage() {
       <PageHero
         crumbs={CRUMBS}
         eyebrow="Dilapidation Reports · Samples"
-        title="Sample dilapidation reports."
-        intro="See the standard for yourself. We publish real sample reports across every capture type — from residential and commercial surveys to drone, tunnel, roadway and engineering reports. Every one is AS 4349.0-compliant, with location-referenced imagery and engineer sign-off."
+        title="Sample reports."
+        intro="Real AusDilaps reports across every capture type — pick a category or search, then open a sample in Box's viewer."
+        actions={
+          <p className="text-sm text-ad-muted">
+            Questions about your quote?{" "}
+            <a href={phoneHref} className="font-medium text-ad-ink underline-offset-4 hover:underline">
+              {SITE.phone}
+            </a>{" "}
+            or{" "}
+            <a
+              href={`mailto:${SITE.email}`}
+              className="font-medium text-ad-ink underline-offset-4 hover:underline"
+            >
+              {SITE.email}
+            </a>
+          </p>
+        }
       />
 
-      {/* Jump nav — lets you skip straight to a category instead of scrolling past everything */}
-      <section className="border-b border-ad-border py-5">
+      <section className="py-12 lg:py-16">
         <Container>
-          <nav aria-label="Sample categories" className="flex flex-wrap gap-x-6 gap-y-2">
-            {categories.map((category) => (
-              <a
-                key={category.name}
-                href={`#${slugify(category.name)}`}
-                className="text-sm font-medium text-ad-muted transition-colors hover:text-ad-accent"
-              >
-                {category.name}
-              </a>
-            ))}
-          </nav>
-        </Container>
-      </section>
-
-      <section className="py-16 lg:py-20">
-        <Container className="max-w-3xl space-y-14">
-          {categories.map((category) => (
-            <div key={category.name} id={slugify(category.name)} className="scroll-mt-24">
-              <Eyebrow className="text-ad-accent">{category.name}</Eyebrow>
-              <div className="mt-6 divide-y divide-ad-border rounded-xl border border-ad-border bg-white">
-                {category.samples.map((s) => (
-                  <a
-                    key={s.url}
-                    href={s.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-ad-surface sm:px-6"
-                  >
-                    <h3 className="font-heading text-[0.95rem] font-semibold text-ad-ink group-hover:text-ad-accent">
-                      {titleFromFilename(s.name)}
-                    </h3>
-                    <span className="shrink-0 text-sm font-medium text-ad-accent">View →</span>
-                  </a>
-                ))}
-              </div>
-            </div>
-          ))}
-        </Container>
-      </section>
-
-      {/* LiDAR / 3D interactive note */}
-      <section className="bg-ad-navy py-16 text-ad-on-dark lg:py-20">
-        <Container className="max-w-3xl">
-          <Eyebrow className="text-ad-accent-2">Point cloud, LiDAR & 3D</Eyebrow>
-          <h2 className="mt-5 font-heading text-3xl font-semibold tracking-tight text-white">
-            Interactive LiDAR and digital-twin samples.
-          </h2>
-          <p className="mt-5 text-lg leading-relaxed text-ad-on-dark-muted">
-            For large or complex assets we capture LiDAR point clouds and build navigable 3D models and
-            digital twins — letting you inspect a highway, road corridor or building from any angle.
-            Request access and we&rsquo;ll share live interactive examples relevant to your project.
-          </p>
+          <SamplesLibrary categories={categories} />
         </Container>
       </section>
 
       <FaqSection items={SAMPLES_FAQ} heading="Sample reports, answered." seeAllHref="/faq" />
 
-      <CtaBand
-        eyebrow="See more"
-        heading="Want the full sample pack for your project type?"
-        subhead="Tell us your project type and we'll send the most relevant samples with our capability statement."
-      />
+      {/* Quiet contact band — no orange quote button. Sample readers usually have a quote. */}
+      <section className="bg-ad-navy-deep py-16 text-ad-on-dark lg:py-20">
+        <Container className="text-center">
+          <h2 className="mx-auto max-w-2xl text-balance font-heading text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+            Can&rsquo;t find the sample you need?
+          </h2>
+          <p className="mx-auto mt-4 max-w-xl text-ad-on-dark-muted">
+            Tell us your project type and we&rsquo;ll send the closest examples.
+          </p>
+          <p className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-base font-medium">
+            <a href={phoneHref} className="text-white hover:text-ad-accent-2">
+              {SITE.phone}
+            </a>
+            <a href={`mailto:${SITE.email}`} className="text-white hover:text-ad-accent-2">
+              {SITE.email}
+            </a>
+          </p>
+        </Container>
+      </section>
     </>
   );
 }

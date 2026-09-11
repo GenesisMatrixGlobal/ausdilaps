@@ -14,6 +14,10 @@ export type BoxSample = {
   name: string;
   /** Public Box shared-link URL — the site never hosts the file itself. */
   url: string;
+  /** Lower-cased, no dot (`pdf`, `mov`). Drives the type icon and label on the page. */
+  extension: string;
+  /** From Box's `size` field, so a visitor knows what they're opening before they open it. */
+  sizeBytes: number;
 };
 
 export type BoxCategory = {
@@ -24,6 +28,20 @@ export type BoxCategory = {
 /** Category label for files sitting loose in the root folder, outside any subfolder. */
 const UNCATEGORIZED = "Other";
 
+/**
+ * The only file types the samples page will publish. `resolveSamples()` creates a PUBLIC
+ * shared link on every file it finds, and several people (including external collaborators)
+ * hold Editor on the folder — so a stray spreadsheet or Word document dropped in by mistake
+ * must not become a public download on the marketing site. Anything else is logged and left
+ * out; the file itself is untouched.
+ */
+const SAMPLE_EXTENSIONS = new Set(["pdf", "png", "jpg", "jpeg", "mp4", "mov"]);
+
+export function fileExtension(name: string): string {
+  const m = name.match(/\.([a-z0-9]+)$/i);
+  return m ? m[1].toLowerCase() : "";
+}
+
 type BoxTokenResponse = { access_token: string; expires_in: number };
 
 type BoxFileItem = {
@@ -31,6 +49,8 @@ type BoxFileItem = {
   id: string;
   name: string;
   shared_link?: { url: string } | null;
+  /** Bytes. Present on files when `size` is requested; folders report the tree total. */
+  size?: number;
 };
 
 export class BoxConfigError extends Error {}
@@ -115,7 +135,7 @@ export async function ensureSharedLink(
 
 export async function listFolderItems(folderId: string, token: string): Promise<BoxFileItem[]> {
   const res = await fetch(
-    `https://api.box.com/2.0/folders/${folderId}/items?fields=name,type,shared_link&limit=200&sort=name&direction=ASC`,
+    `https://api.box.com/2.0/folders/${folderId}/items?fields=name,type,shared_link,size&limit=200&sort=name&direction=ASC`,
     // Keep in sync with `export const revalidate` in
     // app/(marketing)/dilapidation-reports/samples/page.tsx — this is what lets the
     // page be ISR-cached rather than fully dynamic.
@@ -127,20 +147,28 @@ export async function listFolderItems(folderId: string, token: string): Promise<
 }
 
 async function resolveSamples(files: BoxFileItem[], token: string): Promise<BoxSample[]> {
+  const publishable = files.filter((f) => {
+    const ok = SAMPLE_EXTENSIONS.has(fileExtension(f.name));
+    if (!ok) console.warn(`[box] not a sample file type, left unpublished: "${f.name}"`);
+    return ok;
+  });
+
   // allSettled, not all: a single file whose shared-link PUT fails (typically the
   // service account holding Viewer where it needs Editor) would otherwise reject
   // the whole call and take the entire samples page down. Drop that row instead.
   const settled = await Promise.allSettled(
-    files.map(async (f) => ({
+    publishable.map(async (f) => ({
       name: f.name,
       // Preview page on purpose: these are sample reports a visitor opens and reads.
       url: f.shared_link?.url ?? (await ensureSharedLink(f.id, token)).url,
+      extension: fileExtension(f.name),
+      sizeBytes: f.size ?? 0,
     }))
   );
   const samples: BoxSample[] = [];
   settled.forEach((r, i) => {
     if (r.status === "fulfilled") samples.push(r.value);
-    else console.error(`[box] skipped file "${files[i].name}":`, r.reason);
+    else console.error(`[box] skipped file "${publishable[i].name}":`, r.reason);
   });
   return samples.sort((a, b) => a.name.localeCompare(b.name));
 }

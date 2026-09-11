@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Container } from "@/components/marketing/container";
-import { PageHero } from "@/components/marketing/page-hero";
+import { Breadcrumbs } from "@/components/marketing/breadcrumbs";
 import { FaqSection } from "@/components/marketing/faq-accordion";
 import { SamplesLibrary } from "@/components/marketing/samples-library";
 import { JsonLd } from "@/components/seo/json-ld";
@@ -87,31 +87,33 @@ export default async function SamplesPage() {
     <>
       <JsonLd data={[faqPageSchema(SAMPLES_FAQ), breadcrumbSchema(CRUMBS)]} />
 
-      <PageHero
-        crumbs={CRUMBS}
-        eyebrow="Dilapidation Reports · Samples"
-        title="Sample reports."
-        intro="Real AusDilaps reports across every capture type — pick a category, then open a sample in Box's viewer."
-        actions={
-          <p className="text-sm text-ad-muted">
-            Questions about your quote?{" "}
-            <a href={phoneHref} className="font-medium text-ad-ink underline-offset-4 hover:underline">
-              {SITE.phone}
-            </a>{" "}
-            or{" "}
-            <a
-              href={`mailto:${SITE.email}`}
-              className="font-medium text-ad-ink underline-offset-4 hover:underline"
-            >
-              {SITE.email}
-            </a>
-          </p>
-        }
-      />
-
-      <section className="py-12 lg:py-16">
+      {/* Slim header on purpose (Rhys, 2026-09-11): breadcrumbs, a heading, one contact line,
+          then the list. No eyebrow, no intro paragraph, no PageHero — people are here to open a
+          file, not to read about it. */}
+      <section className="pt-10 lg:pt-14">
         <Container className="max-w-4xl">
-          <SamplesLibrary categories={categories} />
+          <Breadcrumbs crumbs={CRUMBS} />
+          <div className="mt-6 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+            <h1 className="font-heading text-3xl font-semibold tracking-tight text-ad-ink sm:text-4xl">
+              Sample reports
+            </h1>
+            <p className="text-sm text-ad-muted">
+              Questions about your quote?{" "}
+              <a href={phoneHref} className="font-medium text-ad-ink underline-offset-4 hover:underline">
+                {SITE.phone}
+              </a>{" "}
+              ·{" "}
+              <a
+                href={`mailto:${SITE.email}`}
+                className="font-medium text-ad-ink underline-offset-4 hover:underline"
+              >
+                {SITE.email}
+              </a>
+            </p>
+          </div>
+          <div className="mt-8 pb-16 lg:pb-20">
+            <SamplesLibrary categories={categories} />
+          </div>
         </Container>
       </section>
 

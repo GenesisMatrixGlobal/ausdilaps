@@ -91,7 +91,7 @@ export default async function SamplesPage() {
         crumbs={CRUMBS}
         eyebrow="Dilapidation Reports · Samples"
         title="Sample reports."
-        intro="Real AusDilaps reports across every capture type — pick a category or search, then open a sample in Box's viewer."
+        intro="Real AusDilaps reports across every capture type — pick a category, then open a sample in Box's viewer."
         actions={
           <p className="text-sm text-ad-muted">
             Questions about your quote?{" "}
@@ -110,7 +110,7 @@ export default async function SamplesPage() {
       />
 
       <section className="py-12 lg:py-16">
-        <Container>
+        <Container className="max-w-4xl">
           <SamplesLibrary categories={categories} />
         </Container>
       </section>

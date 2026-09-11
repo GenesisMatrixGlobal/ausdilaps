@@ -7,7 +7,7 @@ disappears the same way.
 
 - **Client:** `lib/box.ts` (Box API) + `lib/samples.ts` (pure: titles, years, sizes, category order)
 - **Page:** `app/(marketing)/dilapidation-reports/samples/page.tsx`
-- **Library UI:** `components/marketing/samples-library.tsx` (category chips + search + cards, client island)
+- **Library UI:** `components/marketing/samples-library.tsx` (category chips + compact list, client island — no search and no card grid, by request)
 - **Target folder:** `https://ausdilaps.app.box.com/folder/405950982690`
 - **Refresh:** Next.js ISR, `revalidate = 1800` (30 min)
 

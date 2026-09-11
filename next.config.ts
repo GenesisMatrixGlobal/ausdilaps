@@ -19,6 +19,23 @@ const nextConfig: NextConfig = {
   async redirects() {
     return REDIRECTS;
   },
+  async headers() {
+    // /email/ (signature images) and /field-service-icons/ (Salesforce Field Service map
+    // icons) are fetched by other systems, not by pages on this site: every Salesforce user's
+    // browser pulls the icon set each time the map renders, and every mail client fetches
+    // the signature. Cache them hard so a browser asks once and keeps them, which is both
+    // faster and far less traffic for Vercel's bot mitigation to look at. To change an
+    // image, add a new file with a new name rather than overwriting — a year-long cache
+    // means an overwrite would take up to a year to reach everyone.
+    const longCache = [
+      { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+      { key: "Access-Control-Allow-Origin", value: "*" },
+    ];
+    return [
+      { source: "/email/:path*", headers: longCache },
+      { source: "/field-service-icons/:path*", headers: longCache },
+    ];
+  },
 };
 
 export default nextConfig;

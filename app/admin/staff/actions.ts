@@ -91,11 +91,14 @@ export async function inviteStaff(formData: FormData): Promise<ActionResult> {
   return { ok: true, message: `Invite sent to ${email}.` };
 }
 
-/** Change someone's role, departments and/or knowledge-upload permission. */
+/** Change someone's name, role, departments and/or knowledge-upload permission. */
 export async function updateStaff(formData: FormData): Promise<ActionResult> {
   const admin = await requireAdmin();
 
   const id = String(formData.get("id") ?? "");
+  // Empty clears it — the list then falls back to the email, as it does for anyone invited
+  // without a name.
+  const fullName = String(formData.get("full_name") ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
   const role = parseRole(formData.get("role"));
   const departments = normaliseDepartments(formData.getAll("departments").map(String));
   const canManageKnowledge = formData.get("can_manage_knowledge") === "on";
@@ -122,6 +125,7 @@ export async function updateStaff(formData: FormData): Promise<ActionResult> {
   const { error } = await conn.client
     .from("profiles")
     .update({
+      full_name: fullName || null,
       role,
       departments: role === "staff" ? departments : [],
       // Cleared for admins the same way departments are — they pass
@@ -133,8 +137,17 @@ export async function updateStaff(formData: FormData): Promise<ActionResult> {
 
   if (error) return { ok: false, error: error.message };
 
+  // Keep auth's copy in step. The invite wrote full_name into user_metadata and the profile
+  // trigger read it from there; nothing else reads it, so this is best-effort — a failure
+  // here must not undo a profile update that already succeeded.
+  try {
+    await conn.client.auth.admin.updateUserById(id, { user_metadata: { full_name: fullName || null } });
+  } catch (e) {
+    console.error("[admin] couldn't mirror full_name to auth:", (e as Error).message);
+  }
+
   revalidatePath("/admin/staff");
-  return { ok: true, message: "Access updated." };
+  return { ok: true, message: "Updated." };
 }
 
 /** Deactivate or reactivate. Deactivating kills their access on the next request

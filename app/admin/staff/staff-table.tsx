@@ -136,7 +136,7 @@ export function StaffTable({
                     onClick={() => setEditing(editing === row.id ? null : row.id)}
                     className={buttonVariants({ variant: "outline", size: "sm" })}
                   >
-                    {editing === row.id ? "Close" : "Edit access"}
+                    {editing === row.id ? "Close" : "Edit"}
                   </button>
 
                   <form
@@ -188,7 +188,7 @@ export function StaffTable({
                         pending && "opacity-60"
                       )}
                     >
-                      {pending ? "Saving…" : "Save access"}
+                      {pending ? "Saving…" : "Save"}
                     </button>
                     {!isSelf && (
                       <button
@@ -227,6 +227,18 @@ function EditFields({ row, departments }: { row: StaffRow; departments: Departme
 
   return (
     <div className="space-y-3">
+      <label className="block text-sm font-medium text-ad-ink">
+        Name
+        <input
+          name="full_name"
+          defaultValue={row.full_name ?? ""}
+          placeholder="First and last name"
+          maxLength={120}
+          autoComplete="off"
+          className="mt-1 w-full max-w-sm rounded-lg border border-ad-border bg-white p-2 text-sm font-normal text-ad-ink outline-none focus:border-ad-steel"
+        />
+      </label>
+
       <label className="block text-sm font-medium text-ad-ink">
         Role
         <select

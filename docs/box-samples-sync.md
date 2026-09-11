@@ -81,15 +81,16 @@ service-to-service Box Custom App, no user login involved.
    (an email like `AutomationUser_XXXX@boxdevedition.com`). Copy it.
 5. In Box, open the target folder
    (`https://ausdilaps.app.box.com/folder/405950982690`) → **Share** → invite
-   the Service Account email as an **Editor**. Viewer is NOT enough: the page
-   creates a shared link on any file that lacks one (`PUT /files/:id`), and a
-   Viewer's PUT fails, so a freshly dropped file is silently left off the page
-   (logged as `[box] skipped file`). ⚠️ As of 2026-09-11 the service account
-   held **Viewer** on this folder — it only worked because every file already
-   had a link.
-   - **Who else holds Editor matters.** Editor on this folder = the ability to
-     publish a public download on ausdilaps.com.au within 30 minutes. Keep it
-     to one or two internal people; external collaborators should be Viewers.
+   the Service Account email as a **Viewer**. That is the least privilege that
+   works and it is enough: a Viewer can create a shared link (`PUT /files/:id`
+   returns 200 — verified 2026-09-11) but cannot delete, move or upload (DELETE
+   returns 403). Do NOT give it Editor here; nothing on this page needs it, and
+   the bot's only job is to copy a link. (Previewer / Uploader roles are NOT
+   enough — they cannot create shared links.)
+   - **Who holds Editor matters more than the bot's role.** Editor on this
+     folder = the ability to publish a public download on ausdilaps.com.au
+     within 30 minutes. Keep it to one or two internal people; external
+     collaborators should be Viewers.
 6. Grab the **Enterprise ID** from Box Admin Console → Account & Billing.
 7. Set these in `.env.local` and in Vercel → Project → Settings →
    Environment Variables for **Production AND Preview** — without the Preview

@@ -4,7 +4,8 @@
 //
 // The upload path means this is no longer read-only, and the Box app's scopes have to
 // match: the Custom App needs "Write all files and folders" re-authorised by a Box admin,
-// and the Service Account needs Editor (not Viewer) on the target folder tree.
+// and the Service Account needs Editor on the JOB folder tree it uploads into. The samples
+// folder is different: there it stays Viewer, which is enough to create shared links.
 //
 // Auth: Client Credentials Grant (server-to-server, no user login). Requires a Box Custom
 // App authorised in the Box Admin Console, with its Service Account added as a
@@ -153,9 +154,11 @@ async function resolveSamples(files: BoxFileItem[], token: string): Promise<BoxS
     return ok;
   });
 
-  // allSettled, not all: a single file whose shared-link PUT fails (typically the
-  // service account holding Viewer where it needs Editor) would otherwise reject
-  // the whole call and take the entire samples page down. Drop that row instead.
+  // allSettled, not all: a single file whose shared-link PUT fails (a file the service
+  // account can't see, or a Box hiccup) would otherwise reject the whole call and take
+  // the entire samples page down. Drop that row instead. Note the account only needs
+  // VIEWER on the samples folder — a Viewer can create shared links (verified 2026-09-11)
+  // and cannot delete, which is the least privilege the read-only page should hold.
   const settled = await Promise.allSettled(
     publishable.map(async (f) => ({
       name: f.name,

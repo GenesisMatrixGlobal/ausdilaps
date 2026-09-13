@@ -19,9 +19,10 @@ const TABS = [
   { key: "measure", label: "Measure" },
 ] as const;
 
-/** Rhys's sandbox: the multi-property markup, and whatever is being tried next. Admins only.
- *  Changes proven here get promoted into the staff tabs by hand — nothing on this tab is
- *  promised to anyone. */
+/** Rhys's sandbox. Admins only. It runs the SAME component and mode as Building Markup, so
+ *  today the two tabs are identical — that is the point: whatever is being tried next is
+ *  added here first, behind a flag, and promoted into the staff tab by hand once it holds up.
+ *  Nothing on this tab is promised to anyone. */
 const DEV_TAB = { key: "dev", label: "*DEV*" } as const;
 
 type Tab = (typeof TABS)[number]["key"] | typeof DEV_TAB.key;
@@ -52,7 +53,15 @@ export function SiteMarkupsTool({ isAdmin = false }: ToolProps) {
       {/* `hidden`, not conditional rendering: see `visited` above. */}
       {visited.has("residential") && (
         <div hidden={tab !== "residential"}>
-          <ResidentialMarkupTab />
+          {/* PROMOTED FROM *DEV* (2026-09-14): Building Markup is the multi-property markup
+              now. One address typed into the search bar still produces the old single-address
+              drawing — "Pre-select surrounding assets" writes it as a `+` line, which resolves
+              to a RED lot with its adjoining lots in blue — so nothing an estimator did before
+              got harder, and a list of addresses is now possible on the staff tab.
+              `mode="single"` is no longer reachable from the UI; it is kept in residential-tab
+              because the file-open path restores `subjectRing`/`hideSubject` from the saved
+              file, so every markup saved before today still opens here with its red subject. */}
+          <ResidentialMarkupTab mode="multi" />
         </div>
       )}
       {visited.has("road") && (
@@ -69,9 +78,8 @@ export function SiteMarkupsTool({ isAdmin = false }: ToolProps) {
       )}
       {isAdmin && visited.has("dev") && (
         <div hidden={tab !== "dev"}>
-          {/* The same component as Building Markup in its multi-property mode — one map, one
-              sheet, one export path. Its own instance, so experiments here never touch the
-              markup an estimator has open on the first tab. */}
+          {/* Identical to Building Markup above, on purpose — but its OWN instance, so anything
+              tried here never touches the markup an estimator has open on the first tab. */}
           <ResidentialMarkupTab mode="multi" />
         </div>
       )}

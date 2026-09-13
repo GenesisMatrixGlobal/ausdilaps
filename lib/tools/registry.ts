@@ -82,7 +82,7 @@ export const TOOLS: ToolDefinition[] = [
     code: "SMK",
     title: "Markup and Measure",
     description:
-      "Snapshot a road segment or an address with its surrounding lots highlighted, or measure lengths and areas straight off a live aerial map.",
+      "Snapshot a road segment, or one address with its surrounding lots highlighted and a whole list of them, or measure lengths and areas straight off a live aerial map.",
     departments: ["estimators", "projects"],
     Component: dynamic(() =>
       import("@/components/tools/site-markups").then((m) => m.SiteMarkupsTool)

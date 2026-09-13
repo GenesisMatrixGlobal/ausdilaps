@@ -1214,8 +1214,13 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
                 Uncheck anything that shouldn&apos;t be included.
               </p>
               <ul className="mt-3 space-y-2">
-                {/* No project-site row on a multi-property markup: there is no site. */}
-                {!multi && (
+                {/* Keyed on the geometry, not the mode. A multi-property markup generates no
+                    subject ring, so this row stays hidden — there is no site, the red lot is
+                    just a colour. But a markup SAVED before Building Markup became multi
+                    carries a real subjectRing, and the open path restores it, so reopening one
+                    here must still offer the checkbox that hides it. `!multi` left that file
+                    with a red subject drawn and no way to turn it off. */}
+                {result.subjectRing.length > 0 && (
                 <li className="flex items-center gap-2 text-sm text-ad-ink">
                   <input
                     type="checkbox"

@@ -9,8 +9,20 @@ const AUTOCOMPLETE_URL = "https://places.googleapis.com/v1/places:autocomplete";
 
 interface GooglePlacesAutocompleteResp {
   suggestions?: {
-    placePrediction?: { placeId?: string; text?: { text?: string } };
+    placePrediction?: { placeId?: string; text?: { text?: string }; types?: string[] };
   }[];
+}
+
+/** What Google calls a street address, as opposed to a business, a park or a community centre.
+ *  A prediction carrying any of these is an ADDRESS whatever else it is tagged; one carrying
+ *  none of them but tagged as a place is a PLACE — the markup opens the map on it and draws
+ *  nothing, because a place is not a private parcel. */
+const ADDRESS_TYPES = new Set(["street_address", "premise", "subpremise", "route", "geocode", "intersection", "plus_code"]);
+const PLACE_TYPES = new Set(["establishment", "point_of_interest"]);
+
+function isPlace(types: string[] | undefined): boolean {
+  if (!types) return false;
+  return !types.some((t) => ADDRESS_TYPES.has(t)) && types.some((t) => PLACE_TYPES.has(t));
 }
 
 export async function POST(req: NextRequest) {
@@ -56,8 +68,12 @@ export async function POST(req: NextRequest) {
       );
     }
     const suggestions = (data.suggestions ?? [])
-      .map((s) => ({ placeId: s.placePrediction?.placeId, text: s.placePrediction?.text?.text }))
-      .filter((s): s is { placeId: string; text: string } => Boolean(s.placeId && s.text));
+      .map((s) => ({
+        placeId: s.placePrediction?.placeId,
+        text: s.placePrediction?.text?.text,
+        place: isPlace(s.placePrediction?.types),
+      }))
+      .filter((s): s is { placeId: string; text: string; place: boolean } => Boolean(s.placeId && s.text));
     return NextResponse.json({ ok: true, suggestions });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });

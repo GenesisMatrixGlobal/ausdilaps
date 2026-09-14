@@ -429,14 +429,15 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
       // Multi mode: a searched address joins the list rather than becoming THE address.
       const tail = [parsed.suburb, parsed.state, parsed.postcode].filter(Boolean).join(" ");
       let line: string;
-      if (parsed.street) {
+      if (parsed.street && !parsed.place) {
         line = [parsed.street, tail].filter(Boolean).join(", ");
       } else if (parsed.location) {
-        // A PLACE, not an address — a community centre, a reserve, a corner. Nothing is looked
-        // up for it: the list takes its COORDINATE, labelled with the name the search showed,
-        // and Generate opens the map on the view Google Maps had (the viewport remembered
-        // here), with nothing pre-selected, for the site to be drawn by hand. So the
-        // surrounding-lots checkbox comes off — there is no parcel for neighbours to adjoin.
+        // A PLACE, not an address — a community centre, a reserve, a shopping centre; Google's
+        // own typing says so (`place`), or it has no street at all. Nothing is looked up for
+        // it: the list takes its COORDINATE, labelled with the name the search showed, and
+        // Generate opens the map on the view Google Maps had (the viewport remembered here),
+        // with nothing pre-selected, for the site to be drawn by hand. So the surrounding-lots
+        // checkbox comes off — there is no parcel for neighbours to adjoin.
         const name = (parsed.label ?? "").replace(/,?\s*australia\s*$/i, "").trim();
         line = `${pointKey(parsed.location)} ${name || tail}`.trim();
         if (parsed.viewport) placeViews.current.set(pointKey(parsed.location), parsed.viewport);

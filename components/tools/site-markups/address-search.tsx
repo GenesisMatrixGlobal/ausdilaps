@@ -7,6 +7,8 @@ import { looksLikeMapsPaste } from "@/lib/maps/parse-google-maps-url";
 export interface PlaceSuggestion {
   placeId: string;
   text: string;
+  /** Google typed it as a business / park / venue rather than a street address. */
+  place: boolean;
 }
 
 export interface ParsedAddress {
@@ -31,6 +33,9 @@ export interface PlaceSelection extends ParsedAddress {
    *  Australia") — the only name a place with no street address has. Absent from a reverse
    *  geocode. */
   label?: string | null;
+  /** True for a PLACE (business, park, community centre) — even one that happens to carry a
+   *  street number. The markup treats a place as a map centre, never a parcel. */
+  place?: boolean;
   formattedAddress: string | null;
   location: LatLng | null;
   viewport: LatLngBounds | null;
@@ -172,6 +177,7 @@ export function AddressSearch({
       }
       onSelect({
         label: suggestion.text,
+        place: suggestion.place,
         street: json.street,
         suburb: json.suburb,
         postcode: json.postcode,

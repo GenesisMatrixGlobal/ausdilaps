@@ -139,6 +139,10 @@ export interface LineItemsTableProps {
   headerRight?: ReactNode;
   /** An "Export CSV" button in the header: the TICKED rows, every sheet column, as a file. */
   exportCsv?: boolean;
+  /** A "Set product for N selected" control in the header — one pick writes the product onto
+   *  every ticked row (through onChange, so each row's asset-type override clears the way a
+   *  single edit does). */
+  bulkEdit?: boolean;
   title?: string;
 }
 
@@ -153,6 +157,7 @@ export function LineItemsTable({
   sync,
   headerRight,
   exportCsv,
+  bulkEdit,
   title = "Quote line items",
 }: LineItemsTableProps) {
   const selectedCount = rows.filter((r) => r.selected).length;
@@ -178,6 +183,29 @@ export function LineItemsTable({
           </span>
         </p>
         <div className="flex flex-wrap items-center gap-2">
+          {bulkEdit && selectedCount > 0 && (
+            // Value pinned to "" so the control reads as an action, not a state: pick, it
+            // applies to the ticked rows, and it is ready to pick again.
+            <label className="flex items-center gap-2 text-sm text-ad-muted">
+              Set product for {selectedCount} selected
+              <select
+                value=""
+                onChange={(e) => {
+                  const product = e.target.value;
+                  if (!product) return;
+                  for (const row of rows) if (row.selected) onChange(row.key, "product", product);
+                }}
+                className="rounded-lg border border-ad-border bg-white px-2 py-1 text-sm text-ad-ink outline-none focus:border-ad-steel"
+              >
+                <option value="">Choose…</option>
+                {PRODUCT_NAMES.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {exportCsv && (
             <button
               type="button"

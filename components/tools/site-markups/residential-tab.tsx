@@ -1554,8 +1554,10 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
           // items along with the PNG. With the map hidden there is no PNG, so the footer — the
           // same one Bulk Property Sizing uses — creates them on its own.
           sync={mapHidden ? {} : undefined}
-          // DEV tab only until Rhys promotes it: the ticked rows as a CSV.
+          // DEV tab only until Rhys promotes them: the ticked rows as a CSV, and one product
+          // onto every ticked row.
           exportCsv={dev}
+          bulkEdit={dev}
         />
         </>
       )}

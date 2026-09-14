@@ -146,6 +146,16 @@ export interface BulkParcelsResult {
    *  nothing selected and the operator draws the site by hand. */
   centres: { point: LatLng; label: string }[];
   flags: string[];
+  /** How many lines the whole block parsed to — so a paged caller knows when it has them all. */
+  total: number;
+}
+
+/** A slice of the parsed lines, by index. The WHOLE block is still parsed first, so state
+ *  inheritance sees every line; only the resolving is sliced. Used by "line items only" for a
+ *  list too long for one markup (and one 60-second function). */
+export interface BulkPage {
+  from: number;
+  to: number;
 }
 
 /** Ids key the exclude-set and the sheet rows, so two units on one strata lot must not collapse
@@ -177,12 +187,22 @@ function centreLine(line: BulkLine): ResolvedLine {
   return { line, ring: null, lotPlan: null, areaSqm: null, point: line.point!, notes: [], failure: null };
 }
 
-export async function resolveBulkParcels(text: string): Promise<BulkParcelsResult> {
-  const lines = parseBulkLines(text);
+export async function resolveBulkParcels(text: string, page?: BulkPage): Promise<BulkParcelsResult> {
+  const allLines = parseBulkLines(text);
+  const total = allLines.length;
+  if (total === 0) throw new Error("No addresses found — one per line, straight from Excel.");
+  // A page is never a drawing, so the drawing's cap does not apply to it — the page size is the
+  // caller's cap (and it must stay under MAX_BULK_ADDRESSES itself).
+  if (!page && total > MAX_BULK_ADDRESSES) {
+    throw new Error(`That's ${total} addresses — the markup takes up to ${MAX_BULK_ADDRESSES} at once.`);
+  }
+  if (page && page.to - page.from > MAX_BULK_ADDRESSES) {
+    throw new Error(`A page is at most ${MAX_BULK_ADDRESSES} addresses.`);
+  }
+  const lines = page ? allLines.slice(Math.max(0, page.from), Math.max(0, page.to)) : allLines;
   const addresses = lines.map((l) => l.addr);
-  if (addresses.length === 0) throw new Error("No addresses found — one per line, straight from Excel.");
-  if (addresses.length > MAX_BULK_ADDRESSES) {
-    throw new Error(`That's ${addresses.length} addresses — the markup takes up to ${MAX_BULK_ADDRESSES} at once.`);
+  if (addresses.length === 0) {
+    return { parcels: [], address: { street: "", suburb: "", postcode: "", state: "" }, unresolved: [], centres: [], flags: [], total };
   }
 
   // Address lines go through the geocode → parcel pipeline; coordinate lines are places and
@@ -261,7 +281,9 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
     expansionFlags.push(`${label}: ${added} adjoining lot${added === 1 ? "" : "s"} added`);
   }
 
-  if (parcels.length === 0 && centres.length === 0) {
+  // A page that resolved nothing is an ordinary page — the caller sees it in `unresolved` and
+  // decides once it has every page. Only a whole-list miss is an error.
+  if (!page && parcels.length === 0 && centres.length === 0) {
     throw new Error(
       `None of the ${addresses.length} addresses resolved to a parcel: ${unresolved
         .slice(0, 3)
@@ -303,5 +325,6 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
     unresolved,
     centres,
     flags,
+    total,
   };
 }

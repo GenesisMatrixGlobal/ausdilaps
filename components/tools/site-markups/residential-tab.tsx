@@ -13,6 +13,7 @@ import {
 } from "@/lib/maps/building-markup-file";
 import { AddressSearch, type PlaceSelection } from "./address-search";
 import { parseGoogleMapsUrl, type GoogleMapsTarget } from "@/lib/maps/parse-google-maps-url";
+import { mapPool } from "@/lib/util/map-pool";
 import { ShapePanel } from "./shape-panel";
 import {
   useShapes,
@@ -157,6 +158,11 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
    *  list afterwards doesn't pop the map in and out under the sheet. DEV tab only for now. */
   const [lineItemsOnly, setLineItemsOnly] = useState(true);
   const [mapHidden, setMapHidden] = useState(false);
+  /** Addresses that resolved to nothing, for the "Map hidden" bar — the flags box that would
+   *  otherwise carry them is off in multi mode, and a row that isn't there is invisible. */
+  const [unresolved, setUnresolved] = useState<{ raw: string; reason: string }[]>([]);
+  /** "Resolving addresses… 50/120" while a long list is paged through. */
+  const [progress, setProgress] = useState<string | null>(null);
   /** Google's own viewport for each place added from the search, keyed by the coordinate text
    *  written into the list — so Generate can open the map on the view Google Maps showed. A
    *  ref, not state: nothing renders from it, and it is read once per Generate. Lost on reload,
@@ -678,34 +684,88 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   /** Multi mode's Generate: every pasted address becomes a blue lot, and there is no red site.
    *  The response lands in the same `result` the single-address path fills, so everything
    *  after this point — map, sidebar, sheet, export, save file — is shared code. */
+  type BulkResponse = {
+    ok: boolean;
+    error?: string;
+    parcels?: Neighbour[];
+    address?: { street: string; suburb: string; postcode: string; state: string };
+    centres?: { point: LatLng; label: string }[];
+    unresolved?: { raw: string; reason: string }[];
+    flags?: string[];
+    total?: number;
+  };
+
+  async function fetchBulk(body: Record<string, unknown>): Promise<BulkResponse> {
+    const res = await fetch("/api/kml/standard-markup/bulk-parcels", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json = (await res.json().catch(() => null)) as BulkResponse | null;
+    if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Something went wrong resolving those addresses.");
+    return json;
+  }
+
+  /** "Line items only": the list is a schedule, not a drawing, so the drawing's cap does not
+   *  apply. Resolved in pages of PAGE_SIZE (three in flight — each page is its own function
+   *  call, under the 60-second limit), then merged: lot ids made unique across pages the same
+   *  way the picker does, flags and unresolved concatenated, the first page's job address. */
+  async function fetchBulkPaged(text: string): Promise<BulkResponse> {
+    const PAGE_SIZE = 50;
+    const first = await fetchBulk({ text, from: 0, to: PAGE_SIZE });
+    const total = first.total ?? 0;
+    const starts: number[] = [];
+    for (let from = PAGE_SIZE; from < total; from += PAGE_SIZE) starts.push(from);
+    let done = Math.min(PAGE_SIZE, total);
+    setProgress(`${done}/${total}`);
+    const rest = await mapPool(starts, 3, async (from) => {
+      const page = await fetchBulk({ text, from, to: from + PAGE_SIZE });
+      done += Math.min(PAGE_SIZE, total - from);
+      setProgress(`${done}/${total}`);
+      return page;
+    });
+    const pages = [first, ...rest];
+    const parcels: Neighbour[] = [];
+    for (const p of pages) for (const n of p.parcels ?? []) parcels.push({ ...n, id: uniqueLotId(n.id, parcels) });
+    const address = pages.find((p) => (p.parcels?.length ?? 0) > 0)?.address ?? first.address;
+    return {
+      ok: true,
+      parcels,
+      address,
+      centres: pages.flatMap((p) => p.centres ?? []),
+      unresolved: pages.flatMap((p) => p.unresolved ?? []),
+      flags: pages.flatMap((p) => p.flags ?? []),
+      total,
+    };
+  }
+
   async function generateBulk() {
     setError(null);
     setFlags([]);
+    setUnresolved([]);
     if (!addressBlock.trim()) {
       setError("Paste at least one address.");
       return;
     }
     setLoading(true);
+    setProgress(null);
     try {
-      const res = await fetch("/api/kml/standard-markup/bulk-parcels", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text: addressBlock }),
-      });
-      const json = (await res.json().catch(() => null)) as
-        | {
-            ok: boolean;
-            error?: string;
-            parcels?: Neighbour[];
-            address?: { street: string; suburb: string; postcode: string; state: string };
-            centres?: { point: LatLng; label: string }[];
-            flags?: string[];
-          }
-        | null;
-      if (!res.ok || !json?.ok || !json.parcels || !json.address) {
-        setError(json?.error ?? "Something went wrong resolving those addresses.");
+      const paged = offerNoMap && lineItemsOnly;
+      const json = paged ? await fetchBulkPaged(addressBlock) : await fetchBulk({ text: addressBlock });
+      if (!json.parcels || !json.address) {
+        setError(json.error ?? "Something went wrong resolving those addresses.");
         return;
       }
+      if (paged && json.parcels.length === 0 && (json.centres?.length ?? 0) === 0) {
+        setError(
+          `None of the ${json.total ?? 0} addresses resolved: ${(json.unresolved ?? [])
+            .slice(0, 3)
+            .map((u) => `${u.raw} (${u.reason})`)
+            .join("; ")}${(json.unresolved?.length ?? 0) > 3 ? "…" : ""}`
+        );
+        return;
+      }
+      setUnresolved(json.unresolved ?? []);
       // The job's address is the first resolved one: it names the files and the save file, and
       // gives "+ Add lot from map" a state and suburb to look a picked lot up with.
       setStreet(json.address.street);
@@ -760,6 +820,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
       setError((e as Error).message);
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   }
 
@@ -1184,7 +1245,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
         >
           {loading
             ? multi
-              ? "Resolving addresses…"
+              ? `Resolving addresses…${progress ? ` ${progress}` : ""}`
               : "Generating snapshot…"
             : `${result ? "Regenerate" : "Generate"} ${multi ? "markup" : "snapshot"}`}
         </button>
@@ -1316,7 +1377,15 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ad-border bg-white px-4 py-3">
             <p className="text-sm text-ad-muted">
               <span className="font-medium text-ad-ink">Map hidden</span> — line items only.{" "}
-              {result.neighbours.length} propert{result.neighbours.length === 1 ? "y" : "ies"} on the sheet below.
+              {result.neighbours.length} propert{result.neighbours.length === 1 ? "y" : "ies"} on the sheet below
+              {unresolved.length > 0 && (
+                <>
+                  {" · "}
+                  <span className="font-medium text-ad-orange">{unresolved.length}</span>
+                  {" didn't resolve"}
+                </>
+              )}
+              .
             </p>
             <button
               type="button"
@@ -1325,6 +1394,20 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
             >
               Show map
             </button>
+            {unresolved.length > 0 && (
+              // Folded: an address that isn't on the sheet is a line item nobody prices, so the
+              // list has to be reachable — but 40 of them above a 100-row sheet is in the way.
+              <details className="w-full text-sm text-ad-muted">
+                <summary className="cursor-pointer text-ad-steel">Show the {unresolved.length} that didn&apos;t resolve</summary>
+                <ul className="mt-2 list-disc pl-5">
+                  {unresolved.map((u, i) => (
+                    <li key={`${i}-${u.raw}`}>
+                      <span className="text-ad-ink">{u.raw}</span> — {u.reason}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </div>
         ) : (
         <>

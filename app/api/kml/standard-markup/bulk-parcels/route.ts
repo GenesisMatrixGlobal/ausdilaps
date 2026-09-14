@@ -11,7 +11,10 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const requestSchema = z.object({
-  text: z.string().trim().min(1, "Paste at least one address").max(20_000),
+  text: z.string().trim().min(1, "Paste at least one address").max(60_000),
+  // A slice of the parsed lines — "line items only" resolves a long list a page at a time.
+  from: z.number().int().min(0).optional(),
+  to: z.number().int().min(1).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -34,7 +37,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await resolveBulkParcels(parsed.data.text);
+    const { text, from, to } = parsed.data;
+    const result = await resolveBulkParcels(text, from !== undefined && to !== undefined ? { from, to } : undefined);
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 400 });

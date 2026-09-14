@@ -248,6 +248,11 @@ function parseAddressCells(cells: string[], id?: string, raw?: string): ParsedAd
   let suburbIdx: number;
   if (stateIdx < 0) {
     suburbIdx = merged.length - 1;
+    // No state anywhere and the row ends in a bare postcode ("59 Bells of Line Rd" | "north
+    // richmond" | "2754"): the postcode cell is NOT the suburb cell — the suburb is the one
+    // before it. Taking the last cell put "north richmond" on the end of the street and left
+    // the sheet's Suburb blank for a whole 34-row job (2026-09-14).
+    if (suburbIdx > 0 && /^\d{4}$/.test(merged[suburbIdx])) suburbIdx -= 1;
   } else {
     const stripped = merged[stateIdx].replace(STATE_RE, " ").replace(POSTCODE_RE, " ").trim();
     suburbIdx = stripped || stateIdx === 0 ? stateIdx : stateIdx - 1;

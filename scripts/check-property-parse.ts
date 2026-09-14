@@ -53,6 +53,10 @@ const CASES: [string, Expected][] = [
   // No state and no postcode: street and suburb still split on the street type.
   ["42 Eastern Ave Dover Heights", { street: "42 Eastern Ave", suburb: "Dover Heights" }],
   ["13 Craig Ave, Vaucluse", { street: "13 Craig Ave", suburb: "Vaucluse" }],
+  // Excel row with NO state and a bare postcode column: the suburb is the middle cell, not the
+  // postcode cell (North Richmond job, 2026-09-14 — 34 rows with a blank Suburb on the sheet).
+  ["59 Bells of Line Road \tnorth richmond\t2754", { street: "59 Bells of Line Road", suburb: "north richmond", state: "NSW", postcode: "2754" }],
+  ["2A Grose Vale Rd \tnorth richmond\t2754", { street: "2A Grose Vale Rd", suburb: "north richmond", state: "NSW", postcode: "2754" }],
   // A four-digit HOUSE number is not the postcode.
   ["1234 Gympie Rd, Aspley QLD 4034", { street: "1234 Gympie Rd", suburb: "Aspley", state: "QLD", postcode: "4034" }],
   ["1234 Gympie Rd Aspley QLD", { street: "1234 Gympie Rd", suburb: "Aspley", state: "QLD" }],

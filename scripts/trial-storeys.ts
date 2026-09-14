@@ -39,13 +39,14 @@ async function main() {
     4,
     async ({ addr, result, point, parcelRings, n }) => {
       const address = `${displayStreet(addr)}, ${addr.suburb} ${addr.state ?? ""} ${addr.postcode ?? ""}`.replace(/\s+/g, " ").trim();
-      const file = path.join(outDir, `${String(n).padStart(3, "0")}.jpg`);
       let image: string | null = null;
       try {
         const r = await estimateStoreys(
           { target: point, parcel: latLngRingFromArcgis(parcelRings), label: address },
           keys,
-          (jpeg) => {
+          (jpeg, attempt) => {
+            // One file per angle tried: 012-1.jpg, 012-2.jpg… the CSV names the last one.
+            const file = path.join(outDir, `${String(n).padStart(3, "0")}-${attempt}.jpg`);
             fs.writeFileSync(file, jpeg);
             image = file;
           }
@@ -57,7 +58,7 @@ async function main() {
     }
   );
 
-  const header = ["#", "Address", "Lookup", "Camera distance (m)", "Storeys (model)", "Confidence", "Facade visible", "Type", "Decision", "Notes", "Street View link", "Image"];
+  const header = ["#", "Address", "Lookup", "Angles tried", "Camera distance (m)", "Storeys (model)", "Confidence", "Facade visible", "Type", "Decision", "Notes", "Street View link", "Image"];
   const lines = [header.map(csvCell).join(",")];
   const tally = { clear: 0, check: 0, none: 0 };
   for (const row of rows) {
@@ -65,7 +66,7 @@ async function main() {
     const decision = v ? (v.clear ? "clear" : "check") : "no_image";
     tally[v ? (v.clear ? "clear" : "check") : "none"]++;
     lines.push(
-      [row.n, row.address, row.r && row.r.status !== "ok" ? `${row.lookup}: ${row.r.status}` : row.lookup, v ? Math.round(v.cameraDistanceM) : "", v?.storeys ?? "", v?.confidence ?? "", v ? (v.facadeVisible ? "yes" : "no") : "", v?.buildingType ?? "", decision, v?.notes ?? "", row.link ?? "", row.image ?? ""]
+      [row.n, row.address, row.r && row.r.status !== "ok" ? `${row.lookup}: ${row.r.status}` : row.lookup, v?.attempts ?? "", v ? Math.round(v.cameraDistanceM) : "", v?.storeys ?? "", v?.confidence ?? "", v ? (v.facadeVisible ? "yes" : "no") : "", v?.buildingType ?? "", decision, v?.notes ?? "", row.link ?? "", row.image ?? ""]
         .map(csvCell)
         .join(",")
     );

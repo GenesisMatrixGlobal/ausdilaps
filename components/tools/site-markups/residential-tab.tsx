@@ -1328,10 +1328,26 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
           </div>
         ) : (
         <>
+        {offerNoMap && (
+          // The same bar, with the opposite button, so Show map and Hide map swap in place.
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ad-border bg-white px-4 py-3">
+            <p className="text-sm text-ad-muted">
+              <span className="font-medium text-ad-ink">Map shown</span> —{" "}
+              {result.neighbours.length} propert{result.neighbours.length === 1 ? "y" : "ies"} on the sheet below.
+            </p>
+            <button
+              type="button"
+              onClick={() => setMapHidden(true)}
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              Hide map
+            </button>
+          </div>
+        )}
         {/* Breaks out of the 1240px Container on wide screens, like the sheet below it, and the
             map takes every pixel the sidebar leaves — it used to be a square capped at 896px,
             which on a 1440px monitor left a third of the row empty. */}
-        <div className={cn("mt-6 flex flex-col gap-4 xl:flex-row xl:items-start", BREAKOUT_XL)}>
+        <div className={cn("flex flex-col gap-4 xl:flex-row xl:items-start", offerNoMap ? "mt-4" : "mt-6", BREAKOUT_XL)}>
           <div className="w-full min-w-0 xl:flex-1">
             <MarkupMap
               ref={mapRef}

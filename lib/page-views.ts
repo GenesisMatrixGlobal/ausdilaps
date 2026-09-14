@@ -17,6 +17,22 @@ export type PageViewEvent =
 
 export const SAMPLES_VIEW_PATH = "/dilapidation-reports/samples";
 
+/**
+ * Whether this runtime's analytics writes are REAL.
+ *
+ * ⚠️ There is no dev database on this project — `.env.local` points at production Supabase —
+ * so every page load on localhost and every branch preview was writing live rows. That is
+ * how `tool_usage` reached 377 rows dominated by the days we were building the markup tools,
+ * and how the first web-vitals rows arrived carrying a 21-SECOND load time that was only
+ * Next compiling a page in dev. Those numbers do not describe the business; they describe us.
+ *
+ * `VERCEL_ENV` is "production" only on a production deployment. It is undefined locally and
+ * "preview" on a branch — both of which must stay out. Same gate the training indexer uses.
+ */
+export function isProductionRuntime(): boolean {
+  return process.env.VERCEL_ENV === "production";
+}
+
 /** Things that are not a person reading the page. Crawlers, link previewers, uptime
  *  checks, Vercel's own screenshot bot, Lighthouse, and headless browsers (which is what
  *  our own tests drive — they must not count either). Case-insensitive.
@@ -40,6 +56,7 @@ export async function recordPageView(
   event: PageViewEvent,
   meta: { path?: string; referrer?: string | null; userAgent?: string | null } = {}
 ): Promise<void> {
+  if (!isProductionRuntime()) return;
   try {
     // ⚠️ Supabase RETURNS errors rather than throwing, so an unchecked insert swallows
     // every failure silently. This one hid a missing table for the whole gap between

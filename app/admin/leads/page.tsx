@@ -33,6 +33,36 @@ function when(iso: string): string {
   }).format(new Date(iso));
 }
 
+/** Whether the notice to info@ got out, as one glyph you can scan a column of.
+ *
+ *  ⚠️ "Sent" means Resend ACCEPTED it, not that it landed in the inbox — a later bounce is
+ *  invisible to us. The wording says sent, never delivered, on purpose.
+ *
+ *  Null is drawn as a muted dash, NOT as a failure: rows created before the send was
+ *  recorded have nothing to report, and colouring them amber would invent alarms. */
+function SendMark({ ok, what }: { ok: boolean | null; what: string }) {
+  if (ok === null) {
+    return (
+      <span className="text-ad-muted/40" title={`${what} — not recorded`} aria-label={`${what} not recorded`}>
+        –
+      </span>
+    );
+  }
+  return ok ? (
+    <span className="text-ad-green" title={`Sent to ${what}`} aria-label={`Sent to ${what}`}>
+      ✓
+    </span>
+  ) : (
+    <span
+      className="font-semibold text-ad-amber"
+      title={`FAILED to send to ${what}`}
+      aria-label={`Failed to send to ${what}`}
+    >
+      ✕
+    </span>
+  );
+}
+
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
   return (
@@ -69,6 +99,10 @@ function LeadRow({ lead }: { lead: LeadRecord }) {
         >
           ▶
         </span>
+        {/* First thing in the row, so a column of them scans in one pass. */}
+        <span className="mt-0.5 w-4 shrink-0 text-center text-sm leading-none">
+          <SendMark ok={lead.emailed} what="info@ausdilaps.com.au" />
+        </span>
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span className="font-heading text-[0.95rem] font-semibold text-ad-ink">
@@ -80,11 +114,11 @@ function LeadRow({ lead }: { lead: LeadRecord }) {
                 {TIER_LABEL[lead.tier] ?? lead.tier}
               </span>
             )}
-            {/* Only ever shown when it failed. A green "emailed" badge on every row would
-                be noise; a missing notification is the one thing worth interrupting for. */}
+            {/* The glyph at the head of the row is the at-a-glance signal; this spells it
+                out for the one case that needs words. */}
             {lead.emailed === false && (
               <span className="rounded-full bg-ad-amber-tint px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-ad-amber">
-                not notified
+                info@ not notified
               </span>
             )}
           </span>
@@ -119,6 +153,16 @@ function LeadRow({ lead }: { lead: LeadRecord }) {
             <Field key={f.label} label={f.label} value={f.value} />
           ))}
         </dl>
+        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 border-t border-ad-border pt-3">
+          <p className="flex items-center gap-1.5 text-xs text-ad-muted">
+            <SendMark ok={lead.emailed} what="info@ausdilaps.com.au" />
+            Notice to info@ausdilaps.com.au
+          </p>
+          <p className="flex items-center gap-1.5 text-xs text-ad-muted">
+            <SendMark ok={lead.ackEmailed} what={lead.email} />
+            Acknowledgement to the enquirer
+          </p>
+        </div>
         {lead.notes && (
           <div className="mt-4 border-t border-ad-border pt-3">
             <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-ad-muted">
@@ -142,8 +186,9 @@ export default async function AdminLeadsPage() {
     <div>
       <h1 className="text-2xl font-semibold text-ad-ink">Enquiries</h1>
       <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ad-muted">
-        Everything submitted through the quote form, newest first. Click one to see every
-        field it carried. Enquiries are not synced to Salesforce.
+        Everything submitted through the quote form, newest first. The tick means the notice
+        reached info@ausdilaps.com.au; a cross means it did not and nobody was told. Click a
+        row for every field it carried. Enquiries are not synced to Salesforce.
       </p>
 
       {unavailable && (

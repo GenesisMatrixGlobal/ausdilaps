@@ -1,5 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isProductionRuntime } from "@/lib/page-views";
 
 /**
  * Tool usage recording and read-back.
@@ -24,6 +25,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * this to `after()` from next/server, which keeps the function alive until it settles.
  */
 export async function recordToolUse(toolSlug: string): Promise<void> {
+  // A tool opened on localhost is us testing it, not a staff member using it.
+  if (!isProductionRuntime()) return;
   try {
     // ⚠️ Supabase RETURNS errors rather than throwing — an unchecked insert here would
     // record nothing and say nothing.

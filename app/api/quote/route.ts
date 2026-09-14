@@ -26,9 +26,9 @@ async function sendEmails(
   tier: LeadTier,
   testMode: boolean,
   leadId: string | null
-) {
+): Promise<{ adminSent: boolean; ackSent: boolean }> {
   const key = process.env.RESEND_API_KEY;
-  if (!key) return false;
+  if (!key) return { adminSent: false, ackSent: false };
   const from = process.env.RESEND_FROM_EMAIL ?? "AusDilaps <no-reply@ausdilaps.com.au>";
   const adminEmail = process.env.ADMIN_EMAIL ?? "info@ausdilaps.com.au";
   const salesNotify = process.env.SALES_NOTIFY_EMAIL;
@@ -126,7 +126,12 @@ async function sendEmails(
       </div>
     </div>`,
   });
-  return adminSent && ackSent;
+  // ⚠️ Returned SEPARATELY, never ANDed. The info@ notice is the one that matters: if it
+  // fails, a real enquiry is sitting in the database that nobody in the business knows
+  // about. The acknowledgement to the enquirer is a courtesy — a typo'd address failing it
+  // says nothing about whether we were told. ANDing them raised "nobody was notified" on
+  // the dashboard for enquiries info@ had in fact received.
+  return { adminSent, ackSent };
 }
 
 export async function POST(req: NextRequest) {
@@ -214,8 +219,11 @@ export async function POST(req: NextRequest) {
 
   // Email (best-effort, never blocks).
   let emailed = false;
+  let ackEmailed: boolean | null = null;
   try {
-    emailed = await sendEmails(d, tier, testMode, leadId);
+    const sent = await sendEmails(d, tier, testMode, leadId);
+    emailed = sent.adminSent;
+    ackEmailed = sent.ackSent;
   } catch (e) {
     console.error("[quote] email failed:", e);
   }
@@ -243,12 +251,15 @@ export async function POST(req: NextRequest) {
   }
 
   // Record delivery outcomes (best-effort).
-  if (hasSupabase && leadId && (emailed || sf)) {
+  // Unconditional once there is a row: the old guard skipped the update when BOTH emails
+  // failed, so a total failure was recorded only by the column default happening to agree.
+  if (hasSupabase && leadId) {
     try {
       await createAdminClient()
         .from("leads")
         .update({
           emailed,
+          ack_emailed: ackEmailed,
           salesforce_id: sf?.id ?? null,
           salesforce_synced: !!sf?.id,
           sync_error: sf?.error ?? null,

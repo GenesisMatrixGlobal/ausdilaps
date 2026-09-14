@@ -28,8 +28,12 @@ export type LeadRecord = {
   contactMethod: string[] | null;
   notes: string | null;
   sourcePage: string | null;
-  /** False means the quote form saved this but the notification email never sent. */
+  /** The notice to info@ was accepted by Resend. FALSE means a real enquiry is sitting
+   *  here that nobody in the business was told about. Null = never attempted. */
   emailed: boolean | null;
+  /** The courtesy acknowledgement to the enquirer. A failure here is not urgent — the
+   *  enquiry is safe either way. Null on rows that predate migration 0017. */
+  ackEmailed: boolean | null;
 };
 
 export type LeadsPage = {
@@ -84,6 +88,7 @@ export async function loadLeads(): Promise<LeadsPage> {
         notes: (r.notes as string | null) ?? null,
         sourcePage: (r.source_page as string | null) ?? null,
         emailed: (r.emailed as boolean | null) ?? null,
+        ackEmailed: (r.ack_emailed as boolean | null) ?? null,
       })),
     };
   } catch (e) {

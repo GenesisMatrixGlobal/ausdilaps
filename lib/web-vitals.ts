@@ -5,6 +5,7 @@
 
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isProductionRuntime } from "@/lib/page-views";
 
 export type VitalsSample = {
   path: string;
@@ -19,6 +20,8 @@ export type VitalsSample = {
 /** Records one page view's metrics. Errors are logged and swallowed — before migration 0016
  *  is applied the table does not exist, and a visitor must never feel that. */
 export async function recordVitals(s: VitalsSample): Promise<void> {
+  // Dev and preview measure a dev build — see isProductionRuntime().
+  if (!isProductionRuntime()) return;
   try {
     // ⚠️ The Supabase client RETURNS errors, it does not throw them. Awaiting the insert
     // without reading `error` swallows every failure silently — a missing table, a bad

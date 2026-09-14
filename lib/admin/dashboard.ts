@@ -136,13 +136,19 @@ export async function loadDashboard(origin: string) {
     // Only failures that a human can act on. Empty on a good day.
     const alerts: Alert[] = [];
 
+    // ⚠️ `emailed` means ONLY the notice to info@ (migration 0017 split it from the
+    // enquirer's acknowledgement). Before that split this read `adminSent && ackSent`, so a
+    // bounced courtesy email raised this alarm for an enquiry info@ had actually received —
+    // and an alarm that cries wolf about the one thing you must not ignore is worse than no
+    // alarm. A failed acknowledgement is deliberately NOT surfaced here: the enquiry is safe.
     const notEmailed = leads.filter((l) => l.emailed === false).length;
     if (notEmailed > 0) {
       alerts.push({
         tone: "critical",
-        title: `${notEmailed} ${notEmailed === 1 ? "enquiry" : "enquiries"} nobody was notified about`,
+        title: `${notEmailed} ${notEmailed === 1 ? "enquiry" : "enquiries"} never reached info@ausdilaps.com.au`,
         detail:
-          "The quote form saved these but the notification email never sent. Usually a missing or wrong RESEND_API_KEY.",
+          "The quote form saved these but the notification email did not send, so nobody in the business was told. Usually a missing or wrong RESEND_API_KEY. Chase them by hand.",
+        href: "/admin/leads",
       });
     }
 

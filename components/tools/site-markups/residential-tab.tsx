@@ -143,6 +143,11 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
   const [error, setError] = useState<string | null>(null);
   const [flags, setFlags] = useState<string[]>([]);
   const [result, setResult] = useState<GenerateResponse | null>(null);
+  /** Coordinate lines in the address list with no titled parcel under them (a community centre,
+   *  a reserve — places Google has no street address for). The map is centred on them and the
+   *  site is drawn by hand. Not in the save file: the shapes drawn there are, and reopening
+   *  frames those instead. */
+  const [centres, setCentres] = useState<{ point: LatLng; label: string }[]>([]);
   const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
   // Matches the excludedIds convention: state records what's been REMOVED, so a fresh
   // snapshot starts with everything the lookup found.
@@ -276,12 +281,16 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
       ? (result.neighbours.find((n) => n.color === "red") ?? result.neighbours[0] ?? null)
       : null;
   const singleLotLayer = singleLot ? layers.find((l) => l.key === lotKey(singleLot.id)) ?? null : null;
+  // A lone address with no parcel still has a point — the one the map was centred on.
+  const singleCentre = multi && result && listedAddresses === 1 && !singleLot ? (centres[0] ?? null) : null;
   const sitePoint = multi
     ? singleLotLayer
       ? layerAnchor(singleLotLayer)
-      : null
+      : (singleCentre?.point ?? null)
     : ((subjectLayer ? layerAnchor(subjectLayer) : null) ?? addressPoint);
-  const streetViewLabel = multi ? (singleLot?.street ?? "the property") : (street.trim() || "the project site");
+  const streetViewLabel = multi
+    ? (singleLot?.street ?? singleCentre?.label ?? "the property")
+    : (street.trim() || "the project site");
   // A primitive key, not the object: sitePoint is derived every render, so depending on its
   // identity would refetch forever.
   const sitePointKey = sitePoint ? `${sitePoint.lat.toFixed(6)},${sitePoint.lng.toFixed(6)}` : null;
@@ -347,6 +356,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
     setExcludedIds(new Set(f.excludedIds));
     setHideSubject(f.hideSubject);
     shapes.replaceAll(f.shapes);
+    setCentres([]);
     setLineDrafts(f.lineItems ?? {});
     setDeselected(new Set(f.deselected ?? []));
     setResult({
@@ -360,7 +370,9 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
     });
     // A saved frame is no longer stored or honoured — the map is live, so the operator points
     // it wherever they want. Frame the geometry the file actually contains instead.
-    frameGeometry(f.subjectRing, f.neighbours, new Set(f.excludedIds));
+    // Shapes count too: a markup drawn by hand around a place with no parcel has nothing else
+    // to frame, and would otherwise reopen on the map's default centre.
+    frameGeometry(f.subjectRing, f.neighbours, new Set(f.excludedIds), f.shapes.map((sh) => sh.points));
     setFlags(
       parsed.skippedShapes > 0
         ? [`${parsed.skippedShapes} shape(s) in that file couldn't be read and were skipped`]
@@ -376,9 +388,21 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
    *
    *  A keyed REQUEST rather than a direct call, because on the first snapshot the map is still
    *  loading when this runs — see the fitRequest prop. */
-  function frameGeometry(subjectRing: LatLng[], neighbours: Neighbour[], excluded: Set<string>) {
-    const rings = [subjectRing, ...neighbours.filter((n) => !excluded.has(n.id)).map((n) => n.ring)];
-    setFitRequest({ key: crypto.randomUUID(), rings: rings.filter((r) => r.length >= 3) });
+  function frameGeometry(subjectRing: LatLng[], neighbours: Neighbour[], excluded: Set<string>, extra: LatLng[][] = []) {
+    const rings = [subjectRing, ...neighbours.filter((n) => !excluded.has(n.id)).map((n) => n.ring), ...extra];
+    // Two points still frame something — a drawn line, or the box around a centre.
+    setFitRequest({ key: crypto.randomUUID(), rings: rings.filter((r) => r.length >= 2) });
+  }
+
+  /** A ~130 m box around a point, so a place with no parcel can be framed the same way a lot is.
+   *  Sized for a site, not a street: close enough to start drawing without zooming. */
+  function boxAround(p: LatLng): LatLng[] {
+    const dLat = 0.0006;
+    const dLng = dLat / Math.cos((p.lat * Math.PI) / 180);
+    return [
+      { lat: p.lat - dLat, lng: p.lng - dLng },
+      { lat: p.lat + dLat, lng: p.lng + dLng },
+    ];
   }
 
   // A callback rather than a plain function because applyTarget below memoises over it — and
@@ -386,10 +410,21 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
   const handleAddressSelect = useCallback((parsed: PlaceSelection) => {
     if (multi) {
       // Multi mode: a searched address joins the list rather than becoming THE address.
-      const line = [parsed.street, [parsed.suburb, parsed.state, parsed.postcode].filter(Boolean).join(" ")]
-        .filter(Boolean)
-        .join(", ");
-      if (!line) return;
+      const tail = [parsed.suburb, parsed.state, parsed.postcode].filter(Boolean).join(" ");
+      let line: string;
+      if (parsed.street) {
+        line = [parsed.street, tail].filter(Boolean).join(", ");
+      } else if (parsed.location) {
+        // A place Google has no street address for — a community centre, a reserve, a corner.
+        // The list takes its COORDINATE, labelled with the name the search showed, and
+        // bulk-parcels.ts resolves it by the parcel under the point — or, when there is no
+        // titled parcel there, just centres the map so the site can be drawn by hand.
+        const name = (parsed.label ?? "").replace(/,?\s*australia\s*$/i, "").trim();
+        line = `${parsed.location.lat.toFixed(6)}, ${parsed.location.lng.toFixed(6)} ${name || tail}`.trim();
+      } else {
+        setAddressError("Google has neither a street address nor a location for that place — try a nearby address.");
+        return;
+      }
       const entry = preselectSurrounding ? `+ ${line}` : line;
       setAddressBlock((prev) => (prev.trim() ? `${prev.replace(/\s+$/, "")}\n${entry}` : entry));
       setAddressError(null);
@@ -509,6 +544,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
         return;
       }
       setResult(json);
+      setCentres([]);
       setExcludedIds(new Set());
       setHideSubject(false);
       setLineDrafts({});
@@ -605,6 +641,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
             error?: string;
             parcels?: Neighbour[];
             address?: { street: string; suburb: string; postcode: string; state: string };
+            centres?: { point: LatLng; label: string }[];
             flags?: string[];
           }
         | null;
@@ -621,6 +658,8 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
       if (supported) setState(json.address.state as SupportedState);
       setParsedSummary(`${json.parcels.length} properties`);
       setAddressPoint(null);
+      const found = json.centres ?? [];
+      setCentres(found);
       setResult({
         subjectRing: [],
         subjectLotPlan: null,
@@ -655,7 +694,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
       );
       shapes.reset();
       setFlags(json.flags ?? []);
-      frameGeometry([], json.parcels, new Set());
+      frameGeometry([], json.parcels, new Set(), found.map((c) => boxAround(c.point)));
       setPicking(false);
       setPickMessage(null);
       setAddressesOpen(false);
@@ -901,6 +940,9 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
                 onSelect={handleAddressSelect}
                 onPastedLocation={handlePaste}
                 clearOnSelect
+                // A place with no street address is still a place — handleAddressSelect turns
+                // it into a coordinate line rather than an error.
+                requireAddress={false}
                 placeholder="Add an address, or paste a Google Maps link…"
               />
             </div>
@@ -1183,6 +1225,15 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
 
       {result && (
         <>
+        {multi && centres.length > 0 && (
+          // The flags box is off in multi mode, and a centre has no sheet row to carry a note —
+          // so the one thing the operator has to know is said here, above the map.
+          <p className="mt-6 text-sm text-ad-muted">
+            <span className="font-medium text-ad-ink">{centres.map((c) => c.label).join(", ")}</span>
+            {centres.length === 1 ? " has" : " have"} no titled parcel — the map is centred there. Draw the site with the shape
+            tools and each shape becomes a line item.
+          </p>
+        )}
         {/* Breaks out of the 1240px Container on wide screens, like the sheet below it, and the
             map takes every pixel the sidebar leaves — it used to be a square capped at 896px,
             which on a 1440px monitor left a third of the row empty. */}

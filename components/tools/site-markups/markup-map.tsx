@@ -688,7 +688,8 @@ export function MarkupMap({
   const fitKey = fitRequest?.key ?? null;
   useEffect(() => {
     if (!map || !fitKey) return;
-    const rings = (latest.current.fitRequest?.rings ?? []).filter((r) => r.length >= 3);
+    // Two points still frame something (a drawn line, a box around a point); one does not.
+    const rings = (latest.current.fitRequest?.rings ?? []).filter((r) => r.length >= 2);
     if (rings.length === 0) return;
     const bounds = new google.maps.LatLngBounds();
     for (const ring of rings) for (const p of ring) bounds.extend(new google.maps.LatLng(p.lat, p.lng));

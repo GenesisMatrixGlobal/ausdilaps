@@ -21,6 +21,7 @@ import { fetchParcelsNearPointNsw } from "./parcels/nsw";
 import { fetchParcelsNearPointQld } from "./parcels/qld";
 import { fetchParcelsNearPointVic } from "./parcels/vic";
 import type { ParcelFeature } from "./parcels/types";
+import { parcelAtPoint } from "./parcel-at-point";
 import type { StandardMarkupState } from "./resolve";
 
 /** More than this on one drawing stops being a markup and starts being a map. */
@@ -38,6 +39,29 @@ export const WITH_NEIGHBOURS_MARKER = "+";
 export interface BulkLine {
   addr: ParsedAddress;
   withNeighbours: boolean;
+  /** Set when the line opened with a coordinate pair — a place Google has no street address for
+   *  (a community centre, a reserve, a corner). Resolved by the parcel UNDER the point rather
+   *  than by geocoding the text; with no titled parcel there, the map is simply centred on it. */
+  point?: LatLng;
+}
+
+/** `-33.770034, 151.037490 The Don Moore Community Centre, Carlingford NSW 2118` — a coordinate,
+ *  then whatever label the search box had for the place. Both numbers must carry decimals: a
+ *  house number never does, so "12, 151 Smith St" can't be read as latitude 12. */
+const COORDINATE_LINE_RE = /^(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*(.*)$/;
+
+function coordinateLine(bare: string, withNeighbours: boolean): BulkLine | null {
+  const m = COORDINATE_LINE_RE.exec(bare);
+  if (!m) return null;
+  const lat = Number(m[1]);
+  const lng = Number(m[2]);
+  if (!(Math.abs(lat) <= 90 && Math.abs(lng) <= 180) || (lat === 0 && lng === 0)) return null;
+  // The label parses like any address line, so a suburb and state ride along (the state picks
+  // the cadastre). The place name lands in `street`, which is what the sheet row wants to say.
+  const label = m[3].trim();
+  const [labelAddr] = label ? parseAddressBlock(label) : [];
+  const addr: ParsedAddress = labelAddr ? { ...labelAddr, raw: bare } : { raw: bare, street: "", suburb: "" };
+  return { addr, withNeighbours, point: { lat, lng } };
 }
 
 /** One address per non-blank line, with the marker peeled off. Pure.
@@ -53,6 +77,8 @@ export function parseBulkLines(text: string): BulkLine[] {
     .flatMap((line) => {
       const withNeighbours = line.startsWith(WITH_NEIGHBOURS_MARKER);
       const bare = withNeighbours ? line.slice(WITH_NEIGHBOURS_MARKER.length).trim() : line;
+      const coord = coordinateLine(bare, withNeighbours);
+      if (coord) return [coord];
       const [addr] = parseAddressBlock(bare);
       return addr ? [{ addr, withNeighbours }] : [];
     });
@@ -116,6 +142,9 @@ export interface BulkParcelsResult {
   address: { street: string; suburb: string; postcode: string; state: string };
   /** Addresses that produced no parcel, with why — shown as flags, never silently dropped. */
   unresolved: { raw: string; reason: string }[];
+  /** Coordinate lines with no titled parcel under them. Not a failure: the map is centred
+   *  there and the operator draws the site by hand. */
+  centres: { point: LatLng; label: string }[];
   flags: string[];
 }
 
@@ -128,6 +157,37 @@ function uniqueId(base: string, used: Set<string>): string {
   return id;
 }
 
+/** One line, resolved — whichever way it came in. The address pipeline and the point lookup
+ *  both land here so everything after (parcels, `+` expansion, flags) is one path. */
+interface ResolvedLine {
+  line: BulkLine;
+  ring: LatLng[] | null;
+  lotPlan: string | null;
+  areaSqm: number | null;
+  /** The verified point — after any address-layer correction — for the adjoining-lot search. */
+  point: LatLng | null;
+  notes: string[];
+  /** Why there is no parcel. Null when there is one, or when the line is a plain centre. */
+  failure: string | null;
+}
+
+/** A coordinate line: the titled parcel under the point, or nothing. A road reserve or an
+ *  easement counts as nothing — drawing a whole road because a place pin sits on it is worse
+ *  than an empty map. Never throws: a cadastre outage here is a centre, not a lost markup. */
+async function lookupPoint(line: BulkLine): Promise<ResolvedLine> {
+  const point = line.point!;
+  const state = line.addr.state;
+  const base: ResolvedLine = { line, ring: null, lotPlan: null, areaSqm: null, point, notes: [], failure: null };
+  if (!state || !(state in NEAR_POINT)) return base;
+  try {
+    const parcel = await parcelAtPoint(state as StandardMarkupState, point);
+    if (!parcel || parcel.kind !== "lot") return base;
+    return { ...base, ring: parcel.ring, lotPlan: parcel.idKey || null, areaSqm: parcel.areaSqm };
+  } catch (e) {
+    return { ...base, notes: [`couldn't read the cadastre at that point — ${(e as Error).message}`] };
+  }
+}
+
 export async function resolveBulkParcels(text: string): Promise<BulkParcelsResult> {
   const lines = parseBulkLines(text);
   const addresses = lines.map((l) => l.addr);
@@ -136,45 +196,73 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
     throw new Error(`That's ${addresses.length} addresses — the markup takes up to ${MAX_BULK_ADDRESSES} at once.`);
   }
 
-  const looked = await lookupParcels(addresses);
+  // Address lines go through the geocode → parcel pipeline; coordinate lines skip the geocoder
+  // (there is no address to geocode) and take the parcel under the point. Both run at once and
+  // are stitched back into list order, so line i is still lines[i] downstream.
+  const [byAddress, byPoint] = await Promise.all([
+    lookupParcels(lines.filter((l) => !l.point).map((l) => l.addr)),
+    mapPool(lines.filter((l) => l.point), 5, lookupPoint),
+  ]);
+  let ai = 0;
+  let pi = 0;
+  const resolved: ResolvedLine[] = lines.map((line) => {
+    if (line.point) return byPoint[pi++];
+    const { result, parcelRings, point } = byAddress[ai++];
+    const ring = latLngRingFromArcgis(parcelRings);
+    const ok = result.status === "ok" && !!ring;
+    return {
+      line,
+      ring: ok ? ring : null,
+      lotPlan: result.lotPlan,
+      areaSqm: result.lotSizeSqm,
+      point,
+      notes: ok ? result.flags : [],
+      failure: ok
+        ? null
+        : result.flags[0] ?? (result.status === "ok" ? "no parcel geometry returned" : result.status.replace("_", " ")),
+    };
+  });
+
   const parcels: BulkParcel[] = [];
   const unresolved: BulkParcelsResult["unresolved"] = [];
+  const centres: BulkParcelsResult["centres"] = [];
   const used = new Set<string>();
   const expansionFlags: string[] = [];
 
-  looked.forEach(({ addr, result, parcelRings }, i) => {
-    const ring = latLngRingFromArcgis(parcelRings);
-    if (result.status !== "ok" || !ring) {
-      unresolved.push({
-        raw: addr.raw,
-        reason: result.flags[0] ?? (result.status === "ok" ? "no parcel geometry returned" : result.status.replace("_", " ")),
-      });
+  resolved.forEach((r, i) => {
+    const { addr } = r.line;
+    if (!r.ring) {
+      if (r.line.point) centres.push({ point: r.line.point, label: displayStreet(addr) || addr.raw });
+      else unresolved.push({ raw: addr.raw, reason: r.failure ?? "no parcel" });
       return;
     }
     // A lot/plan when the cadastre gave one, else the `n<index>` placeholder that parcel-id.ts
     // knows NOT to print as a lot/plan.
-    const base = result.lotPlan ?? `n${i}`;
+    const base = r.lotPlan ?? `n${i}`;
     parcels.push({
       id: uniqueId(base, used),
-      ring,
-      areaSqm: result.lotSizeSqm,
-      street: displayStreet(addr),
+      ring: r.ring,
+      areaSqm: r.areaSqm,
+      street: displayStreet(addr) || null,
       suburb: addr.suburb || null,
-      color: lines[i].withNeighbours ? "red" : "blue",
+      color: r.line.withNeighbours ? "red" : "blue",
     });
   });
 
   // Marked addresses: their adjoining lots join the markup too. After the listed parcels, so a
   // neighbour that is ALSO a listed address keeps the listed row and is not added twice.
-  const marked = looked
-    .map((l, i) => ({ ...l, withNeighbours: lines[i].withNeighbours }))
-    .filter((l) => l.withNeighbours && l.result.status === "ok" && l.point && l.addr.state && l.addr.state in NEAR_POINT);
-  const expansions = await mapPool(marked, 3, async (l) => ({
-    l,
-    ...(await adjoiningLots(l.addr.state as StandardMarkupState, l.point!, { street: l.addr.street, suburb: l.addr.suburb })),
+  const marked = resolved.filter(
+    (r) => r.line.withNeighbours && r.ring && r.point && r.line.addr.state && r.line.addr.state in NEAR_POINT
+  );
+  const expansions = await mapPool(marked, 3, async (r) => ({
+    r,
+    ...(await adjoiningLots(r.line.addr.state as StandardMarkupState, r.point!, {
+      street: r.line.addr.street,
+      suburb: r.line.addr.suburb,
+    })),
   }));
-  for (const { l, lots, error } of expansions) {
-    const label = displayStreet(l.addr);
+  for (const { r, lots, error } of expansions) {
+    const label = displayStreet(r.line.addr);
     if (error) {
       expansionFlags.push(`${label}: couldn't look up the adjoining lots — ${error}`);
       continue;
@@ -189,7 +277,7 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
     expansionFlags.push(`${label}: ${added} adjoining lot${added === 1 ? "" : "s"} added`);
   }
 
-  if (parcels.length === 0) {
+  if (parcels.length === 0 && centres.length === 0) {
     throw new Error(
       `None of the ${addresses.length} addresses resolved to a parcel: ${unresolved
         .slice(0, 3)
@@ -198,8 +286,9 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
     );
   }
 
-  const first = looked.find((l) => l.result.status === "ok")?.addr ?? addresses[0];
+  const first = resolved.find((r) => r.ring)?.line.addr ?? addresses[0];
   const flags = unresolved.map((u) => `${u.raw}: ${u.reason} — not on the markup`);
+  for (const c of centres) flags.push(`${c.label}: no titled parcel at that point — the map is centred there, draw the site by hand`);
   // Two addresses on ONE lot draw one outline with two pins stacked on it — a strata pair, or
   // a geocode the address layer couldn't correct. Said out loud, because the second pin is
   // invisible under the first.
@@ -212,8 +301,8 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
     if (streets.length > 1) flags.push(`${streets.join(" and ")} are on the same lot (${lot}) — one outline, pins stacked`);
   }
   // Per-address notes from the lookup (address-layer corrections and the like).
-  for (const l of looked) {
-    if (l.result.status === "ok") for (const f of l.result.flags) flags.push(`${displayStreet(l.addr)}: ${f}`);
+  for (const r of resolved) {
+    for (const f of r.notes) flags.push(`${displayStreet(r.line.addr) || r.line.addr.raw}: ${f}`);
   }
   flags.push(...expansionFlags);
   const states = new Set(addresses.map((a) => a.state).filter(Boolean));
@@ -228,6 +317,7 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
       state: first.state ?? "",
     },
     unresolved,
+    centres,
     flags,
   };
 }

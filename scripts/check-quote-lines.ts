@@ -67,6 +67,12 @@ eq(lines.map((l) => l.addr.suburb), ["Dover Heights", "DOVER HEIGHTS", "Vaucluse
 const inherit = parseBulkLines("42 Eastern Ave Dover Heights NSW 2030\n44 Eastern Ave Dover Heights\n13 Craig Ave, Vaucluse");
 eq(inherit.map((l) => l.addr.state), ["NSW", "NSW", "NSW"], "state-less lines inherit the list's state");
 eq(parseBulkLines("42 Eastern Ave Dover Heights").map((l) => l.addr.state), [undefined], "nothing to inherit → unknown");
+// A place with no street address arrives as its coordinate plus the name the search showed.
+const coord = parseBulkLines("+ -33.770034, 151.037490 The Don Moore Community Centre, Carlingford NSW\n-33.77, 151.03\n12, 151 Smith St Carlingford");
+eq(coord.map((l) => l.point ?? null), [{ lat: -33.770034, lng: 151.03749 }, { lat: -33.77, lng: 151.03 }, null], "a coordinate pair leads a point line; a house number never has decimals");
+eq(coord.map((l) => l.withNeighbours), [true, false, false], "+ works on a point line too");
+eq(coord[0].addr.street, "The Don Moore Community Centre", "the place name is the row's street");
+eq(coord.map((l) => l.addr.state), ["NSW", "NSW", "NSW"], "a bare pair inherits the list's state");
 
 // ── Sizing adapter ──────────────────────────────────────────────────────────────────────
 const base: SizingResult = {

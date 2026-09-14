@@ -27,6 +27,10 @@ export interface LatLngBounds {
  *  contravariant, so residential-tab.tsx's existing `(parsed: ParsedAddress) => void`
  *  stays assignable and that file needs no change. */
 export interface PlaceSelection extends ParsedAddress {
+  /** The suggestion as Google showed it ("The Don Moore Community Centre, Carlingford NSW,
+   *  Australia") — the only name a place with no street address has. Absent from a reverse
+   *  geocode. */
+  label?: string | null;
   formattedAddress: string | null;
   location: LatLng | null;
   viewport: LatLngBounds | null;
@@ -167,6 +171,7 @@ export function AddressSearch({
         return;
       }
       onSelect({
+        label: suggestion.text,
         street: json.street,
         suburb: json.suburb,
         postcode: json.postcode,

@@ -81,6 +81,24 @@ export const REDIRECTS: Redirect[] = [
     destination: "/AusDilaps-Capability-Statement-FY25-26.pdf",
     permanent: true,
   },
+  // ⚠️ EMAIL SIGNATURE ASSETS — these MUST precede the wildcard, and they are not an SEO
+  // concern, they are a live bug fix. Every staff signature still points at the old
+  // WordPress URLs below. Under the wildcard alone they 308'd to the samples page, so an
+  // <img> in a signature fetched an HTML document and rendered as a BROKEN IMAGE in every
+  // email the company had sent since cutover — and each fetch also counted as a samples
+  // page view, which is what put 284 bot views on the /admin tile (Gmail's image proxy
+  // alone was 55 of them). Redirecting to the real file fixes both, and fixes signatures
+  // already sitting in people's sent folders without anyone editing Outlook.
+  {
+    source: "/wp-content/uploads/2025/09/AusDilaps-Logo-GIF.gif",
+    destination: "/email/signature-logo.gif",
+    permanent: true,
+  },
+  {
+    source: "/wp-content/uploads/2026/06/Email-Banner-GIF-FY26.gif",
+    destination: "/email/signature-banner.gif",
+    permanent: true,
+  },
   {
     source: "/wp-content/uploads/:path*",
     destination: "/dilapidation-reports/samples",

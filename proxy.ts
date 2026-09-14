@@ -119,10 +119,19 @@ async function samplesGate(req: NextRequest): Promise<NextResponse> {
   // Counts a person looking at the page, for the /admin tile. Only top-level document
   // requests from something that is not a bot: prefetches, link previewers, crawlers and
   // our own headless tests would otherwise triple the number and make it worthless.
+  //
+  // ⚠️ `sec-fetch-dest` must be PRESENT and "document". It used to default a missing
+  // header to "document", which is what made the tile read 284 views when barely 50
+  // requests even came from a current browser. Every real browser has sent this header
+  // since Chrome 80 / Firefox 90 / Safari 16.4; the things that DON'T send it are exactly
+  // what must not count — Gmail's image proxy (55 hits, fetching the email-signature GIF
+  // that the /wp-content wildcard was redirecting here), curl-shaped scrapers announcing a
+  // bare "Mozilla/5.0", and the long tail of spoofed old Chrome versions. Requiring the
+  // header is a far better filter than growing the user-agent regex forever.
   const ua = req.headers.get("user-agent");
   const countable =
     req.method === "GET" &&
-    (req.headers.get("sec-fetch-dest") ?? "document") === "document" &&
+    req.headers.get("sec-fetch-dest") === "document" &&
     !req.headers.get("next-router-prefetch") &&
     !looksLikeBot(ua);
   const count = (event: PageViewEvent) => {

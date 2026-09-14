@@ -512,6 +512,26 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
       return applyTarget(json.target);
     }
 
+    if (multi && target.placeName) {
+      // A /maps/place/<name>/@… link says WHAT was copied, so the name goes to the search and
+      // Google types it — a place becomes a map centre, an address an address — instead of
+      // reverse-geocoding the VIEW centre, which is whatever lot happened to be mid-screen (for
+      // the Don Moore Community Centre: the one across the road). The link's own view is kept
+      // for the place's point so Generate opens on exactly what was on screen in Google Maps.
+      const anchor = target.pin ?? { lat: target.lat, lng: target.lng };
+      if (target.spanMetres) {
+        const dLat = target.spanMetres / 2 / 111_320;
+        const dLng = dLat / Math.cos((anchor.lat * Math.PI) / 180);
+        placeViews.current.set(pointKey(anchor), {
+          south: target.lat - dLat,
+          west: target.lng - dLng,
+          north: target.lat + dLat,
+          east: target.lng + dLng,
+        });
+      }
+      return target.placeName;
+    }
+
     const point = { lat: target.lat, lng: target.lng };
     setAddressPoint(point);
     setAddressNote("Looking up that location…");
@@ -533,7 +553,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
     }
     handleAddressSelect(json);
     return true;
-  }, [handleAddressSelect]);
+  }, [handleAddressSelect, multi]);
 
   const handlePaste = useCallback(
     async (text: string): Promise<boolean | string> => {

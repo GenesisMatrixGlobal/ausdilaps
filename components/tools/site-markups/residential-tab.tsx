@@ -104,7 +104,11 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
  */
 export type MarkupMode = "single" | "multi";
 
-export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode }) {
+/** More listed addresses than this and the job is a spreadsheet, not a drawing — the sheet is
+ *  the work and the map is in the way (and a billed Dynamic Maps load nobody looks at). */
+const MANY_ADDRESSES = 10;
+
+export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: MarkupMode; dev?: boolean }) {
   const multi = mode === "multi";
   /** The pasted address list — multi mode only. */
   const [addressBlock, setAddressBlock] = useState("");
@@ -148,6 +152,11 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
    *  site is drawn by hand. Not in the save file: the shapes drawn there are, and reopening
    *  frames those instead. */
   const [centres, setCentres] = useState<{ point: LatLng; label: string }[]>([]);
+  /** "Line items only, no map" — offered when the list is long (MANY_ADDRESSES), on by default.
+   *  `lineItemsOnly` is the checkbox; `mapHidden` is what Generate did with it, so editing the
+   *  list afterwards doesn't pop the map in and out under the sheet. DEV tab only for now. */
+  const [lineItemsOnly, setLineItemsOnly] = useState(true);
+  const [mapHidden, setMapHidden] = useState(false);
   /** Google's own viewport for each place added from the search, keyed by the coordinate text
    *  written into the list — so Generate can open the map on the view Google Maps showed. A
    *  ref, not state: nothing renders from it, and it is read once per Generate. Lost on reload,
@@ -281,6 +290,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
   // property — the red lot if the address brought its neighbours in, else the only lot. With
   // several addresses there is no single place to look, so the button stays greyed out.
   const listedAddresses = multi ? addressBlock.split(/\r?\n/).filter((l) => l.trim()).length : 0;
+  const offerNoMap = dev && multi && listedAddresses > MANY_ADDRESSES;
   const singleLot =
     multi && result && listedAddresses === 1
       ? (result.neighbours.find((n) => n.color === "red") ?? result.neighbours[0] ?? null)
@@ -362,6 +372,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
     setHideSubject(f.hideSubject);
     shapes.replaceAll(f.shapes);
     setCentres([]);
+    setMapHidden(false);
     setLineDrafts(f.lineItems ?? {});
     setDeselected(new Set(f.deselected ?? []));
     setResult({
@@ -590,6 +601,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
       }
       setResult(json);
       setCentres([]);
+      setMapHidden(false);
       setExcludedIds(new Set());
       setHideSubject(false);
       setLineDrafts({});
@@ -705,6 +717,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
       setAddressPoint(null);
       const found = json.centres ?? [];
       setCentres(found);
+      setMapHidden(offerNoMap && lineItemsOnly);
       setResult({
         subjectRing: [],
         subjectLotPlan: null,
@@ -1175,10 +1188,24 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
               : "Generating snapshot…"
             : `${result ? "Regenerate" : "Generate"} ${multi ? "markup" : "snapshot"}`}
         </button>
+        {offerNoMap && (
+          // Appears the moment the list passes MANY_ADDRESSES, ticked: a long list is priced on
+          // the sheet, not drawn. Untick before Generate to keep the map.
+          <label className="flex items-center gap-2 text-sm text-ad-ink">
+            <input
+              type="checkbox"
+              checked={lineItemsOnly}
+              onChange={(e) => setLineItemsOnly(e.target.checked)}
+              className="h-4 w-4 accent-ad-steel"
+            />
+            Line items only, no map
+          </label>
+        )}
         <button
           className={cn(buttonVariants({ variant: "accent", size: "md" }), downloading && "opacity-60")}
           onClick={download}
-          disabled={!result || downloading}
+          disabled={!result || downloading || mapHidden}
+          title={mapHidden ? "Show the map to export a PNG" : undefined}
         >
           {downloading ? "Preparing…" : "Download .png"}
         </button>
@@ -1220,6 +1247,9 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
             if (file) void openJson(file);
           }}
         />
+        {/* Files a PNG first, so it needs the map. With the map hidden the sheet's own footer
+            (line items only, no image — Bulk Property Sizing's arrangement) takes over. */}
+        {!mapHidden && (
         <SyncToSalesforce
           getImageBase64={renderCleanImageBase64}
           // Same stem as the confirmed PNG, so the pair sit together in Box and whoever
@@ -1239,6 +1269,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
           // line items, so there is one Sync surface on the page rather than two.
           lineItems={{ rows }}
         />
+        )}
         {error && <span className="text-sm text-ad-orange">{error}</span>}
       </div>
 
@@ -1279,6 +1310,24 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
             nothing is pre-selected. Draw the site with the shape tools; each shape becomes a line item.
           </p>
         )}
+        {mapHidden ? (
+          // Line items only: no map, no sidebar (both are about drawing), and no Dynamic Maps
+          // load. Show map brings the whole block back, framed on the resolved lots.
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ad-border bg-white px-4 py-3">
+            <p className="text-sm text-ad-muted">
+              <span className="font-medium text-ad-ink">Map hidden</span> — line items only.{" "}
+              {result.neighbours.length} propert{result.neighbours.length === 1 ? "y" : "ies"} on the sheet below.
+            </p>
+            <button
+              type="button"
+              onClick={() => setMapHidden(false)}
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              Show map
+            </button>
+          </div>
+        ) : (
+        <>
         {/* Breaks out of the 1240px Container on wide screens, like the sheet below it, and the
             map takes every pixel the sidebar leaves — it used to be a square capped at 896px,
             which on a 1440px monitor left a third of the row empty. */}
@@ -1387,6 +1436,8 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
                 only thing that still needs the server, and it refetches itself. */}
           </div>
         </div>
+        </>
+        )}
 
         {/* Full width and BELOW the image, not in the column beside it: pricing is read down
             a column across every layer, which a max-w-xs sidebar can't show. */}
@@ -1400,8 +1451,10 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
           onToggleAll={toggleAllRows}
           breakout
           emptyText="Nothing included on the markup yet."
-          // No footer here: the toolbar's Sync To Salesforce creates the line items along with
-          // the PNG. Bulk Property Sizing, which has no image, keeps the footer.
+          // No footer while the map is up: the toolbar's Sync To Salesforce creates the line
+          // items along with the PNG. With the map hidden there is no PNG, so the footer — the
+          // same one Bulk Property Sizing uses — creates them on its own.
+          sync={mapHidden ? {} : undefined}
         />
         </>
       )}

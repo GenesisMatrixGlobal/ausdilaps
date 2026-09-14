@@ -78,9 +78,11 @@ export function SiteMarkupsTool({ isAdmin = false }: ToolProps) {
       )}
       {isAdmin && visited.has("dev") && (
         <div hidden={tab !== "dev"}>
-          {/* Identical to Building Markup above, on purpose — but its OWN instance, so anything
-              tried here never touches the markup an estimator has open on the first tab. */}
-          <ResidentialMarkupTab mode="multi" />
+          {/* The same component as Building Markup above — but its OWN instance, so anything
+              tried here never touches the markup an estimator has open on the first tab, and
+              with `dev` set: experiments inside residential-tab are gated on that prop, staff
+              never see them, and promoting one is deleting its `dev &&`. */}
+          <ResidentialMarkupTab mode="multi" dev />
         </div>
       )}
     </div>

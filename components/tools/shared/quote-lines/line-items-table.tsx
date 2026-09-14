@@ -20,6 +20,8 @@ import { PRODUCT_NAMES } from "@/lib/markup-layers/salesforce-picklists";
 import { assetTypeFor, levelsUnchecked, type LineItemDraft, type LineItemRow } from "@/lib/markup-layers/line-items";
 import { AssetTypeSelect } from "./asset-type-select";
 import { RateSelect } from "./rate-select";
+import { lineItemsCsv } from "@/lib/quote-lines/csv";
+import { buttonVariants } from "@/components/ui/button";
 import { SyncQuoteLines, type SyncQuoteLinesProps } from "./sync-quote-lines";
 import { BREAKOUT_XL, SHEET_CELL, SHEET_HEAD, SHEET_INPUT } from "./styles";
 
@@ -135,6 +137,8 @@ export interface LineItemsTableProps {
   sync?: SyncQuoteLinesProps;
   /** Extra controls for the header row (copy buttons and the like). */
   headerRight?: ReactNode;
+  /** An "Export CSV" button in the header: the TICKED rows, every sheet column, as a file. */
+  exportCsv?: boolean;
   title?: string;
 }
 
@@ -148,10 +152,21 @@ export function LineItemsTable({
   emptyText,
   sync,
   headerRight,
+  exportCsv,
   title = "Quote line items",
 }: LineItemsTableProps) {
   const selectedCount = rows.filter((r) => r.selected).length;
   const columnCount = 2 + leading.length + 10;
+
+  function downloadCsv() {
+    const blob = new Blob([lineItemsCsv(rows)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className={cn("mt-6 rounded-xl border border-ad-border bg-white", breakout && BREAKOUT_XL)}>
@@ -162,7 +177,20 @@ export function LineItemsTable({
             {selectedCount} of {rows.length} selected
           </span>
         </p>
-        {headerRight}
+        <div className="flex flex-wrap items-center gap-2">
+          {exportCsv && (
+            <button
+              type="button"
+              onClick={downloadCsv}
+              disabled={selectedCount === 0}
+              title={selectedCount === 0 ? "Tick the rows to export first" : "Download the ticked rows as a CSV"}
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              Export CSV
+            </button>
+          )}
+          {headerRight}
+        </div>
       </div>
 
       <div className="overflow-x-auto">

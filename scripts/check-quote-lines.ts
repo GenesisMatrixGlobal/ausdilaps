@@ -23,6 +23,7 @@ import type { MarkupLayer } from "@/lib/markup-layers/types";
 import type { SizingResult } from "@/lib/property-sizing/types";
 import { buildQuoteLineItems, rowReason } from "@/lib/quote-lines/payload";
 import { parseBulkLines } from "@/lib/kml/standard-markup/bulk-parcels";
+import { lineItemsCsv } from "@/lib/quote-lines/csv";
 
 let failures = 0;
 function fail(msg: string) {
@@ -173,6 +174,17 @@ eq(h.Property_Type__c, "Other", "asset type override wins");
 eq([h.Internal_M2__c, h.External_M2__c], [50, 20], "both measurements on one line");
 if ("Levels__c" in h) fail("blank Levels must not be sent");
 eq(rowReason(draft({})), null, "a default sizing row is sendable");
+
+// ── CSV export ──────────────────────────────────────────────────────────────────────────
+{
+  const csvRows = rowsFrom(sourcesFromSizing(sizing), { "sizing:0": { street: 'Unit 1, "The Towers"' } }, new Set(["sizing:2"]));
+  const csv = lineItemsCsv(csvRows);
+  const csvLines = csv.replace(/^\uFEFF/, "").trimEnd().split("\r\n");
+  eq(csvLines[0], "#,Street,Suburb,Product,Asset type,Levels,Internal m²,External m²,Internal $/m²,External $/m²,Qty", "CSV header is the sheet's columns");
+  eq(csvLines.length, 1 + csvRows.filter((r) => r.selected).length, "CSV carries ticked rows only");
+  eq(csvLines[1].startsWith('1,"Unit 1, ""The Towers""",DOVER HEIGHTS,Residential House,Standard Internal,'), true, "commas and quotes are RFC 4180 quoted; asset type is the effective one");
+  eq(csv.startsWith("\uFEFF"), true, "BOM so Excel reads the ² as UTF-8");
+}
 
 if (failures) {
   console.error(`\n${failures} failure(s)`);

@@ -31,9 +31,29 @@ const nextConfig: NextConfig = {
       { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
       { key: "Access-Control-Allow-Origin", value: "*" },
     ];
+    // Baseline security headers. Deliberately NOT a Content-Security-Policy yet: the staff
+    // tools load Google Maps JS, Static Maps tiles and Box thumbnails, so a CSP needs its own
+    // testing pass rather than being bolted on blind. These four are safe everywhere.
+    const security = [
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      { key: "X-DNS-Prefetch-Control", value: "on" },
+    ];
     return [
       { source: "/email/:path*", headers: longCache },
       { source: "/field-service-icons/:path*", headers: longCache },
+      { source: "/:path*", headers: security },
+      // The staff portal and admin must never be framable — a transparent iframe over a
+      // real session is how a staff action gets clicked by someone else's page. The public
+      // marketing pages stay framable: nothing there acts on a session.
+      {
+        source: "/staff/:path*",
+        headers: [...security, { key: "X-Frame-Options", value: "DENY" }],
+      },
+      {
+        source: "/admin/:path*",
+        headers: [...security, { key: "X-Frame-Options", value: "DENY" }],
+      },
     ];
   },
 };

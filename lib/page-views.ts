@@ -5,6 +5,7 @@
 // insert settles — a bare fire-and-forget promise can be killed the moment the response
 // is sent.
 
+import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type PageViewEvent =

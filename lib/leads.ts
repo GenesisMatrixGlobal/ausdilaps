@@ -35,30 +35,33 @@ export type AssetCountRange = (typeof ASSET_COUNT_RANGES)[number];
 const optionalEnum = <T extends readonly [string, ...string[]]>(values: T) =>
   z.preprocess((v) => (v === "" ? undefined : v), z.enum(values).optional());
 
+// ⚠️ EVERY string is bounded. `notes` was the only capped field, and an App Router route
+// handler has no default body cap — so one unauthenticated POST could write a multi-megabyte
+// leads row and put the same payload in an email subject. Keep a .max() on anything added here.
 export const quoteSchema = z.object({
   inquiryType: z.enum(INQUIRY_TYPES),
-  name: z.string().trim().min(2, "Please enter your name"),
-  email: z.string().trim().email("Enter a valid email address"),
-  phone: z.string().trim().optional().default(""),
-  role: z.string().trim().optional().default(""),
-  company: z.string().trim().optional().default(""),
-  projectName: z.string().trim().optional().default(""),
-  projectLocation: z.string().trim().optional().default(""),
+  name: z.string().trim().min(2, "Please enter your name").max(120),
+  email: z.string().trim().email("Enter a valid email address").max(200),
+  phone: z.string().trim().max(40).optional().default(""),
+  role: z.string().trim().max(120).optional().default(""),
+  company: z.string().trim().max(200).optional().default(""),
+  projectName: z.string().trim().max(200).optional().default(""),
+  projectLocation: z.string().trim().max(200).optional().default(""),
   /** approx. number of assets (adjoining properties, culverts, etc.) requiring inspection */
   assetCount: optionalEnum(ASSET_COUNT_RANGES),
   // "I Received An Access Letter" branch
   propertyRole: optionalEnum(PROPERTY_ROLES),
   // "Report Inquiry" / "General Inquiry" branches
-  projectNumber: z.string().trim().optional().default(""),
-  documentId: z.string().trim().optional().default(""),
+  projectNumber: z.string().trim().max(80).optional().default(""),
+  documentId: z.string().trim().max(80).optional().default(""),
   // "I Received An Access Letter" / "General Inquiry" branches
-  contactAddress: z.string().trim().optional().default(""),
+  contactAddress: z.string().trim().max(300).optional().default(""),
   contactMethod: z.array(z.enum(CONTACT_METHODS)).optional().default([]),
   notes: z.string().trim().max(5000).optional().default(""),
   // anti-spam
-  company_website: z.string().optional().default(""), // honeypot — must stay empty
-  turnstileToken: z.string().optional().default(""),
-  sourcePage: z.string().optional().default(""),
+  company_website: z.string().max(200).optional().default(""), // honeypot — must stay empty
+  turnstileToken: z.string().max(4096).optional().default(""),
+  sourcePage: z.string().max(300).optional().default(""),
 });
 
 export type QuoteInput = z.infer<typeof quoteSchema>;

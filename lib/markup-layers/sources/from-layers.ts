@@ -46,9 +46,11 @@ export function sourceFromLayer(layer: MarkupLayer): LineItemSource {
       street: layer.street ?? (layer.color === "orange" ? "Council assets" : ""),
       internalMetres: layer.color === "blue" ? area : "",
       externalMetres: layer.color === "orange" ? area : "",
-      // One storey until someone says otherwise — the sheet highlights the cell until they do.
-      // An orange shape is council / external assets: no storeys, left blank and not sent.
-      levels: layer.color === "orange" ? "" : "1",
+      // The Street View count when a lot has one, else one storey until someone says otherwise —
+      // the sheet highlights the cell until they do (or until the check was confident enough to
+      // write the count into the draft itself). An orange shape is council / external assets:
+      // no storeys, left blank and not sent.
+      levels: layer.color === "orange" ? "" : layer.storeys && layer.storeys > 0 ? String(layer.storeys) : "1",
     },
     included: layer.included,
     // Red is the project site — the address the operator put in. It is drawn to show the client

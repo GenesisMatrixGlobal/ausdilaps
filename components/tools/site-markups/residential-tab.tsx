@@ -33,6 +33,7 @@ import { sourcesFromLayers } from "@/lib/markup-layers/sources/from-layers";
 import { applyCell, toggleDeselected } from "@/lib/markup-layers/drafts";
 import type { MarkupLayer } from "@/lib/markup-layers/types";
 import { formatArea } from "@/lib/kml/standard-markup/measure";
+import type { StoreyResult } from "@/lib/storeys/street-view-storeys";
 import { lotPlanFromId } from "@/lib/kml/standard-markup/parcels/parcel-id";
 import { pointInRing } from "@/lib/kml/standard-markup/geometry";
 
@@ -67,6 +68,8 @@ interface Neighbour {
    *  Null when the layer had nothing for this lot, or the lookup failed. */
   street?: string | null;
   suburb?: string | null;
+  /** From the Street View storeys check (DEV). Null until checked or when it found nothing. */
+  storeys?: number | null;
 }
 
 interface GenerateResponse {
@@ -171,6 +174,11 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   /** Addresses that resolved to nothing, for the "Map hidden" bar — the flags box that would
    *  otherwise carry them is off in multi mode, and a row that isn't there is invisible. */
   const [unresolved, setUnresolved] = useState<{ raw: string; reason: string }[]>([]);
+  /** The Street View storeys check (DEV): progress while it runs, a summary when it is done.
+   *  `storeysRun` is bumped by every Generate / Open so a slow batch from the previous markup
+   *  cannot write into this one. */
+  const [storeysNote, setStoreysNote] = useState<string | null>(null);
+  const storeysRun = useRef(0);
   /** "Resolving addresses… 50/120" while a long list is paged through. */
   const [progress, setProgress] = useState<string | null>(null);
   /** Google's own viewport for each place added from the search, keyed by the coordinate text
@@ -389,6 +397,8 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
     shapes.replaceAll(f.shapes);
     setCentres([]);
     setMapHidden(false);
+    storeysRun.current++;
+    setStoreysNote(null);
     setLineDrafts(f.lineItems ?? {});
     setDeselected(new Set(f.deselected ?? []));
     setResult({
@@ -618,6 +628,8 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
       setResult(json);
       setCentres([]);
       setMapHidden(false);
+      storeysRun.current++;
+      setStoreysNote(null);
       setExcludedIds(new Set());
       setHideSubject(false);
       setLineDrafts({});
@@ -694,6 +706,75 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   /** Multi mode's Generate: every pasted address becomes a blue lot, and there is no red site.
    *  The response lands in the same `result` the single-address path fills, so everything
    *  after this point — map, sidebar, sheet, export, save file — is shared code. */
+  /** Street View + vision storey count for each lot (lib/storeys, /api/kml/standard-markup/storeys),
+   *  in batches of ten with three in flight. A confident verdict (≥ STOREYS_CONFIDENT, facade
+   *  visible) is written INTO THE DRAFT, which is what turns the cell's highlight off; an unsure
+   *  one only reaches the lot (`storeys`), so the sheet seeds the count but keeps the cell
+   *  orange. About a cent a lot; the calls land on /admin/usage under this tool. */
+  async function checkStoreys(lots: Neighbour[], run: number) {
+    const targets = lots.filter((l) => l.ring.length >= 3);
+    if (targets.length === 0) return;
+    let done = 0;
+    let cleared = 0;
+    let unsure = 0;
+    let missed = 0;
+    setStoreysNote(`Checking storeys on Street View… 0/${targets.length}`);
+    const batches: Neighbour[][] = [];
+    for (let i = 0; i < targets.length; i += 10) batches.push(targets.slice(i, i + 10));
+    await mapPool(batches, 3, async (batch) => {
+      try {
+        const res = await fetch("/api/kml/standard-markup/storeys", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            lots: batch.map((l) => ({ key: l.id, ring: l.ring, label: [l.street, l.suburb].filter(Boolean).join(", ") })),
+          }),
+        });
+        const json = (await res.json().catch(() => null)) as
+          | { ok: boolean; results?: { key: string; result: StoreyResult | { status: "error"; error: string } }[] }
+          | null;
+        if (run !== storeysRun.current) return;
+        if (!res.ok || !json?.ok || !json.results) {
+          missed += batch.length;
+          return;
+        }
+        const byKey = new Map(json.results.map((r) => [r.key, r.result]));
+        setResult((prev) =>
+          prev
+            ? {
+                ...prev,
+                neighbours: prev.neighbours.map((n) => {
+                  const r = byKey.get(n.id);
+                  return r && r.status === "ok" && r.verdict.storeys ? { ...n, storeys: r.verdict.storeys } : n;
+                }),
+              }
+            : prev
+        );
+        setLineDrafts((prev) => {
+          let next = prev;
+          for (const [key, r] of byKey) {
+            if (r.status === "ok" && r.verdict.clear && r.verdict.storeys) next = applyCell(next, lotKey(key), "levels", String(r.verdict.storeys));
+          }
+          return next;
+        });
+        for (const r of byKey.values()) {
+          if (r.status === "ok" && r.verdict.clear) cleared++;
+          else if (r.status === "ok") unsure++;
+          else missed++;
+        }
+      } catch {
+        missed += batch.length;
+      } finally {
+        done += batch.length;
+        if (run === storeysRun.current) setStoreysNote(`Checking storeys on Street View… ${done}/${targets.length}`);
+      }
+    });
+    if (run !== storeysRun.current) return;
+    setStoreysNote(
+      `Storeys checked on Street View — ${cleared} confident and filled, ${unsure} filled but highlighted for a look, ${missed} with no usable view.`
+    );
+  }
+
   type BulkResponse = {
     ok: boolean;
     error?: string;
@@ -826,6 +907,11 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
       setPicking(false);
       setPickMessage(null);
       setAddressesOpen(false);
+      // DEV: count storeys from Street View for every lot, in the background. Confident counts
+      // fill the Levels cell and clear its highlight; unsure ones fill it and leave it orange.
+      storeysRun.current++;
+      setStoreysNote(null);
+      if (dev) void checkStoreys(json.parcels, storeysRun.current);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -1343,6 +1429,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
         )}
         {error && <span className="text-sm text-ad-orange">{error}</span>}
       </div>
+      {dev && storeysNote && <p className="mt-2 text-xs text-ad-muted">{storeysNote}</p>}
 
       {/* Off on the DEV tab for now (Rhys, 2026-09-11): nothing it has said there has been
           worth the space. The per-lot notes still reach the sheet's Notes column. */}

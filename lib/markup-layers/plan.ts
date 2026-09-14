@@ -117,6 +117,7 @@ export function layersFrom(file: BuildingMarkupFile): MarkupLayer[] {
       // Falls back to the job's suburb: an adjoining lot is in the same suburb in all but
       // pathological cases, and it saves retyping it on every row.
       suburb: lot.suburb ?? file.address.suburb ?? null,
+      storeys: lot.storeys ?? null,
       mode: null,
       // Red for the address a multi-property markup was searched from; blue otherwise.
       color: lot.color ?? "blue",

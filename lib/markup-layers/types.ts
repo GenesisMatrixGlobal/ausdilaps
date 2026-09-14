@@ -45,6 +45,10 @@ export interface MarkupLayer {
    *  a shape, which has no parcel to look one up from. */
   street: string | null;
   suburb: string | null;
+  /** Storeys the Street View check counted for a lot (lib/storeys). Null when unchecked, no
+   *  coverage, or a shape. Seeds the sheet's Levels cell; whether the cell is highlighted is
+   *  the draft's business (a confident count is written into the draft, an unsure one is not). */
+  storeys?: number | null;
   /** Line-mode shapes only; null for lots and areas. */
   mode: ShapeMode | null;
   /** How the layer is drawn on the markup, so the sheet's row can carry the same swatch the

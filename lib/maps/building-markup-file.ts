@@ -32,6 +32,9 @@ export interface SavedNeighbour {
    *  markups generated before the lookup existed simply have none. */
   street?: string | null;
   suburb?: string | null;
+  /** Storeys counted by the Street View check at generate time (lib/storeys), so a reopened
+   *  file seeds Levels the same way. Absent for every markup before 2026-09-14. */
+  storeys?: number | null;
 }
 
 export interface SavedMarkupShape {
@@ -182,6 +185,7 @@ export function parseBuildingMarkupFile(
       // from "the operator cleared it".
       street: str(n.street) || null,
       suburb: str(n.suburb) || null,
+      storeys: isFiniteNumber(n.storeys) && n.storeys > 0 ? Math.round(n.storeys) : null,
     });
   }
 

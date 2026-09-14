@@ -5,7 +5,7 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTool } from "@/lib/tools/registry";
-import { GOOGLE_CENTS_PER_REQUEST, type GoogleApi } from "@/lib/api-usage";
+import { GOOGLE_CENTS_PER_REQUEST, GOOGLE_FREE_REQUESTS_PER_MONTH, type GoogleApi } from "@/lib/api-usage";
 
 export interface UsageRow {
   tool: string | null;
@@ -13,7 +13,10 @@ export interface UsageRow {
   api: string;
   calls: number;
   units: number;
+  /** After Google's free monthly allowance — what the invoice should show. */
   costCents: number;
+  /** Before it — what the same calls would cost at list. */
+  listCents: number;
 }
 
 export interface UsageMonth {
@@ -23,6 +26,7 @@ export interface UsageMonth {
   to: Date;
   rows: UsageRow[];
   totalCents: number;
+  totalListCents: number;
   totalCalls: number;
 }
 
@@ -53,29 +57,48 @@ async function loadMonth(from: Date, to: Date): Promise<UsageMonth> {
     until_at: to.toISOString(),
   });
   if (error) throw error;
-  const rows: UsageRow[] = ((data ?? []) as { tool: string | null; provider: string; api: string; calls: number | string; units: number | string; cost_cents: number | string }[]).map((r) => ({
+  const raw = ((data ?? []) as { tool: string | null; provider: string; api: string; calls: number | string; units: number | string; cost_cents: number | string }[]).map((r) => ({
     tool: r.tool,
     provider: r.provider,
     api: r.api,
     calls: Number(r.calls),
     units: Number(r.units),
-    costCents: Number(r.cost_cents),
+    listCents: Number(r.cost_cents),
   }));
+  const rows = applyGoogleFreeAllowance(raw);
   return {
     label: monthLabel(from),
     from,
     to,
     rows,
     totalCents: rows.reduce((s, r) => s + r.costCents, 0),
+    totalListCents: rows.reduce((s, r) => s + r.listCents, 0),
     totalCalls: rows.reduce((s, r) => s + r.calls, 0),
   };
+}
+
+/** Google bills only the requests past each API's free monthly allowance, account-wide. The
+ *  allowance is spent across every tool that used the API, so each tool's row carries its
+ *  share of the BILLED fraction: 12,000 geocodes across two tools → the two rows together
+ *  cost 2,000 requests' worth, split in proportion to their counts. Anthropic and ArcGIS rows
+ *  pass through unchanged. */
+function applyGoogleFreeAllowance(rows: Omit<UsageRow, "costCents">[]): UsageRow[] {
+  const totalByApi = new Map<string, number>();
+  for (const r of rows) if (r.provider === "google") totalByApi.set(r.api, (totalByApi.get(r.api) ?? 0) + r.units);
+  return rows.map((r) => {
+    if (r.provider !== "google") return { ...r, costCents: r.listCents };
+    const total = totalByApi.get(r.api) ?? 0;
+    const free = GOOGLE_FREE_REQUESTS_PER_MONTH[r.api as GoogleApi] ?? 0;
+    const billedFraction = total > free ? (total - free) / total : 0;
+    return { ...r, costCents: Math.round(r.listCents * billedFraction * 10_000) / 10_000 };
+  });
 }
 
 export async function loadApiUsage(): Promise<ApiUsage> {
   const thisStart = brisbaneMonthStart(0);
   const nextStart = brisbaneMonthStart(1);
   const lastStart = brisbaneMonthStart(-1);
-  const empty = (from: Date, to: Date): UsageMonth => ({ label: monthLabel(from), from, to, rows: [], totalCents: 0, totalCalls: 0 });
+  const empty = (from: Date, to: Date): UsageMonth => ({ label: monthLabel(from), from, to, rows: [], totalCents: 0, totalListCents: 0, totalCalls: 0 });
   try {
     const [month, lastMonth] = await Promise.all([loadMonth(thisStart, nextStart), loadMonth(lastStart, thisStart)]);
     return { month, lastMonth };

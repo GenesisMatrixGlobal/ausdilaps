@@ -10,8 +10,10 @@ export const metadata = {
 /**
  * What the staff tools are spending on Google Maps Platform and Anthropic, this month and
  * last, split by tool and by API — with a total. Counted by us at the point of each call
- * (lib/api-usage.ts), priced at list, so it is an ESTIMATE and a ceiling: Google's monthly
- * free allowance per API is not applied, and the invoice is the truth.
+ * (lib/api-usage.ts). Anthropic is exact (the tokens each response reported, at list).
+ * Google is list price for the requests PAST each API's free monthly allowance, which is what
+ * the invoice should show; the list-price figure before the allowance is shown alongside so
+ * the value of the free tier is visible. The invoice is the truth — compare once a month.
  */
 
 function byKey<K extends string>(rows: UsageRow[], key: (r: UsageRow) => K) {
@@ -109,12 +111,12 @@ export default async function ApiUsagePage() {
   const { month, lastMonth } = u;
 
   const tiles: Stat[] = [
-    { label: `Spend · ${month.label}`, value: dollars(month.totalCents), sub: `${month.totalCalls} calls · estimate at list price` },
+    { label: `Spend · ${month.label}`, value: dollars(month.totalCents), sub: `${month.totalCalls} calls · ${dollars(month.totalListCents)} at list before free tiers` },
     { label: `Spend · ${lastMonth.label}`, value: dollars(lastMonth.totalCents), sub: `${lastMonth.totalCalls} calls` },
     {
       label: "Google share",
       value: dollars(month.rows.filter((r) => r.provider === "google").reduce((s, r) => s + r.costCents, 0)),
-      sub: "Maps Platform, before the free allowance",
+      sub: `after 10,000 free requests per API · ${dollars(month.rows.filter((r) => r.provider === "google").reduce((s, r) => s + r.listCents, 0))} at list`,
     },
     {
       label: "Anthropic share",
@@ -127,9 +129,10 @@ export default async function ApiUsagePage() {
     <div>
       <h1 className="text-2xl font-semibold text-ad-ink">API usage</h1>
       <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ad-muted">
-        What the staff tools spend on Google Maps Platform and Anthropic, counted at each call and priced at list. An
-        estimate and a ceiling: Google&apos;s monthly free allowance per API is not applied here, so the invoice will
-        read lower. Months are Brisbane calendar months.
+        What the staff tools spend on Google Maps Platform and Anthropic, counted at each call. Anthropic is exact, from
+        the tokens each response reported. Google is list price for the requests past each API&apos;s 10,000 free per
+        month — the number the invoice should show — with the before-allowance figure alongside. Months are Brisbane
+        calendar months; check against the invoice once.
       </p>
 
       {u.unavailable && (
@@ -154,7 +157,7 @@ export default async function ApiUsagePage() {
         />
         <Table
           title="By API"
-          hint="List price per request. Anthropic is priced from the tokens each response reported."
+          hint="Cost after each API's free monthly allowance; list price per request shown for reference."
           month={month}
           lastMonth={lastMonth}
           groupBy={(r) => `${r.provider}|${r.api}`}

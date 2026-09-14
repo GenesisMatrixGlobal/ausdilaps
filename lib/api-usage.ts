@@ -36,6 +36,22 @@ export const GOOGLE_CENTS_PER_REQUEST: Record<GoogleApi, number> = {
   directions: 0.5,
 };
 
+/** Google Maps Platform's monthly free allowance, REQUESTS PER API (SKU) PER CALENDAR MONTH,
+ *  on standard pay-as-you-go pricing (March 2025 model). Every API this app calls is an
+ *  "Essentials" SKU, which carries 10,000 free requests a month; only usage past that is
+ *  billed. Applied at READ time (lib/admin/api-usage.ts), never when a row is written, so a
+ *  change here re-prices history and the raw counts stay honest. Assumes this app is the only
+ *  user of the key — it is. */
+export const GOOGLE_FREE_REQUESTS_PER_MONTH: Record<GoogleApi, number> = {
+  geocoding: 10_000,
+  places_autocomplete: 10_000,
+  places_details: 10_000,
+  static_maps: 10_000,
+  street_view_static: 10_000,
+  street_view_metadata: Infinity,
+  directions: 10_000,
+};
+
 /** Anthropic list price in DOLLARS PER MILLION tokens, by model-id prefix. Cache reads bill at
  *  a tenth of input, cache writes at 1.25x. An unknown model records tokens with cost null. */
 const ANTHROPIC_USD_PER_MTOK: [prefix: string, input: number, output: number][] = [

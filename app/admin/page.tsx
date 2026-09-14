@@ -174,8 +174,8 @@ function ScoreRow({ label, scores, error }: {
   );
 }
 
-/** What the tools spent on Google and Anthropic this month, at list price (migration 0018,
- *  lib/api-usage.ts). A ceiling rather than the bill — Google's free allowance isn't applied. */
+/** What the tools spent on Google and Anthropic this month (migration 0018, lib/api-usage.ts):
+ *  Anthropic exact, Google after its free monthly allowance — what the invoices should show. */
 function apiSpendTile(u: ApiUsage): Stat {
   if (u.unavailable) {
     return { label: "API spend · month", href: "/admin/usage", value: "—", sub: "not recording yet", tone: "warn" };

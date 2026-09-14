@@ -25,7 +25,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
  */
 export async function recordToolUse(toolSlug: string): Promise<void> {
   try {
-    await createAdminClient().from("tool_usage").insert({ tool_slug: toolSlug });
+    // ⚠️ Supabase RETURNS errors rather than throwing — an unchecked insert here would
+    // record nothing and say nothing.
+    const { error } = await createAdminClient().from("tool_usage").insert({ tool_slug: toolSlug });
+    if (error) throw error;
   } catch (e) {
     console.error("[tool-usage] failed to record:", toolSlug, (e as Error).message);
   }

@@ -5,6 +5,7 @@ import "./globals.css";
 import { JsonLd } from "@/components/seo/json-ld";
 import { organizationSchema, localBusinessSchema } from "@/lib/seo";
 import { IntercomMessenger } from "@/components/marketing/intercom-messenger";
+import { WebVitalsReporter } from "@/components/marketing/web-vitals-reporter";
 
 const GA_ID = process.env.NEXT_PUBLIC_GA4_ID;
 
@@ -38,6 +39,9 @@ export default function RootLayout({
       <body>
         <JsonLd data={[organizationSchema(), localBusinessSchema()]} />
         {children}
+        {/* Real-user Core Web Vitals -> /api/vitals -> the Site health panel on /admin.
+            Renders nothing and ships no request until the page is hidden. */}
+        <WebVitalsReporter />
         <IntercomMessenger />
         {GA_ID && (
           <>

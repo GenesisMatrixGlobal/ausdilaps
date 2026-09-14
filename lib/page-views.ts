@@ -41,7 +41,10 @@ export async function recordPageView(
   meta: { path?: string; referrer?: string | null; userAgent?: string | null } = {}
 ): Promise<void> {
   try {
-    await createAdminClient()
+    // ⚠️ Supabase RETURNS errors rather than throwing, so an unchecked insert swallows
+    // every failure silently. This one hid a missing table for the whole gap between
+    // deploying the gate and applying migration 0015.
+    const { error } = await createAdminClient()
       .from("page_views")
       .insert({
         path: meta.path ?? SAMPLES_VIEW_PATH,
@@ -49,6 +52,7 @@ export async function recordPageView(
         referrer: meta.referrer?.slice(0, 500) ?? null,
         user_agent: meta.userAgent?.slice(0, 300) ?? null,
       });
+    if (error) throw error;
   } catch (e) {
     console.error("[page-views] failed to record:", event, (e as Error).message);
   }

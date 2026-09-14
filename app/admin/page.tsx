@@ -7,6 +7,7 @@ import { Sparkline } from "@/components/staff/sparkline";
 import { ComingSoon } from "@/components/staff/coming-soon";
 import { ASSET_COUNT_RANGES } from "@/lib/leads";
 import type { SamplesStats } from "@/lib/page-views";
+import { rate, VITALS_THRESHOLDS, type VitalKey, type WebVitals } from "@/lib/web-vitals";
 
 /**
  * The GM's dashboard.
@@ -193,6 +194,82 @@ function samplesTile(s: SamplesStats): Stat {
   };
 }
 
+/** Field data — what the site actually felt like for real visitors, beside the lab scores
+ *  above it. Reported at the 75th percentile because that is how Core Web Vitals are judged:
+ *  an average hides the slow quarter, and the slow quarter is the part that leaves.
+ *
+ *  Shown even at zero samples, with the reason, so an empty panel never reads as "fast". */
+function FieldVitals({ v }: { v: WebVitals }) {
+  const fmt = (k: VitalKey, n: number | null) =>
+    n == null ? "\u2014" : k === "cls" ? n.toFixed(2) : n >= 1000 ? `${(n / 1000).toFixed(1)}s` : `${Math.round(n)}ms`;
+  const TONE: Record<string, string> = {
+    good: "text-ad-steel",
+    "needs-work": "text-ad-amber",
+    poor: "text-ad-amber font-semibold",
+    none: "text-ad-muted/50",
+  };
+  const KEYS: { key: VitalKey; label: string }[] = [
+    { key: "lcp", label: "Load (LCP)" },
+    { key: "inp", label: "Response (INP)" },
+    { key: "cls", label: "Shift (CLS)" },
+  ];
+
+  return (
+    <div className="border-t border-ad-border px-4 py-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-ad-muted">
+          Real visitors \u00b7 7 days
+        </p>
+        <p className="text-xs text-ad-muted">
+          {v.unavailable
+            ? v.unavailable
+            : v.samples === 0
+              ? "no page views recorded yet"
+              : `${v.samples} page view${v.samples === 1 ? "" : "s"}, 75th percentile`}
+        </p>
+      </div>
+
+      <div className="mt-2 flex gap-6">
+        {KEYS.map(({ key, label }) => {
+          const n = v.p75[key];
+          const r = v.unavailable ? "none" : rate(key, n);
+          return (
+            <div key={key}>
+              <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-ad-muted">
+                {label}
+              </p>
+              <p className={`text-base font-semibold tabular-nums ${TONE[r]}`}>{fmt(key, n)}</p>
+              <p className="text-[0.6rem] text-ad-muted/70">
+                good \u2264 {key === "cls" ? VITALS_THRESHOLDS[key].good : `${VITALS_THRESHOLDS[key].good}ms`}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      {v.slowest.length > 0 && (
+        <div className="mt-3 border-t border-ad-border pt-2">
+          <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-ad-muted">
+            Slowest pages
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {v.slowest.map((p) => (
+              <li key={p.path} className="flex items-baseline justify-between gap-3 text-xs">
+                <span className="truncate text-ad-ink" title={p.path}>
+                  {p.path}
+                </span>
+                <span className="shrink-0 tabular-nums text-ad-muted">
+                  {(p.lcpP75 / 1000).toFixed(1)}s \u00b7 {p.samples}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default async function AdminHomePage() {
   await requireAdmin("/admin");
 
@@ -302,7 +379,7 @@ export default async function AdminHomePage() {
           </Panel>
         </Section>
 
-        <Section title="Site health" hint="Google's scores, daily">
+        <Section title="Site health" hint="lab scores daily, real visitors live">
           <Panel>
             {d.pageSpeed.length === 0 ? (
               <p className="px-4 py-3 text-sm text-ad-muted">
@@ -323,6 +400,7 @@ export default async function AdminHomePage() {
                 />
               ))
             )}
+            <FieldVitals v={d.vitals} />
             <div className="border-t border-ad-border px-4 py-2.5">
               <a
                 href={GA4_URL}

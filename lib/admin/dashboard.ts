@@ -3,6 +3,7 @@ import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadToolUsage } from "@/lib/tools/usage";
 import { loadSamplesStats, type SamplesStats } from "@/lib/page-views";
+import { loadWebVitals, type WebVitals } from "@/lib/web-vitals";
 import { GAME_SLUGS } from "@/lib/tools/registry";
 import { loadPageSpeed, PAGESPEED_TARGETS, type PageSpeedScore } from "@/lib/pagespeed";
 import { ASSET_COUNT_RANGES } from "@/lib/leads";
@@ -102,7 +103,7 @@ export async function loadDashboard(origin: string) {
     const db = createAdminClient();
     const since90 = new Date(now - 90 * DAY).toISOString();
 
-    const [leadsRes, staffRes, usage, speed, samples] = await Promise.all([
+    const [leadsRes, staffRes, usage, speed, samples, vitals] = await Promise.all([
       db
         .from("leads")
         // Only the columns still rendered — inquiry_type, source_page and salesforce_synced
@@ -114,6 +115,7 @@ export async function loadDashboard(origin: string) {
       loadToolUsage(),
       cachedPageSpeed(origin).catch(() => [] as PageSpeedScore[]),
       loadSamplesStats(),
+      loadWebVitals(),
     ]);
 
     const leads = ((leadsRes.data ?? []) as LeadRow[]).filter(
@@ -234,6 +236,7 @@ export async function loadDashboard(origin: string) {
       },
       pageSpeed: speed,
       samples,
+      vitals,
     };
   } catch (e) {
     const message = (e as Error).message;
@@ -277,5 +280,11 @@ function empty(unavailable: string, now: number) {
       unlocksEmail7d: 0,
       unavailable,
     } as SamplesStats,
+    vitals: {
+      samples: 0,
+      p75: { lcp: null, inp: null, cls: null },
+      slowest: [],
+      unavailable,
+    } as WebVitals,
   };
 }

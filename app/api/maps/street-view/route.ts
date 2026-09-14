@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isStaff } from "@/lib/auth/is-staff";
 import { GoogleMapsConfigError } from "@/lib/kml/site-markup/static-map";
 import { projectToLocalMetres } from "@/lib/kml/standard-markup/geometry";
+import { recordApiCall } from "@/lib/api-usage";
 
 export const runtime = "nodejs";
 export const maxDuration = 15;
@@ -84,6 +85,7 @@ export async function POST(req: NextRequest) {
     const res = await fetch(`${METADATA_URL}?${params.toString()}`, {
       headers: { Accept: "application/json" },
     });
+    void recordApiCall({ provider: "google", api: "street_view_metadata" });
     const data = (await res.json()) as MetadataResp;
 
     // ZERO_RESULTS is an ordinary answer, not a failure — plenty of rural and industrial sites

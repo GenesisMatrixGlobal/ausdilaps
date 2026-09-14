@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isStaff } from "@/lib/auth/is-staff";
 import { GoogleMapsConfigError } from "@/lib/kml/site-markup/static-map";
+import { recordApiCall } from "@/lib/api-usage";
 
 export const runtime = "nodejs";
 export const maxDuration = 15;
@@ -66,6 +67,7 @@ export async function POST(req: NextRequest) {
         "X-Goog-FieldMask": "addressComponents,formattedAddress,location,viewport",
       },
     });
+    void recordApiCall({ provider: "google", api: "places_details" });
     const data = (await res.json()) as PlaceDetailsResp & { error?: { message?: string } };
     if (!res.ok) {
       return NextResponse.json(

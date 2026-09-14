@@ -3,6 +3,7 @@ import { FETCH_TIMEOUT_MS } from "./config";
 import { MATCH_PROFILE, SERVICE_KEYS } from "./profile";
 import { classificationSchema } from "./schema";
 import type { Classification, RawItem } from "./types";
+import { recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
 
 /**
  * Tender classification.
@@ -152,6 +153,7 @@ function fence(item: RawItem): string {
 type AnthropicResponse = {
   content?: { type: string; name?: string; input?: unknown }[];
   stop_reason?: string;
+  usage?: AnthropicUsage;
 };
 
 async function callOnce(item: RawItem): Promise<{ ok: true; data: unknown } | { ok: false; retryable: boolean; error: string }> {
@@ -197,6 +199,8 @@ async function callOnce(item: RawItem): Promise<{ ok: true; data: unknown } | { 
   }
 
   const data = (await res.json()) as AnthropicResponse;
+  // The nightly cron has no page behind it, so the tool is named here.
+  void recordApiCall({ provider: "anthropic", api: "messages", model: CLASSIFY_MODEL, usage: data.usage, tool: "tender-watch" });
   const block = data.content?.find((b) => b.type === "tool_use" && b.name === TOOL.name);
   if (!block?.input) {
     return { ok: false, retryable: false, error: `No tool_use block (stop_reason: ${data.stop_reason ?? "unknown"})` };

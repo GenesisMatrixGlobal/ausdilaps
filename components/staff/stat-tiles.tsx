@@ -24,9 +24,9 @@ const TONE = {
   critical: "text-ad-amber font-medium",
 } as const;
 
-export function StatTiles({ stats, columns = 4 }: { stats: Stat[]; columns?: 3 | 4 | 5 }) {
+export function StatTiles({ stats, columns = 4 }: { stats: Stat[]; columns?: 3 | 4 | 5 | 6 }) {
   // Explicit strings, not a template — Tailwind only ships classes it can see in source.
-  const cols = { 3: "sm:grid-cols-3", 4: "sm:grid-cols-4", 5: "sm:grid-cols-5" }[columns];
+  const cols = { 3: "sm:grid-cols-3", 4: "sm:grid-cols-4", 5: "sm:grid-cols-5", 6: "sm:grid-cols-6" }[columns];
   // An odd count leaves a hole beside the last tile on the 2-up phone grid. Widening that
   // tile reads as deliberate; a gap reads as something failed to render.
   const orphan = stats.length % 2 === 1 ? "max-sm:last:col-span-2" : "";

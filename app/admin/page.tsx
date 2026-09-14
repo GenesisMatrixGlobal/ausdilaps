@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { requireAdmin } from "@/lib/auth/session";
 import { loadDashboard, type Alert, type Breakdown } from "@/lib/admin/dashboard";
 import { StatTiles, type Stat } from "@/components/staff/stat-tiles";
+import { dollars, loadApiUsage, type ApiUsage } from "@/lib/admin/api-usage";
 import { Sparkline } from "@/components/staff/sparkline";
 import { ComingSoon } from "@/components/staff/coming-soon";
 import { ASSET_COUNT_RANGES } from "@/lib/leads";
@@ -173,6 +174,20 @@ function ScoreRow({ label, scores, error }: {
   );
 }
 
+/** What the tools spent on Google and Anthropic this month, at list price (migration 0018,
+ *  lib/api-usage.ts). A ceiling rather than the bill — Google's free allowance isn't applied. */
+function apiSpendTile(u: ApiUsage): Stat {
+  if (u.unavailable) {
+    return { label: "API spend · month", href: "/admin/usage", value: "—", sub: "not recording yet", tone: "warn" };
+  }
+  return {
+    label: "API spend · month",
+    href: "/admin/usage",
+    value: dollars(u.month.totalCents),
+    sub: `${u.month.totalCalls} calls · ${dollars(u.lastMonth.totalCents)} last month`,
+  };
+}
+
 /** Visits to the sample report library this week (migration 0015, lib/page-views.ts).
  *  Bots, prefetches and our own headless tests are filtered before a row is written, so
  *  this is people. Unlocks are the code-from-a-quote and the email fallback combined. */
@@ -280,7 +295,7 @@ export default async function AdminHomePage() {
     process.env.NEXT_PUBLIC_SITE_URL ??
     (host.startsWith("localhost") ? "https://ausdilaps.vercel.app" : `https://${host}`);
 
-  const d = await loadDashboard(origin);
+  const [d, apiUsage] = await Promise.all([loadDashboard(origin), loadApiUsage()]);
   const { enquiries: e, staff, tools } = d;
 
   const delta = e.thisWeek - e.lastWeek;
@@ -307,6 +322,7 @@ export default async function AdminHomePage() {
     },
     samplesTile(d.samples),
     { label: "Tool uses · 7d", value: tools.usedThisWeek, sub: `${tools.usedLast30} in the last 30 days` },
+    apiSpendTile(apiUsage),
     {
       label: "Staff active · 7d",
       value: staff.activeThisWeek,
@@ -331,7 +347,7 @@ export default async function AdminHomePage() {
 
       <div className="mt-8 space-y-6">
         <AttentionPanel alerts={d.alerts} />
-        <StatTiles stats={tiles} columns={5} />
+        <StatTiles stats={tiles} columns={6} />
       </div>
 
       {/* Two columns from lg up. Enquiries takes the wider one because the trend line needs

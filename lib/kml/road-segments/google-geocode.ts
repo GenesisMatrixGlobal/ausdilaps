@@ -4,6 +4,7 @@
 // roads OSM/Nominatim didn't have mapped at all (e.g. "St Andrews St" near Kuraby).
 
 import type { GeocodedIntersection } from "./types";
+import { recordApiCall } from "@/lib/api-usage";
 
 const GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 
@@ -30,6 +31,7 @@ async function callGoogleMaps<T extends { status: string; error_message?: string
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     const res = await fetch(url);
+    void recordApiCall({ provider: "google", api: "geocoding" });
     const data = (await res.json()) as T;
     if (data.status === "REQUEST_DENIED" || data.status === "INVALID_REQUEST") {
       throw new GoogleMapsConfigError(

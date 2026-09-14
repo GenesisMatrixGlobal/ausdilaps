@@ -9,6 +9,7 @@ import type { LatLng } from "@/lib/kml/types";
 import { roadNameVariants } from "./overpass";
 import { decodePolyline } from "./polyline";
 import { GoogleMapsConfigError } from "./google-geocode";
+import { recordApiCall } from "@/lib/api-usage";
 
 const DIRECTIONS_URL = "https://maps.googleapis.com/maps/api/directions/json";
 
@@ -110,6 +111,7 @@ async function fetchDirections(params: Record<string, string>): Promise<Directio
   url.searchParams.set("key", key);
 
   const res = await fetch(url);
+  void recordApiCall({ provider: "google", api: "directions" });
   const data = (await res.json()) as DirectionsResponse;
   if (data.status === "REQUEST_DENIED" || data.status === "INVALID_REQUEST") {
     throw new GoogleMapsConfigError(

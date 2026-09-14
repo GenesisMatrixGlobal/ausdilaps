@@ -3,6 +3,7 @@
 // Env-gated: no ANTHROPIC_API_KEY -> the tool still works from a manually entered row.
 
 import type { RoadSegmentInput } from "./types";
+import { recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
 
 const OCR_MODEL = process.env.ANTHROPIC_OCR_MODEL ?? "claude-haiku-4-5-20251001";
 
@@ -66,7 +67,8 @@ export async function extractRoadSegmentsFromImage(
     throw new Error(`Anthropic API ${res.status}: ${body.slice(0, 300)}`);
   }
 
-  const data = (await res.json()) as { content?: { type: string; text?: string }[] };
+  const data = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: AnthropicUsage };
+  void recordApiCall({ provider: "anthropic", api: "messages", model: OCR_MODEL, usage: data.usage });
   const text =
     data.content
       ?.filter((b) => b.type === "text")

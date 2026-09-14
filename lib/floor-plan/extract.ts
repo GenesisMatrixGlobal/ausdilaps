@@ -17,6 +17,7 @@
 
 import { repairInteriorGaps } from "./grid";
 import { OUTSIDE, type Door, type FloorPlan, type Room } from "./types";
+import { recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
 
 const MODEL = process.env.ANTHROPIC_FLOOR_PLAN_MODEL ?? "claude-opus-5";
 
@@ -322,7 +323,9 @@ export async function extractFloorPlan(imageBase64: string, mediaType: string): 
   const data = (await res.json()) as {
     stop_reason?: string;
     content?: Array<{ type: string; text?: string }>;
+    usage?: AnthropicUsage;
   };
+  void recordApiCall({ provider: "anthropic", api: "messages", model: MODEL, usage: data.usage });
 
   // Structured outputs are not honoured on a refusal, and a max_tokens cut leaves invalid
   // JSON — both need to surface as a clear message rather than a parse error.

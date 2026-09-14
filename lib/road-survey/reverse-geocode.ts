@@ -12,6 +12,7 @@
 // already provisioned for Site Markup and Geocoding bills at ~$0.60 per full network.
 
 import type { LatLng } from "@/lib/kml/types";
+import { recordApiCall } from "@/lib/api-usage";
 
 const GOOGLE_REVERSE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 
@@ -72,6 +73,7 @@ export async function reverseGeocode(point: LatLng, timeoutMs = 8000): Promise<R
       signal: ctrl.signal,
       headers: { Accept: "application/json" },
     });
+    void recordApiCall({ provider: "google", api: "geocoding" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     resp = (await res.json()) as GoogleReverseResp;
   } finally {

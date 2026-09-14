@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isStaff } from "@/lib/auth/is-staff";
 import { GoogleMapsConfigError } from "@/lib/kml/site-markup/static-map";
+import { recordApiCall } from "@/lib/api-usage";
 
 export const runtime = "nodejs";
 export const maxDuration = 15;
@@ -85,6 +86,7 @@ export async function POST(req: NextRequest) {
     const res = await fetch(`${GOOGLE_GEOCODE_URL}?${params.toString()}`, {
       headers: { Accept: "application/json" },
     });
+    void recordApiCall({ provider: "google", api: "geocoding" });
     const data = (await res.json()) as GeocodeResp;
 
     if (data.status === "ZERO_RESULTS" || !data.results?.length) {

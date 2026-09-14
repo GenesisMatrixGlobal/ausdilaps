@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isStaff } from "@/lib/auth/is-staff";
 import { GoogleMapsConfigError } from "@/lib/kml/site-markup/static-map";
+import { recordApiCall } from "@/lib/api-usage";
 
 export const runtime = "nodejs";
 export const maxDuration = 15;
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
         includedRegionCodes: ["au"],
       }),
     });
+    void recordApiCall({ provider: "google", api: "places_autocomplete" });
     const data = (await res.json()) as GooglePlacesAutocompleteResp & { error?: { message?: string } };
     if (!res.ok) {
       return NextResponse.json(

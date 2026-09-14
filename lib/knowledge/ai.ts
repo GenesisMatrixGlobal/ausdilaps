@@ -1,6 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
 
 /** Shared Anthropic plumbing for knowledge ingest.
  *
@@ -46,6 +47,7 @@ type ContentBlock =
 type AnthropicResponse = {
   content?: { type: string; text?: string; name?: string; input?: unknown }[];
   stop_reason?: string;
+  usage?: AnthropicUsage;
 };
 
 /** One call. Throws on any failure — callers catch and degrade. */
@@ -68,7 +70,11 @@ export async function callAnthropic(body: Record<string, unknown>): Promise<Anth
     const detail = await res.text().catch(() => "");
     throw new Error(`Anthropic ${res.status}: ${detail.slice(0, 300)}`);
   }
-  return (await res.json()) as AnthropicResponse;
+  const data = (await res.json()) as AnthropicResponse;
+  // Indexing runs from the postbuild script and the manage page, neither of which is a tool
+  // page, so the job is named here.
+  void recordApiCall({ provider: "anthropic", api: "messages", model: String(body.model ?? KNOWLEDGE_MODEL), usage: data.usage, tool: "knowledge-index" });
+  return data;
 }
 
 export function textFrom(res: AnthropicResponse): string {

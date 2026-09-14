@@ -16,6 +16,7 @@ import sharp from "sharp";
 import type { LatLng } from "@/lib/kml/types";
 import { mercatorSpan, pixelToLatLng, type LatLngBox } from "@/lib/kml/standard-markup/projection";
 import { buildStaticMapUrl, SCALE, type StaticMapPolygon } from "@/lib/kml/site-markup/static-map";
+import { recordApiCall } from "@/lib/api-usage";
 
 /** Google's hard cap on either `size` dimension. */
 export const MAX_STATIC_DIMENSION = 640;
@@ -236,6 +237,8 @@ export async function renderTiledStaticMap(input: {
     plan.tiles.map(async (tile) => {
       const { url, requestHeight } = tileUrl(tile, tolerance);
       const res = await fetch(url);
+      // One billed Static Maps request per TILE, not per export.
+      void recordApiCall({ provider: "google", api: "static_maps" });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(`Google Static Maps request failed (${res.status}). ${text.slice(0, 200)}`);

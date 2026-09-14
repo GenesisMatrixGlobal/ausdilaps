@@ -9,6 +9,8 @@
 // QLD keeps its own QldLocator geocoder: it's open, needs no key, and returns a real
 // match score, so there's nothing to gain by moving it.
 
+import { recordApiCall } from "@/lib/api-usage";
+
 const GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 
 interface GoogleGeocodeResp {
@@ -46,6 +48,7 @@ async function fetchJson<T>(url: string, params: URLSearchParams, timeoutMs: num
       signal: ctrl.signal,
       headers: { Accept: "application/json" },
     });
+    void recordApiCall({ provider: "google", api: "geocoding" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return (await res.json()) as T;
   } finally {

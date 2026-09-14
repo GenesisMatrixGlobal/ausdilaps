@@ -287,6 +287,7 @@ export default async function AdminHomePage() {
   const tiles: Stat[] = [
     {
       label: "Enquiries this week",
+      href: "/admin/leads",
       value: e.thisWeek,
       sub:
         e.lastWeek === 0 && e.thisWeek === 0
@@ -296,6 +297,7 @@ export default async function AdminHomePage() {
     },
     {
       label: "Enquiries · 30d",
+      href: "/admin/leads",
       value: e.last30,
       sub:
         e.daysSinceLast === null

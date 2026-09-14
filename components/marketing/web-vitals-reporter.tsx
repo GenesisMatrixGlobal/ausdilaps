@@ -53,12 +53,21 @@ export function WebVitalsReporter() {
       }
     }
 
+    // ⚠️ DEFERRED BY A TICK, and that is the whole reason LCP and CLS are ever captured.
+    //
+    // LCP and CLS are not final until the page is hidden — the web-vitals library settles
+    // them in its OWN visibilitychange listener. Ours listens to the same event, so sending
+    // straight away is a race we frequently lost: the first production samples came back
+    // with LCP on 2 rows out of 6 and CLS on none, because we posted before those callbacks
+    // ran. A 0ms timeout puts our send after every other listener for that event, and the
+    // page is still alive when merely hidden, so there is time to use.
     function onHide() {
-      if (document.visibilityState === "hidden") send();
+      if (document.visibilityState === "hidden") setTimeout(send, 0);
     }
     document.addEventListener("visibilitychange", onHide);
-    // pagehide is the belt to visibilitychange's braces — it fires on a real navigation
-    // away in browsers that do not freeze the page.
+    // pagehide is the belt to visibilitychange's braces — it fires on a real navigation away
+    // in browsers that do not freeze the page. NOT deferred: this one can be the last code
+    // to run, so a timeout here would never fire. The `sent` guard makes the overlap safe.
     window.addEventListener("pagehide", send);
     return () => {
       document.removeEventListener("visibilitychange", onHide);

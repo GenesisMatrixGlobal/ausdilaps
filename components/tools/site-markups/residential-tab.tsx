@@ -158,6 +158,16 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
    *  list afterwards doesn't pop the map in and out under the sheet. DEV tab only for now. */
   const [lineItemsOnly, setLineItemsOnly] = useState(true);
   const [mapHidden, setMapHidden] = useState(false);
+
+  /** Writes the address list and, past MANY_ADDRESSES, unticks "Pre-select surrounding assets".
+   *  The checkbox only ever affects a search-bar pick, so on a long pasted list it does nothing —
+   *  but a ticked box beside 100 rows reads as a promise about them (Rhys, 2026-09-14). Called
+   *  from the paste box and the screenshot drop; a single search-bar pick is one line and is
+   *  left alone. */
+  function setAddressList(next: string) {
+    setAddressBlock(next);
+    if (dev && next.split(/\r?\n/).filter((l) => l.trim()).length > MANY_ADDRESSES) setPreselectSurrounding(false);
+  }
   /** Addresses that resolved to nothing, for the "Map hidden" bar — the flags box that would
    *  otherwise carry them is off in multi mode, and a row that isn't there is invisible. */
   const [unresolved, setUnresolved] = useState<{ raw: string; reason: string }[]>([]);
@@ -672,7 +682,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
         return;
       }
       const block = json.lines.join("\n");
-      setAddressBlock((prev) => (prev.trim() ? `${prev.replace(/\s+$/, "")}\n${block}` : block));
+      setAddressList(addressBlock.trim() ? `${addressBlock.replace(/\s+$/, "")}\n${block}` : block);
       setShotNote(`${json.lines.length} address${json.lines.length === 1 ? "" : "es"} read — check them before generating.`);
     } catch (e) {
       setShotNote((e as Error).message);
@@ -1089,7 +1099,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
           <div className="mt-2 grid gap-3 sm:grid-cols-2">
             <textarea
               value={addressBlock}
-              onChange={(e) => setAddressBlock(e.target.value)}
+              onChange={(e) => setAddressList(e.target.value)}
               rows={addressBlock.split(/\r?\n/).length > 5 ? 9 : 5}
               aria-label="Addresses"
               placeholder={"Or paste addresses, one per line — straight from Excel."}

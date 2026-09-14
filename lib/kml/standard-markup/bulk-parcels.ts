@@ -21,7 +21,6 @@ import { fetchParcelsNearPointNsw } from "./parcels/nsw";
 import { fetchParcelsNearPointQld } from "./parcels/qld";
 import { fetchParcelsNearPointVic } from "./parcels/vic";
 import type { ParcelFeature } from "./parcels/types";
-import { parcelAtPoint } from "./parcel-at-point";
 import type { StandardMarkupState } from "./resolve";
 
 /** More than this on one drawing stops being a markup and starts being a map. */
@@ -39,9 +38,10 @@ export const WITH_NEIGHBOURS_MARKER = "+";
 export interface BulkLine {
   addr: ParsedAddress;
   withNeighbours: boolean;
-  /** Set when the line opened with a coordinate pair — a place Google has no street address for
-   *  (a community centre, a reserve, a corner). Resolved by the parcel UNDER the point rather
-   *  than by geocoding the text; with no titled parcel there, the map is simply centred on it. */
+  /** Set when the line opened with a coordinate pair — a PLACE Google has no street address for
+   *  (a community centre, a reserve, a corner). Nothing is looked up for it: it comes back as a
+   *  centre for the map to open on, and the operator draws the site. Rhys, 2026-09-14: a place is
+   *  not a private parcel, so nothing about it should arrive pre-selected. */
   point?: LatLng;
 }
 
@@ -142,8 +142,8 @@ export interface BulkParcelsResult {
   address: { street: string; suburb: string; postcode: string; state: string };
   /** Addresses that produced no parcel, with why — shown as flags, never silently dropped. */
   unresolved: { raw: string; reason: string }[];
-  /** Coordinate lines with no titled parcel under them. Not a failure: the map is centred
-   *  there and the operator draws the site by hand. */
+  /** The coordinate lines — places, not addresses. Not a failure: the map opens there with
+   *  nothing selected and the operator draws the site by hand. */
   centres: { point: LatLng; label: string }[];
   flags: string[];
 }
@@ -171,21 +171,10 @@ interface ResolvedLine {
   failure: string | null;
 }
 
-/** A coordinate line: the titled parcel under the point, or nothing. A road reserve or an
- *  easement counts as nothing — drawing a whole road because a place pin sits on it is worse
- *  than an empty map. Never throws: a cadastre outage here is a centre, not a lost markup. */
-async function lookupPoint(line: BulkLine): Promise<ResolvedLine> {
-  const point = line.point!;
-  const state = line.addr.state;
-  const base: ResolvedLine = { line, ring: null, lotPlan: null, areaSqm: null, point, notes: [], failure: null };
-  if (!state || !(state in NEAR_POINT)) return base;
-  try {
-    const parcel = await parcelAtPoint(state as StandardMarkupState, point);
-    if (!parcel || parcel.kind !== "lot") return base;
-    return { ...base, ring: parcel.ring, lotPlan: parcel.idKey || null, areaSqm: parcel.areaSqm };
-  } catch (e) {
-    return { ...base, notes: [`couldn't read the cadastre at that point — ${(e as Error).message}`] };
-  }
+/** A coordinate line is a place, and a place is only ever a centre — no cadastre call, no
+ *  parcel, no adjoining lots, whatever marker the line carries. */
+function centreLine(line: BulkLine): ResolvedLine {
+  return { line, ring: null, lotPlan: null, areaSqm: null, point: line.point!, notes: [], failure: null };
 }
 
 export async function resolveBulkParcels(text: string): Promise<BulkParcelsResult> {
@@ -196,17 +185,12 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
     throw new Error(`That's ${addresses.length} addresses — the markup takes up to ${MAX_BULK_ADDRESSES} at once.`);
   }
 
-  // Address lines go through the geocode → parcel pipeline; coordinate lines skip the geocoder
-  // (there is no address to geocode) and take the parcel under the point. Both run at once and
-  // are stitched back into list order, so line i is still lines[i] downstream.
-  const [byAddress, byPoint] = await Promise.all([
-    lookupParcels(lines.filter((l) => !l.point).map((l) => l.addr)),
-    mapPool(lines.filter((l) => l.point), 5, lookupPoint),
-  ]);
+  // Address lines go through the geocode → parcel pipeline; coordinate lines are places and
+  // skip it entirely. Stitched back into list order, so line i is still lines[i] downstream.
+  const byAddress = await lookupParcels(lines.filter((l) => !l.point).map((l) => l.addr));
   let ai = 0;
-  let pi = 0;
   const resolved: ResolvedLine[] = lines.map((line) => {
-    if (line.point) return byPoint[pi++];
+    if (line.point) return centreLine(line);
     const { result, parcelRings, point } = byAddress[ai++];
     const ring = latLngRingFromArcgis(parcelRings);
     const ok = result.status === "ok" && !!ring;
@@ -288,7 +272,7 @@ export async function resolveBulkParcels(text: string): Promise<BulkParcelsResul
 
   const first = resolved.find((r) => r.ring)?.line.addr ?? addresses[0];
   const flags = unresolved.map((u) => `${u.raw}: ${u.reason} — not on the markup`);
-  for (const c of centres) flags.push(`${c.label}: no titled parcel at that point — the map is centred there, draw the site by hand`);
+  for (const c of centres) flags.push(`${c.label}: a place, not an address — the map opens there with nothing selected; draw the site by hand`);
   // Two addresses on ONE lot draw one outline with two pins stacked on it — a strata pair, or
   // a geocode the address layer couldn't correct. Said out loud, because the second pin is
   // invisible under the first.

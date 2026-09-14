@@ -148,6 +148,11 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
    *  site is drawn by hand. Not in the save file: the shapes drawn there are, and reopening
    *  frames those instead. */
   const [centres, setCentres] = useState<{ point: LatLng; label: string }[]>([]);
+  /** Google's own viewport for each place added from the search, keyed by the coordinate text
+   *  written into the list — so Generate can open the map on the view Google Maps showed. A
+   *  ref, not state: nothing renders from it, and it is read once per Generate. Lost on reload,
+   *  in which case the centre is framed by a small box instead. */
+  const placeViews = useRef(new Map<string, { south: number; west: number; north: number; east: number }>());
   const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
   // Matches the excludedIds convention: state records what's been REMOVED, so a fresh
   // snapshot starts with everything the lookup found.
@@ -394,8 +399,20 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
     setFitRequest({ key: crypto.randomUUID(), rings: rings.filter((r) => r.length >= 2) });
   }
 
-  /** A ~130 m box around a point, so a place with no parcel can be framed the same way a lot is.
-   *  Sized for a site, not a street: close enough to start drawing without zooming. */
+  /** The key a place's coordinate is written under — the same text `handleAddressSelect` puts
+   *  in the list, so the server's parsed point maps straight back to the viewport. */
+  function pointKey(p: LatLng): string {
+    return `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`;
+  }
+
+  /** What to frame for a centre: the viewport Google Maps showed for the place, else a ~130 m
+   *  box around the point — close enough to start drawing without zooming. */
+  function frameFor(p: LatLng): LatLng[] {
+    const v = placeViews.current.get(pointKey(p));
+    if (v) return [{ lat: v.south, lng: v.west }, { lat: v.north, lng: v.east }];
+    return boxAround(p);
+  }
+
   function boxAround(p: LatLng): LatLng[] {
     const dLat = 0.0006;
     const dLng = dLat / Math.cos((p.lat * Math.PI) / 180);
@@ -415,12 +432,19 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
       if (parsed.street) {
         line = [parsed.street, tail].filter(Boolean).join(", ");
       } else if (parsed.location) {
-        // A place Google has no street address for — a community centre, a reserve, a corner.
-        // The list takes its COORDINATE, labelled with the name the search showed, and
-        // bulk-parcels.ts resolves it by the parcel under the point — or, when there is no
-        // titled parcel there, just centres the map so the site can be drawn by hand.
+        // A PLACE, not an address — a community centre, a reserve, a corner. Nothing is looked
+        // up for it: the list takes its COORDINATE, labelled with the name the search showed,
+        // and Generate opens the map on the view Google Maps had (the viewport remembered
+        // here), with nothing pre-selected, for the site to be drawn by hand. So the
+        // surrounding-lots checkbox comes off — there is no parcel for neighbours to adjoin.
         const name = (parsed.label ?? "").replace(/,?\s*australia\s*$/i, "").trim();
-        line = `${parsed.location.lat.toFixed(6)}, ${parsed.location.lng.toFixed(6)} ${name || tail}`.trim();
+        line = `${pointKey(parsed.location)} ${name || tail}`.trim();
+        if (parsed.viewport) placeViews.current.set(pointKey(parsed.location), parsed.viewport);
+        setPreselectSurrounding(false);
+        setAddressBlock((prev) => (prev.trim() ? `${prev.replace(/\s+$/, "")}\n${line}` : line));
+        setAddressError(null);
+        setAddressNote(null);
+        return;
       } else {
         setAddressError("Google has neither a street address nor a location for that place — try a nearby address.");
         return;
@@ -694,7 +718,7 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
       );
       shapes.reset();
       setFlags(json.flags ?? []);
-      frameGeometry([], json.parcels, new Set(), found.map((c) => boxAround(c.point)));
+      frameGeometry([], json.parcels, new Set(), found.map((c) => frameFor(c.point)));
       setPicking(false);
       setPickMessage(null);
       setAddressesOpen(false);
@@ -1230,8 +1254,8 @@ export function ResidentialMarkupTab({ mode = "single" }: { mode?: MarkupMode })
           // so the one thing the operator has to know is said here, above the map.
           <p className="mt-6 text-sm text-ad-muted">
             <span className="font-medium text-ad-ink">{centres.map((c) => c.label).join(", ")}</span>
-            {centres.length === 1 ? " has" : " have"} no titled parcel — the map is centred there. Draw the site with the shape
-            tools and each shape becomes a line item.
+            {centres.length === 1 ? " is a place, not an address" : " are places, not addresses"} — the map is on it and
+            nothing is pre-selected. Draw the site with the shape tools; each shape becomes a line item.
           </p>
         )}
         {/* Breaks out of the 1240px Container on wide screens, like the sheet below it, and the

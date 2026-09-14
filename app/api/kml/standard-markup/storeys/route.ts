@@ -50,11 +50,15 @@ export async function POST(req: NextRequest) {
   }
 
   const results = await mapPool(parsed.data.lots, 4, async (lot): Promise<{ key: string; result: StoreyResult | { status: "error"; error: string } }> => {
-    try {
-      const result = await estimateStoreys({ target: ringAnchor(lot.ring), parcel: lot.ring, label: lot.label }, { maps, anthropic });
-      return { key: lot.key, result };
-    } catch (e) {
-      return { key: lot.key, result: { status: "error", error: (e as Error).message } };
+    // One retry: a batch of 40 fetches in flight sees the odd dropped connection, and an
+    // unchecked lot is a cell someone has to look at for no reason.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const result = await estimateStoreys({ target: ringAnchor(lot.ring), parcel: lot.ring, label: lot.label }, { maps, anthropic });
+        return { key: lot.key, result };
+      } catch (e) {
+        if (attempt >= 1) return { key: lot.key, result: { status: "error", error: (e as Error).message } };
+      }
     }
   });
   return NextResponse.json({ ok: true, results });

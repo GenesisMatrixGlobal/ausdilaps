@@ -13,10 +13,10 @@ import {
  *  measures in one sitting", so the list stays scannable. */
 export const MAX_MEASUREMENTS = 12;
 
-/** Deliberately NOT the Residential tab's MAX_SHAPE_POINTS of 20. That cap exists because
- *  its shapes get percent-encoded into a Static Maps URL with a length limit. A Measure
- *  shape is never serialised into a URL, so a long road frontage isn't truncated at 20
- *  clicks. Do not unify the two — one of them would break. */
+/** The same number as the Residential tab's MAX_SHAPE_POINTS since 2026-09-15. They were
+ *  100 and 20: the markup's shapes used to be percent-encoded into a Static Maps URL with a
+ *  length limit, and the Measure tab's never were. `overlayOutlines` retired that limit, so
+ *  both tools now let a road frontage run to 100 clicks. */
 export const MAX_POINTS = 100;
 
 export const MIN_WIDTH_M = 3;

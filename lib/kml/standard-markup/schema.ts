@@ -17,7 +17,9 @@ const latLngSchema = z.object({ lat: z.number(), lng: z.number() });
 export const MARKUP_SHAPE_COLORS = ["orange", "blue", "red"] as const;
 
 const markupShapeSchema = z.object({
-  points: z.array(latLngSchema).min(2).max(20),
+  // Must match MAX_SHAPE_POINTS in components/tools/site-markups/shapes.ts — the client cap
+  // and this one are the same rule in two places, and a mismatch 400s the export.
+  points: z.array(latLngSchema).min(2).max(100),
   /** Ignored in "area" mode — kept required so the field never needs a null branch. */
   widthMetres: z.number().min(5).max(30),
   mode: z.enum(["line", "area"]).default("line"),

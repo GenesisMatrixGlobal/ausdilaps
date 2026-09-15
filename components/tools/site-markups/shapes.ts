@@ -20,7 +20,15 @@ export {
 } from "@/lib/kml/standard-markup/measure";
 export type { ShapeMode, ShapeMeasurement, Measurable } from "@/lib/kml/standard-markup/measure";
 
-export const MAX_SHAPE_POINTS = 20;
+/** 100, the same as the Measure tab's MAX_POINTS — one number across both tools.
+ *
+ *  It was 20 because a markup's shapes were percent-encoded into a Static Maps URL with a
+ *  length limit. That stopped being true on 2026-09-14, when every markup tab moved to
+ *  `overlayOutlines: true` and render-image.ts stopped putting ANY geometry in the tile URL.
+ *  Raised on request 2026-09-15: a road frontage or a kerb line needs more than 20 clicks.
+ *  ⚠️ The client cap alone is not enough — the render schema's `points` max must match, or
+ *  the export 400s at the route with a shape the operator was allowed to draw. */
+export const MAX_SHAPE_POINTS = 100;
 export const MAX_SHAPES = 5;
 export const DEFAULT_SHAPE_WIDTH_M = 10;
 export const MIN_SHAPE_WIDTH_M = 5;

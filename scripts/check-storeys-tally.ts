@@ -45,9 +45,11 @@ eq([t.clear, t.wantsMore, t.reason], [false, false, "nearest camera says 1, othe
 // Three facade-visible agreeing angles at ~60 clear with none confident (combined 94).
 t = tallyVerdicts([v(1, 60), v(1, 62), v(1, 58)], 5);
 eq([t.clear, t.reason], [true, "3 angles agree"], "three agreeing angles clear without a confident one");
-// Two at 50 (combined 75) do not.
+// Two at 50 (combined 75) just make it; two at 45 (combined 70) do not.
 t = tallyVerdicts([v(1, 50), v(1, 50)], 2);
-eq([t.clear, t.reason], [false, "agreeing angles, combined 75% — not enough"], "two weak agreements fall short");
+eq(t.clear, true, "two at 50 reach the 75 line together");
+t = tallyVerdicts([v(1, 45), v(1, 45)], 2);
+eq([t.clear, t.reason], [false, "agreeing angles, combined 70% — not enough"], "two at 45 fall short");
 
 // A lone weak dissent is outvoted 3–1 when the nearest camera is in the majority.
 t = tallyVerdicts([v(1, 70), v(1, 65), v(2, 55), v(1, 60)], 4);
@@ -81,8 +83,8 @@ eq(t.clear, true, "a nearest camera under 40 has no veto");
 // Facade hidden can't corroborate; mean floor.
 t = tallyVerdicts([v(1, 80), v(1, 60, false)], 2);
 eq([t.clear, t.reason], [false, "agreeing angles, but the facade was not clearly in view"], "a facade-hidden angle can't vouch");
-t = tallyVerdicts([v(1, 60), v(1, 40)], 2);
-eq([t.clear, t.reason], [false, "agreeing angles, combined 76% — not enough"], "a strong and a weak agreement fall just short");
+t = tallyVerdicts([v(1, 55), v(1, 40)], 2);
+eq([t.clear, t.reason], [false, "agreeing angles, combined 73% — not enough"], "a middling and a weak agreement fall just short");
 
 // Vacant / unreadable abstain.
 t = tallyVerdicts([v(null, 90), v(1, 75), v(1, 60)], 3);

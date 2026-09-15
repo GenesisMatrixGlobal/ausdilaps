@@ -41,9 +41,10 @@ export const MAX_CAMERA_DISTANCE_M = 45;
 export const NEAREST_CAMERA_VETO_AT = 40;
 /** A dissenting count at or above this is a real disagreement, not noise, and blocks a clear. */
 export const DISSENT_MATTERS_AT = 50;
-/** The COMBINED confidence of the facade-visible agreeing angles must reach this to clear.
- *  Combined by accumulation, not averaging — see combinedConfidence(). */
-export const COMBINED_CLEAR_AT = 85;
+/** The COMBINED confidence of the facade-visible agreeing angles must reach this to clear;
+ *  below it the cell stays highlighted. Combined by accumulation, not averaging — see
+ *  combinedConfidence(). Rhys, 2026-09-15: 75, after the residential trial. */
+export const COMBINED_CLEAR_AT = 75;
 
 /** Independent views that agree REINFORCE each other: two photos at 62 and 68 that both count
  *  one storey are far stronger evidence than either alone, and averaging them to 65 threw that

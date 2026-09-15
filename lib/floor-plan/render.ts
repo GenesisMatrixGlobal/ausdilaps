@@ -14,13 +14,17 @@ import {
   labelAnchor,
   labelRect,
   levelBounds,
+  openingsFor,
   outdoorIds,
   placeDoors,
+  stairGeometry,
   subtractOpenings,
 } from "./grid";
-import { a4Pixels, type Annotation, type FloorPlan, type Level, type Room } from "./types";
+import { a4Pixels, type Annotation, type FloorPlan, type Level, type Room, type Stair } from "./types";
 
 const INK = "#2f343a";
+/** Marks only. Loud on purpose — a number keying the plan to the report has to be findable. */
+const MARK_RED = "#d92b2b";
 const HAIRLINE = "#c9ced4";
 const GRID_LINE = "#e8eaed";
 
@@ -132,7 +136,11 @@ export function renderPlan(plan: FloorPlan, opts: RenderOptions): string {
   parts.push(
     `<style>text{font-family:Arial,Helvetica,sans-serif;fill:${INK}}` +
       `.rm{text-anchor:middle;dominant-baseline:central}` +
-      `.cap{text-anchor:middle;font-weight:700}</style>`
+      `.cap{text-anchor:middle;font-weight:700}` +
+      // paint-order puts the white stroke UNDER the fill, so a number stays readable where it
+      // crosses a wall line instead of being swallowed by it.
+      `.mk{text-anchor:middle;dominant-baseline:central;font-weight:700;fill:${MARK_RED};` +
+      `paint-order:stroke;stroke:#ffffff;stroke-linejoin:round}</style>`
   );
 
   if (opts.mode === "preview") parts.push(previewGrid(placed, grid, scale));
@@ -214,12 +222,18 @@ function drawLevel(p: Placed, grid: { w: number; h: number }, scale: number, opt
     }
   }
 
+  // Under the walls, deliberately: the symbol is filled white so its treads read, and a
+  // staircase drawn flush to a wall would otherwise rub that wall out.
+  for (const stair of level.stairs) out.push(stairSymbol(stair, ox, oy, scale));
+
   const walls = deriveWalls(owner, grid, outdoorIds(level.rooms));
+  // A doorway and a rubbed-out wall are the same thing to a wall run.
+  const openings = [...doors, ...openingsFor(owner, grid, level.removedWalls)];
   const ext: string[] = [];
   const int: string[] = [];
   const area: string[] = [];
   for (const seg of walls) {
-    for (const piece of subtractOpenings(seg, doors)) {
+    for (const piece of subtractOpenings(seg, openings)) {
       const d =
         seg.orient === "v"
           ? `M${r2(ox + seg.pos * scale)} ${r2(oy + piece.from * scale)}V${r2(oy + piece.to * scale)}`
@@ -324,6 +338,15 @@ function annotationChip(ann: Annotation, level: Level, ox: number, oy: number, s
     gy = anchor.y;
   }
 
+  if (ann.kind === "mark") {
+    // Bigger than a room label (0.34) so it reads as an overlay on the plan, not part of it.
+    const size = Math.max(7, scale * 0.4);
+    return (
+      `<text class="mk" x="${r2(ox + gx * scale)}" y="${r2(oy + gy * scale)}" font-size="${r2(size)}" ` +
+      `stroke-width="${r2(size * 0.34)}">${esc(ann.text)}</text>`
+    );
+  }
+
   const font = Math.max(5, scale * 0.28);
   const padX = font * 0.5;
   const w = textWidth(ann.text, font) + padX * 2;
@@ -335,6 +358,34 @@ function annotationChip(ann: Annotation, level: Level, ox: number, oy: number, s
     `<g><rect x="${r2(x)}" y="${r2(y)}" width="${r2(w)}" height="${r2(h)}" rx="${r2(h * 0.28)}" fill="#ffffff" ` +
     `stroke="${INK}" stroke-width="${r2(Math.max(0.6, scale * 0.035))}"${dash}/>` +
     `<text class="rm" x="${r2(x + w / 2)}" y="${r2(y + h / 2)}" font-size="${r2(font)}">${esc(ann.text)}</text></g>`
+  );
+}
+
+/**
+ * A staircase: outline, treads, and the direction of travel.
+ *
+ * The geometry comes from stairGeometry() in grid units; this only maps it onto the page, so
+ * the editor canvas can draw the identical symbol from the identical numbers.
+ */
+function stairSymbol(stair: Stair, ox: number, oy: number, scale: number): string {
+  const g = stairGeometry(stair);
+  const px = (x: number) => r2(ox + x * scale);
+  const py = (y: number) => r2(oy + y * scale);
+  const stroke = Math.max(0.6, scale * 0.06);
+
+  const treads = g.treads
+    .map(([x1, y1, x2, y2]) => `M${px(x1)} ${py(y1)}L${px(x2)} ${py(y2)}`)
+    .join("");
+  const head = g.arrow.head.map(([x, y]) => `${px(x)},${py(y)}`).join(" ");
+
+  return (
+    `<g fill="none" stroke="${INK}" stroke-width="${r2(stroke)}">` +
+    `<rect x="${px(g.outline.x)}" y="${py(g.outline.y)}" width="${r2(g.outline.w * scale)}" ` +
+    `height="${r2(g.outline.h * scale)}" fill="#ffffff"/>` +
+    `<path d="${treads}"/>` +
+    `<path d="M${px(g.arrow.x1)} ${py(g.arrow.y1)}L${px(g.arrow.x2)} ${py(g.arrow.y2)}"/>` +
+    `<polygon points="${head}" fill="${INK}"/>` +
+    `</g>`
   );
 }
 

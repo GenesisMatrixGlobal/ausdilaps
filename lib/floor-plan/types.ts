@@ -70,16 +70,20 @@ export const doorSchema = z.object({
 export type Door = z.infer<typeof doorSchema>;
 
 /**
- * Anything placed ON the plan rather than being part of it — today a photo-range chip
- * ("16-28") or a free note.
+ * Anything placed ON the plan rather than being part of it — a photo-range chip ("16-28"),
+ * a free note, or a "mark": the red bold number an inspector drops on a spot to key the plan
+ * to the report.
  *
- * Anchoring to a room, not to a coordinate, is the whole point. A chip pinned to `bed-2`
- * moves when Bedroom 2 is resized; a chip at an absolute x/y is orphaned the first time
- * anyone nudges a wall. `dx`/`dy` are a nudge in grid units from the room's label anchor.
+ * Two anchors, and which one a kind uses is a judgement about what it refers to. A chip
+ * pinned to `bed-2` moves when Bedroom 2 is resized; a chip at an absolute x/y is orphaned
+ * the first time anyone nudges a wall — so chips anchor to a room, and `dx`/`dy` nudge them
+ * in grid units from its label anchor. A mark is the opposite case: it names a POINT, not a
+ * room ("the crack, there"), so it anchors free and stays where it was put. The cost of that
+ * is real and accepted — move a room afterwards and its marks do not follow.
  */
 export const annotationSchema = z.object({
   id: z.string().min(1),
-  kind: z.enum(["photo-range", "note"]),
+  kind: z.enum(["photo-range", "note", "mark"]),
   text: z.string(),
   anchor: z.discriminatedUnion("type", [
     z.object({ type: z.literal("room"), roomId: z.string().min(1), dx: z.number(), dy: z.number() }),
@@ -111,13 +115,51 @@ export const fenceSchema = z.object({
 });
 export type Fence = z.infer<typeof fenceSchema>;
 
+/**
+ * A wall the user has rubbed out — an open-plan edge where two rooms meet with nothing
+ * between them.
+ *
+ * Stored as the PAIR OF ROOMS it separated, never as coordinates, for exactly the reason a
+ * Door is: walls are derived from cell ownership, so a stored coordinate would go on cutting
+ * a hole wherever it was written down even after the rooms moved out from under it. A pair
+ * still names the right boundary, or honestly names none.
+ *
+ * `a` or `b` may be OUTSIDE, which is what lets an external wall be opened up — the side of
+ * a carport, say.
+ */
+export const removedWallSchema = z.object({
+  id: z.string().min(1),
+  a: z.string().min(1),
+  b: z.string().min(1),
+});
+export type RemovedWall = z.infer<typeof removedWallSchema>;
+
+/**
+ * A staircase. Stored, like a fence, because nothing derives it.
+ *
+ * Deliberately does NOT own grid cells: it is an overlay drawn on top of whichever room it
+ * sits in, so it stays entirely outside the ownership system and cannot perturb a wall.
+ * `dir` is the direction of travel the arrow points, not the direction of the treads.
+ */
+export const stairSchema = z.object({
+  id: z.string().min(1),
+  x: z.number().int().min(0),
+  y: z.number().int().min(0),
+  w: z.number().int().min(1),
+  h: z.number().int().min(1),
+  dir: z.enum(["up", "down"]).default("up"),
+});
+export type Stair = z.infer<typeof stairSchema>;
+
 export const levelSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
   rooms: z.array(roomSchema),
   doors: z.array(doorSchema).default([]),
-  // Defaulted so every plan saved before fences existed still parses.
+  // All four defaulted, so every plan saved before each of them existed still parses.
   fences: z.array(fenceSchema).default([]),
+  removedWalls: z.array(removedWallSchema).default([]),
+  stairs: z.array(stairSchema).default([]),
   annotations: z.array(annotationSchema).default([]),
 });
 export type Level = z.infer<typeof levelSchema>;

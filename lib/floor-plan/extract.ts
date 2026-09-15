@@ -255,6 +255,8 @@ function toFloorPlan(raw: RawPlan): FloorPlan {
       rooms,
       doors,
       fences: [],
+      removedWalls: [],
+      stairs: [],
       annotations: [],
     };
   });

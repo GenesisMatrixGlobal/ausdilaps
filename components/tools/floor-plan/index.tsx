@@ -6,23 +6,29 @@
 // sketch into rooms-on-a-grid; the walls are computed from that, not drawn.
 //
 // Two views over one plan: Edit is the working canvas, Sheet is the actual A4 output from
-// the same renderer the export uses. The photo-range chips render already — only the tray
-// that fills them from Salesforce is still to come.
+// the same renderer the export uses. Photo-range chips share the annotation model the red
+// numbers use — only the tray that fills them from Salesforce is still to come.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { downloadBlob } from "@/components/tools/shared/download";
-import { validateLevel } from "@/lib/floor-plan/grid";
+import { buildOwnerGrid, outdoorIds, validateLevel, wallNeighbours } from "@/lib/floor-plan/grid";
 import {
   addDoor,
   deleteDoor,
   deleteFence,
+  deleteMark,
   deleteRoom,
+  deleteStair,
   doorCandidates,
+  removeWall,
   renameRoom,
+  restoreWall,
   splitRoom,
   updateDoor,
+  updateMark,
+  updateStair,
   type EditResult,
 } from "@/lib/floor-plan/edit";
 import { renderPlan } from "@/lib/floor-plan/render";
@@ -121,6 +127,41 @@ const COMPASS = [
   { deg: 270, label: "Left" },
 ] as const;
 
+function Panel({
+  title,
+  count,
+  defaultOpen,
+  children,
+}: {
+  title: string;
+  count: number;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  // `open` has to be held in state rather than left to the DOM: React treats it as a
+  // controlled attribute, so any re-render of the tool (hovering a wall row is enough) would
+  // otherwise snap every panel back to its initial state mid-use.
+  const [open, setOpen] = useState(!!defaultOpen);
+  return (
+    <details
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+      className="group rounded-xl border border-ad-border bg-white p-5"
+    >
+      <summary className="flex cursor-pointer list-none items-baseline justify-between">
+        <h3 className="text-sm font-semibold text-ad-ink">
+          <span className="mr-1.5 inline-block text-ad-muted transition-transform group-open:rotate-90">
+            ▸
+          </span>
+          {title}
+        </h3>
+        <span className="text-xs text-ad-muted">{count}</span>
+      </summary>
+      {children}
+    </details>
+  );
+}
+
 export function FloorPlanTool() {
   const [plan, setPlan] = useState<FloorPlan | null>(null);
   const [history, setHistory] = useState<FloorPlan[]>([]);
@@ -133,6 +174,10 @@ export function FloorPlanTool() {
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  /** What the Number tool places next. Steps on after each placement so numbering a set of
+   *  photos is click, click, click rather than retype, click, retype, click. */
+  const [markText, setMarkText] = useState("1");
+  const [hoverWall, setHoverWall] = useState<{ a: string; b: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const jsonInput = useRef<HTMLInputElement>(null);
 
@@ -149,6 +194,36 @@ export function FloorPlanTool() {
       validateLevel(lvl, plan.grid).map((i) => ({ ...i, level: lvl.name }))
     );
   }, [plan]);
+
+  const walls = useMemo(() => {
+    if (!plan || !level) return [];
+    const owner = buildOwnerGrid(level.rooms, plan.grid);
+    const pairs = wallNeighbours(owner, plan.grid, outdoorIds(level.rooms));
+    const rank = { internal: 0, external: 1, area: 2 } as const;
+    const rows = pairs
+      .map((pair) => ({
+        ...pair,
+        removed: level.removedWalls.find(
+          (w) => (w.a === pair.a && w.b === pair.b) || (w.a === pair.b && w.b === pair.a)
+        ),
+        orphan: false,
+      }))
+      .sort((p, q) => rank[p.kind] - rank[q.kind] || q.cells - p.cells);
+
+    // A suppression whose two rooms have since been dragged apart draws nothing and would
+    // otherwise vanish from the UI with no way to restore it. List it, flagged.
+    const listed = new Set(rows.filter((r) => r.removed).map((r) => r.removed!.id));
+    for (const w of level.removedWalls) {
+      if (listed.has(w.id)) continue;
+      rows.push({ key: w.id, a: w.a, b: w.b, kind: "internal", cells: 0, removed: w, orphan: true });
+    }
+    return rows;
+  }, [plan, level]);
+
+  const marks = useMemo(
+    () => level?.annotations.filter((a) => a.kind === "mark") ?? [],
+    [level]
+  );
 
   const inferredDoors = useMemo(
     () =>
@@ -488,6 +563,8 @@ export function FloorPlanTool() {
                     [
                       { key: "select", label: "Select" },
                       { key: "fence", label: "Fence" },
+                      { key: "number", label: "Number" },
+                      { key: "stairs", label: "Stairs" },
                     ] as const
                   ).map((t) => (
                     <button
@@ -506,6 +583,15 @@ export function FloorPlanTool() {
                     </button>
                   ))}
                 </div>
+              )}
+              {view === "edit" && tool === "number" && (
+                <input
+                  value={markText}
+                  onChange={(e) => setMarkText(e.target.value.replace(/\D/g, "").slice(0, 3))}
+                  inputMode="numeric"
+                  aria-label="Number to place"
+                  className="w-14 rounded-lg border border-ad-border px-2 py-1.5 text-center text-xs font-semibold text-ad-ink outline-none focus:border-ad-steel"
+                />
               )}
               <button
                 type="button"
@@ -544,9 +630,14 @@ export function FloorPlanTool() {
                   levelIndex={levelIndex}
                   tool={tool}
                   selection={selection}
+                  highlightWall={hoverWall}
+                  markText={markText}
                   onSelect={setSelection}
                   onChange={setLevel}
                   onError={setError}
+                  onMarkPlaced={() =>
+                    setMarkText((n) => String(Math.min(999, (Number(n) || 0) + 1)))
+                  }
                 />
               ) : (
                 <div
@@ -559,9 +650,19 @@ export function FloorPlanTool() {
 
             {view === "edit" && (
               <p className="mt-2 text-xs text-ad-muted">
-                Click a room to select it. Drag it to move, drag a handle to resize — growing a room
-                takes space from its neighbour, so a handle on a shared wall moves that wall. Drag a
-                door along its wall to reposition it. ⌘Z undoes.
+                {tool === "select" ? (
+                  <>
+                    Click a room to select it. Drag it to move, drag a handle to resize — growing a
+                    room takes space from its neighbour, so a handle on a shared wall moves that
+                    wall. Drag a door, a number or a staircase to reposition it. ⌘Z undoes.
+                  </>
+                ) : tool === "fence" ? (
+                  "Drag along a grid line to draw a fence."
+                ) : tool === "number" ? (
+                  "Click anywhere to drop the number. It steps on by one each time."
+                ) : (
+                  "Drag out a rectangle where the stairs go."
+                )}
               </p>
             )}
           </div>
@@ -727,11 +828,7 @@ export function FloorPlanTool() {
               possible by selecting a room on the canvas, but nobody found it — the same failure
               the Doors list below was added to fix. A list beats a hidden field.
             */}
-            <div className="rounded-xl border border-ad-border bg-white p-5">
-              <div className="flex items-baseline justify-between">
-                <h3 className="text-sm font-semibold text-ad-ink">Rooms</h3>
-                <span className="text-xs text-ad-muted">{level.rooms.length}</span>
-              </div>
+            <Panel title="Rooms" count={level.rooms.length} defaultOpen>
               <ul className="mt-2 space-y-1">
                 {level.rooms.map((room) => {
                   const isSelected = selection?.type === "room" && selection.id === room.id;
@@ -773,13 +870,64 @@ export function FloorPlanTool() {
               <p className="mt-2 text-xs text-ad-muted">
                 Type to rename. Click a room on the plan to move, resize or split it.
               </p>
-            </div>
+            </Panel>
 
-            <div className="rounded-xl border border-ad-border bg-white p-5">
-              <div className="flex items-baseline justify-between">
-                <h3 className="text-sm font-semibold text-ad-ink">Fences</h3>
-                <span className="text-xs text-ad-muted">{level.fences.length}</span>
-              </div>
+            {/*
+              Walls are derived from cell ownership, so there is nothing to click on the canvas
+              that isn't already a room's resize handle — the two would fight for the same
+              pixels. Hence a list, hovered to show you which one you mean. Removing leaves both
+              rooms named and changes nothing structural, so Restore is just a filter.
+            */}
+            <Panel title="Walls" count={walls.filter((w) => !w.removed).length}>
+              <ul className="mt-2 space-y-1">
+                {walls.map((w) => (
+                  <li key={w.key} className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onMouseEnter={() => setHoverWall({ a: w.a, b: w.b })}
+                      onMouseLeave={() => setHoverWall(null)}
+                      onFocus={() => setHoverWall({ a: w.a, b: w.b })}
+                      onBlur={() => setHoverWall(null)}
+                      className={cn(
+                        "flex-1 truncate rounded px-2 py-1 text-left text-xs",
+                        w.removed
+                          ? "text-ad-muted line-through"
+                          : "text-ad-muted hover:bg-ad-surface hover:text-ad-ink"
+                      )}
+                    >
+                      {roomLabel(w.a)} · {roomLabel(w.b)}
+                      {w.orphan && (
+                        <span className="ml-1 no-underline text-ad-orange">not touching</span>
+                      )}
+                    </button>
+                    {w.removed ? (
+                      <button
+                        type="button"
+                        onClick={() => apply(restoreWall(level, w.removed!.id))}
+                        className="shrink-0 rounded px-2 py-1 text-xs text-ad-steel hover:bg-ad-surface"
+                      >
+                        Restore
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        aria-label={`Remove the wall between ${roomLabel(w.a)} and ${roomLabel(w.b)}`}
+                        onClick={() => apply(removeWall(level, w.a, w.b))}
+                        className="shrink-0 rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-orange/10 hover:text-ad-ink"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-ad-muted">
+                Removing a wall leaves both rooms named — open plan. Nothing else moves, so
+                Restore always puts it back.
+              </p>
+            </Panel>
+
+            <Panel title="Fences" count={level.fences.length}>
               {level.fences.length === 0 ? (
                 <p className="mt-2 text-xs text-ad-muted">
                   None. Switch the canvas to <span className="font-medium text-ad-ink">Fence</span>,
@@ -820,7 +968,7 @@ export function FloorPlanTool() {
                   })}
                 </ul>
               )}
-            </div>
+            </Panel>
 
             {/*
               Every door, listed. Selecting one on the canvas means hitting a doorway-sized
@@ -828,11 +976,7 @@ export function FloorPlanTool() {
               cannot be a canvas-only gesture. This also puts the inferred ones somewhere you
               can review them as a set rather than hunting for dashes in the drawing.
             */}
-            <div className="rounded-xl border border-ad-border bg-white p-5">
-              <div className="flex items-baseline justify-between">
-                <h3 className="text-sm font-semibold text-ad-ink">Doors</h3>
-                <span className="text-xs text-ad-muted">{level.doors.length}</span>
-              </div>
+            <Panel title="Doors" count={level.doors.length}>
               {level.doors.length === 0 ? (
                 <p className="mt-2 text-xs text-ad-muted">
                   None. Select a room to add one between it and a neighbour.
@@ -880,7 +1024,118 @@ export function FloorPlanTool() {
                   delete these.
                 </p>
               )}
-            </div>
+            </Panel>
+
+            <Panel title="Numbers" count={marks.length}>
+              {marks.length === 0 ? (
+                <p className="mt-2 text-xs text-ad-muted">
+                  None. Switch the canvas to <span className="font-medium text-ad-ink">Number</span>,
+                  then click where each one goes.
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-1">
+                  {marks.map((mark) => {
+                    const isSelected = selection?.type === "mark" && selection.id === mark.id;
+                    return (
+                      <li key={mark.id} className="flex items-center gap-1">
+                        <input
+                          value={mark.text}
+                          inputMode="numeric"
+                          aria-label="Number"
+                          onFocus={() => setSelection({ type: "mark", id: mark.id })}
+                          onChange={(e) =>
+                            apply(
+                              updateMark(level, mark.id, {
+                                text: e.target.value.replace(/\D/g, "").slice(0, 3),
+                              }),
+                              `mark:${mark.id}`
+                            )
+                          }
+                          className={cn(
+                            "w-16 rounded border px-2 py-1 text-center text-xs font-semibold outline-none",
+                            isSelected
+                              ? "border-ad-steel bg-ad-steel/5"
+                              : "border-transparent hover:border-ad-border focus:border-ad-steel"
+                          )}
+                          style={{ color: "#d92b2b" }}
+                        />
+                        <span className="flex-1 truncate text-xs text-ad-muted">
+                          {mark.anchor.type === "free"
+                            ? `${Math.round(mark.anchor.x)}, ${Math.round(mark.anchor.y)}`
+                            : ""}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Delete number ${mark.text}`}
+                          onClick={() => {
+                            apply(deleteMark(level, mark.id));
+                            if (isSelected) setSelection(null);
+                          }}
+                          className="shrink-0 rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-orange/10 hover:text-ad-ink"
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Panel>
+
+            <Panel title="Stairs" count={level.stairs.length}>
+              {level.stairs.length === 0 ? (
+                <p className="mt-2 text-xs text-ad-muted">
+                  None. Switch the canvas to <span className="font-medium text-ad-ink">Stairs</span>,
+                  then drag out a rectangle where they go.
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-1">
+                  {level.stairs.map((stair, i) => {
+                    const isSelected = selection?.type === "stair" && selection.id === stair.id;
+                    return (
+                      <li key={stair.id} className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setSelection({ type: "stair", id: stair.id })}
+                          className={cn(
+                            "flex-1 truncate rounded px-2 py-1 text-left text-xs",
+                            isSelected
+                              ? "bg-ad-steel/10 font-medium text-ad-ink"
+                              : "text-ad-muted hover:bg-ad-surface hover:text-ad-ink"
+                          )}
+                        >
+                          Stairs {i + 1} · {stair.w}×{stair.h} · {stair.dir === "up" ? "up" : "down"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            apply(
+                              updateStair(level, stair.id, {
+                                dir: stair.dir === "up" ? "down" : "up",
+                              })
+                            )
+                          }
+                          className="shrink-0 rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-surface hover:text-ad-ink"
+                        >
+                          Flip
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Delete staircase ${i + 1}`}
+                          onClick={() => {
+                            apply(deleteStair(level, stair.id));
+                            if (isSelected) setSelection(null);
+                          }}
+                          className="shrink-0 rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-orange/10 hover:text-ad-ink"
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Panel>
 
             <div className="rounded-xl border border-ad-border bg-white p-5">
               <h3 className="text-sm font-semibold text-ad-ink">Title block</h3>

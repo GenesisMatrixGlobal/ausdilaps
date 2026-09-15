@@ -6,7 +6,15 @@
 // a model can get subtly wrong and becomes arithmetic — closed loops, clean T-junctions and
 // square corners every time, and an edit re-derives instead of being patched.
 
-import { OUTSIDE, type Door, type Level, type Rect, type Room } from "./types";
+import {
+  OUTSIDE,
+  type Door,
+  type Level,
+  type Rect,
+  type RemovedWall,
+  type Room,
+  type Stair,
+} from "./types";
 
 export type Owner = string | null;
 export type Grid = { w: number; h: number };
@@ -114,9 +122,13 @@ export function deriveWalls(owner: Owner[][], grid: Grid, outdoor: Set<string> =
 }
 
 /** One unit-length piece of boundary between two specific owners. */
-type Boundary = { orient: "h" | "v"; pos: number; index: number; lowSide: Owner; highSide: Owner };
+export type Boundary = { orient: "h" | "v"; pos: number; index: number; lowSide: Owner; highSide: Owner };
 
-function boundariesBetween(owner: Owner[][], grid: Grid, a: string, b: string): Boundary[] {
+/**
+ * Every unit-length boundary between two rooms. Either id may be OUTSIDE, which is how a
+ * door onto the street and an opened-up external wall both resolve.
+ */
+export function boundariesBetween(owner: Owner[][], grid: Grid, a: string, b: string): Boundary[] {
   const want = (p: Owner, q: Owner) =>
     (p === a && q === b) || (p === b && q === a) || (a === OUTSIDE && p === null && q === b) ||
     (b === OUTSIDE && p === null && q === a) || (a === OUTSIDE && q === null && p === b) ||
@@ -256,9 +268,18 @@ export function labelAnchor(room: Room): { x: number; y: number } {
   return { x: r.x + r.w / 2, y: r.y + r.h / 2 };
 }
 
-/** Cut door openings out of the wall runs they sit on. */
-export function subtractOpenings(seg: WallSeg, doors: DoorPlacement[]): Array<{ from: number; to: number }> {
-  const holes = doors
+/** A hole in a wall run: a doorway, or a wall the user removed. */
+export type Opening = { orient: "h" | "v"; pos: number; from: number; to: number };
+
+/**
+ * Cut openings out of the wall runs they sit on.
+ *
+ * Takes the structural shape rather than DoorPlacement because a doorway and a removed wall
+ * are the same thing to a wall: an interval that isn't drawn. DoorPlacement satisfies it as
+ * it stands.
+ */
+export function subtractOpenings(seg: WallSeg, openings: ReadonlyArray<Opening>): Array<{ from: number; to: number }> {
+  const holes = openings
     .filter((d) => d.orient === seg.orient && d.pos === seg.pos && d.to > seg.from && d.from < seg.to)
     .map((d) => ({ from: Math.max(d.from, seg.from), to: Math.min(d.to, seg.to) }))
     .sort((a, b) => a.from - b.from);
@@ -271,6 +292,113 @@ export function subtractOpenings(seg: WallSeg, doors: DoorPlacement[]): Array<{ 
   }
   if (cursor < seg.to) pieces.push({ from: cursor, to: seg.to });
   return pieces;
+}
+
+/**
+ * Removed walls as openings, ready to hand to subtractOpenings alongside the doors.
+ *
+ * A pair whose rooms no longer touch resolves to nothing, which is the honest outcome — the
+ * suppression neither draws a hole in thin air nor has to be cleaned up.
+ */
+export function openingsFor(owner: Owner[][], grid: Grid, removed: RemovedWall[]): Opening[] {
+  const out: Opening[] = [];
+  for (const wall of removed)
+    for (const b of boundariesBetween(owner, grid, wall.a, wall.b))
+      out.push({ orient: b.orient, pos: b.pos, from: b.index, to: b.index + 1 });
+  return out;
+}
+
+/** A pair of neighbours that share some boundary, and how much of it they share. */
+export type WallPair = { key: string; a: string; b: string; kind: WallSeg["kind"]; cells: number };
+
+/**
+ * Every distinct pair of neighbours, for the Walls list.
+ *
+ * Deliberately separate from deriveWalls rather than an extra field on WallSeg. deriveWalls
+ * merges collinear runs regardless of who is either side of them — which is what stops
+ * butt-joint seams appearing in the raster — so it cannot also report owners honestly. This
+ * answers a different question and leaves that one alone.
+ */
+export function wallNeighbours(owner: Owner[][], grid: Grid, outdoor: Set<string> = new Set()): WallPair[] {
+  const pairs = new Map<string, WallPair>();
+
+  const add = (lo: Owner, hi: Owner) => {
+    if (lo === hi) return;
+    const [a, b] = [lo ?? OUTSIDE, hi ?? OUTSIDE].sort();
+    const key = `${a}|${b}`;
+    const seen = pairs.get(key);
+    if (seen) seen.cells++;
+    else pairs.set(key, { key, a, b, kind: wallKind(lo, hi, outdoor), cells: 1 });
+  };
+
+  for (let x = 0; x <= grid.w; x++)
+    for (let y = 0; y < grid.h; y++) add(at(owner, grid, x - 1, y), at(owner, grid, x, y));
+  for (let y = 0; y <= grid.h; y++)
+    for (let x = 0; x < grid.w; x++) add(at(owner, grid, x, y - 1), at(owner, grid, x, y));
+
+  return [...pairs.values()];
+}
+
+/** Treads per grid cell along the flight. Two reads as stairs without turning into hatching. */
+const TREADS_PER_CELL = 2;
+
+/**
+ * A staircase as plain coordinates in GRID units.
+ *
+ * Returned as data rather than drawn, because it has to appear on both the editor canvas
+ * (grid units) and the A4 sheet (page pixels). The door swing arc is already implemented
+ * twice for want of this and is flagged in both files as a wart; this is one symbol, mapped
+ * twice.
+ */
+export type StairGeometry = {
+  outline: Rect;
+  /** Tread lines as [x1, y1, x2, y2]. */
+  treads: Array<[number, number, number, number]>;
+  /** Direction of travel: a shaft, plus a filled head as three points. */
+  arrow: { x1: number; y1: number; x2: number; y2: number; head: Array<[number, number]> };
+};
+
+export function stairGeometry(stair: Stair): StairGeometry {
+  // The flight runs along the longer side; the treads cross it.
+  const alongX = stair.w >= stair.h;
+  const length = alongX ? stair.w : stair.h;
+  const width = alongX ? stair.h : stair.w;
+
+  const count = Math.max(2, Math.round(length * TREADS_PER_CELL));
+  const step = length / count;
+  const treads: Array<[number, number, number, number]> = [];
+  for (let i = 1; i < count; i++) {
+    const d = i * step;
+    treads.push(
+      alongX
+        ? [stair.x + d, stair.y, stair.x + d, stair.y + stair.h]
+        : [stair.x, stair.y + d, stair.x + stair.w, stair.y + d]
+    );
+  }
+
+  // Down the centre line, inset at both ends so the head never touches the outline.
+  const mid = alongX ? stair.y + stair.h / 2 : stair.x + stair.w / 2;
+  const inset = Math.min(0.3, length * 0.15);
+  const lo = (alongX ? stair.x : stair.y) + inset;
+  const hi = (alongX ? stair.x + stair.w : stair.y + stair.h) - inset;
+  const forward = stair.dir === "up";
+  const tail = forward ? lo : hi;
+  const tip = forward ? hi : lo;
+
+  const halfWidth = Math.min(0.18, width * 0.25);
+  const headLen = Math.min(0.35, Math.abs(hi - lo) * 0.3);
+  const back = forward ? tip - headLen : tip + headLen;
+  const head: Array<[number, number]> = alongX
+    ? [[tip, mid], [back, mid - halfWidth], [back, mid + halfWidth]]
+    : [[mid, tip], [mid - halfWidth, back], [mid + halfWidth, back]];
+
+  return {
+    outline: { x: stair.x, y: stair.y, w: stair.w, h: stair.h },
+    treads,
+    arrow: alongX
+      ? { x1: tail, y1: mid, x2: tip, y2: mid, head }
+      : { x1: mid, y1: tail, x2: mid, y2: tip, head },
+  };
 }
 
 export type Cell = { x: number; y: number };

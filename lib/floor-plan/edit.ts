@@ -8,7 +8,16 @@
 // construction rather than by cleanup afterwards.
 
 import { rectsFromCells, repairInteriorGaps, roomCells } from "./grid";
-import { OUTSIDE, type Door, type Fence, type Level, type Room } from "./types";
+import {
+  OUTSIDE,
+  type Annotation,
+  type Door,
+  type Fence,
+  type Level,
+  type RemovedWall,
+  type Room,
+  type Stair,
+} from "./types";
 
 export type Grid = { w: number; h: number };
 export type EditResult = { ok: true; level: Level } | { ok: false; error: string };
@@ -278,6 +287,97 @@ export function deleteFence(level: Level, fenceId: string): EditResult {
   return { ok: true, level: { ...level, fences: level.fences.filter((f) => f.id !== fenceId) } };
 }
 
+let wallSeq = 0;
+
+/**
+ * Rub out the wall between two rooms, leaving both of them named — an open-plan edge.
+ *
+ * The inverse of splitRoom, but not its mirror image. Splitting changes cell ownership and a
+ * wall appears as a consequence; removing changes nothing structural at all and only says
+ * "don't draw that one". That asymmetry is the point: the rooms, their areas, their doors and
+ * their labels are all untouched, so nothing downstream can break, and Restore is just a
+ * filter.
+ */
+export function removeWall(level: Level, a: string, b: string): EditResult {
+  if (a === b) return { ok: false, error: "A wall has two different sides." };
+  const exists = level.removedWalls.some(
+    (w) => (w.a === a && w.b === b) || (w.a === b && w.b === a)
+  );
+  if (exists) return { ok: false, error: "That wall is already removed." };
+  const wall: RemovedWall = { id: `wall-${Date.now().toString(36)}-${wallSeq++}`, a, b };
+  return { ok: true, level: { ...level, removedWalls: [...level.removedWalls, wall] } };
+}
+
+export function restoreWall(level: Level, wallId: string): EditResult {
+  return {
+    ok: true,
+    level: { ...level, removedWalls: level.removedWalls.filter((w) => w.id !== wallId) },
+  };
+}
+
+let markSeq = 0;
+
+/** 1 to 999. Wider than that stops being a key into the report and starts being a caption. */
+const MARK_PATTERN = /^\d{1,3}$/;
+
+/**
+ * Drop a red number on a point.
+ *
+ * Free-anchored rather than pinned to whatever room it lands in, because it refers to a place
+ * ("the crack, there"), not to a room. The trade is stated in types.ts: move a room afterwards
+ * and its numbers stay put.
+ */
+export function addMark(level: Level, x: number, y: number, text: string): EditResult {
+  const value = text.trim();
+  if (!MARK_PATTERN.test(value)) return { ok: false, error: "A number from 1 to 999." };
+  const mark: Annotation = {
+    id: `mark-${Date.now().toString(36)}-${markSeq++}`,
+    kind: "mark",
+    text: value,
+    anchor: { type: "free", x, y },
+    placement: "manual",
+  };
+  return { ok: true, level: { ...level, annotations: [...level.annotations, mark] } };
+}
+
+export function updateMark(level: Level, markId: string, patch: Partial<Annotation>): EditResult {
+  const idx = level.annotations.findIndex((a) => a.id === markId);
+  if (idx === -1) return { ok: false, error: "Number not found." };
+  if (patch.text !== undefined && !MARK_PATTERN.test(patch.text.trim())) {
+    return { ok: false, error: "A number from 1 to 999." };
+  }
+  const annotations = [...level.annotations];
+  annotations[idx] = { ...annotations[idx], ...patch };
+  return { ok: true, level: { ...level, annotations } };
+}
+
+export function deleteMark(level: Level, markId: string): EditResult {
+  return {
+    ok: true,
+    level: { ...level, annotations: level.annotations.filter((a) => a.id !== markId) },
+  };
+}
+
+let stairSeq = 0;
+
+export function addStair(level: Level, stair: Omit<Stair, "id">): EditResult {
+  if (stair.w < 1 || stair.h < 1) return { ok: false, error: "Drag out a bigger staircase." };
+  const next: Stair = { ...stair, id: `stair-${Date.now().toString(36)}-${stairSeq++}` };
+  return { ok: true, level: { ...level, stairs: [...level.stairs, next] } };
+}
+
+export function updateStair(level: Level, stairId: string, patch: Partial<Stair>): EditResult {
+  const idx = level.stairs.findIndex((s) => s.id === stairId);
+  if (idx === -1) return { ok: false, error: "Staircase not found." };
+  const stairs = [...level.stairs];
+  stairs[idx] = { ...stairs[idx], ...patch };
+  return { ok: true, level: { ...level, stairs } };
+}
+
+export function deleteStair(level: Level, stairId: string): EditResult {
+  return { ok: true, level: { ...level, stairs: level.stairs.filter((s) => s.id !== stairId) } };
+}
+
 export function renameRoom(level: Level, roomId: string, label: string): EditResult {
   return {
     ok: true,
@@ -303,6 +403,7 @@ export function deleteRoom(level: Level, roomId: string): EditResult {
       ...level,
       rooms: level.rooms.filter((r) => r.id !== roomId),
       doors: level.doors.filter((d) => d.a !== roomId && d.b !== roomId),
+      removedWalls: level.removedWalls.filter((w) => w.a !== roomId && w.b !== roomId),
       annotations: level.annotations.filter(
         (an) => an.anchor.type !== "room" || an.anchor.roomId !== roomId
       ),

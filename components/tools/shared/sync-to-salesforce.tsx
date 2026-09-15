@@ -28,7 +28,14 @@ interface ResolvedTarget {
   nextMarkupSlot: number | null;
   markupSlotsUsed: number;
   markupSlotsTotal: number;
+  existingLines: number;
   lineItem: { id: string; label: string; alreadyFilled: boolean } | null;
+}
+
+/** What "Clear the Quote first" actually removed — measured server-side, not predicted. */
+interface ClearResult {
+  deletedLines: number;
+  clearedMarkupSlots: number;
 }
 
 interface UploadResult {
@@ -89,6 +96,11 @@ export function SyncToSalesforce({
   const [linesResult, setLinesResult] = useState<LinesResult | null>(null);
   const [linesError, setLinesError] = useState<string | null>(null);
   const [linesRefused, setLinesRefused] = useState<Refusal[]>([]);
+  /** Replace what is on the Quote rather than adding beside it. OFF by default, and never
+   *  offered for a pasted LINE ITEM — clearing the Quote would delete the very record the
+   *  drawing is being attached to. */
+  const [clearFirst, setClearFirst] = useState(false);
+  const [cleared, setCleared] = useState<ClearResult | null>(null);
 
   const ticked = lineItems?.rows.filter((r) => r.selected) ?? [];
   const blocked = ticked
@@ -107,6 +119,8 @@ export function SyncToSalesforce({
     setLinesResult(null);
     setLinesError(null);
     setLinesRefused([]);
+    setClearFirst(false);
+    setCleared(null);
   }
 
   /** One QuoteLineItem per ticked row, all or nothing — see lib/quote-lines/payload.ts. Runs
@@ -168,8 +182,27 @@ export function SyncToSalesforce({
   async function upload() {
     if (!target?.folder) return;
     setError(null);
+    setCleared(null);
     setBusy("upload");
     try {
+      // Clear BEFORE the upload: the new drawing should land in Site Mark Up 1, not after
+      // links that are about to be removed. A failure here stops the whole run — nothing is
+      // filed, so a half-cleared Quote is never left holding a stale set.
+      if (clearFirst) {
+        const cleanRes = await fetch("/api/salesforce/quote-lines/clear", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ quoteId: target.quoteId }),
+        });
+        const cleanJson = (await cleanRes.json().catch(() => null)) as
+          | { ok: boolean; result?: ClearResult; error?: string }
+          | null;
+        if (!cleanRes.ok || !cleanJson?.result) {
+          setError(cleanJson?.error ?? "Couldn't clear the Quote — nothing was uploaded.");
+          return;
+        }
+        setCleared(cleanJson.result);
+      }
       const image = await getImageBase64();
       const sidecar = getSidecar ? await getSidecar(filename) : undefined;
       const res = await fetch("/api/salesforce/site-markup/upload", {
@@ -324,17 +357,54 @@ export function SyncToSalesforce({
                   // A line item's single field can be replaced with a tick, unlike the
                   // Quote's five slots, where a full set means clearing one by hand — there
                   // is no way to know WHICH of five a new drawing should displace.
-                  disabled={!target.lineItem && target.nextMarkupSlot === null}
+                  disabled={!target.lineItem && !clearFirst && target.nextMarkupSlot === null}
                   className="h-4 w-4 rounded border-ad-border"
                 />
                 {target.lineItem
                   ? target.lineItem.alreadyFilled
                     ? "Replace the markup already linked to this line item"
                     : "Link it to the line item's Line Item Mark Up field"
-                  : target.nextMarkupSlot === null
-                    ? `All ${target.markupSlotsTotal} Site Mark Up slots are full — upload only`
-                    : `Link it to Site Mark Up ${target.nextMarkupSlot} (${target.markupSlotsUsed} of ${target.markupSlotsTotal} used)`}
+                  : clearFirst
+                    ? `Link it to Site Mark Up 1 (the slots are being cleared)`
+                    : target.nextMarkupSlot === null
+                      ? `All ${target.markupSlotsTotal} Site Mark Up slots are full — upload only`
+                      : `Link it to Site Mark Up ${target.nextMarkupSlot} (${target.markupSlotsUsed} of ${target.markupSlotsTotal} used)`}
               </label>
+              {/* Never for a pasted line item: clearing the Quote would delete it. */}
+              {!target.lineItem && (target.existingLines > 0 || target.markupSlotsUsed > 0) && (
+                <div>
+                  <label className="flex items-start gap-2 font-medium text-ad-ink">
+                    <input
+                      type="checkbox"
+                      checked={clearFirst}
+                      onChange={(e) => {
+                        setClearFirst(e.target.checked);
+                        // Clearing frees Site Mark Up 1, so linking becomes possible again on a
+                        // Quote whose five slots were full.
+                        if (e.target.checked && target.nextMarkupSlot === null) setLinkToQuote(true);
+                      }}
+                      className="mt-0.5 h-4 w-4 rounded border-ad-border"
+                    />
+                    <span>
+                      Clear the Quote first — delete{" "}
+                      {[
+                        target.existingLines > 0 &&
+                          `its ${target.existingLines} line item${target.existingLines === 1 ? "" : "s"}`,
+                        target.markupSlotsUsed > 0 &&
+                          `${target.markupSlotsUsed} site markup link${target.markupSlotsUsed === 1 ? "" : "s"}`,
+                      ]
+                        .filter(Boolean)
+                        .join(" and ")}
+                    </span>
+                  </label>
+                  {clearFirst && (
+                    <p className="mt-1 pl-6 text-xs text-ad-muted">
+                      Replaces what is on the Quote instead of adding to it. The drawings stay in Box — only the
+                      Quote&apos;s links to them are cleared. Deleted line items go to the Salesforce Recycle Bin.
+                    </p>
+                  )}
+                </div>
+              )}
               {lineItems && (
                 <div className="space-y-1">
                   <label className="flex items-center gap-2 font-medium text-ad-ink">
@@ -381,7 +451,19 @@ export function SyncToSalesforce({
                       : undefined
                 }
               >
-                {busy === "upload" ? (wantLines ? "Uploading and creating…" : "Uploading…") : wantLines ? "Upload and create line items" : "Upload to Box"}
+                {busy === "upload"
+                  ? clearFirst
+                    ? "Clearing and uploading…"
+                    : wantLines
+                      ? "Uploading and creating…"
+                      : "Uploading…"
+                  : clearFirst
+                    ? wantLines
+                      ? "Clear, upload and create line items"
+                      : "Clear the Quote and upload"
+                    : wantLines
+                      ? "Upload and create line items"
+                      : "Upload to Box"}
               </button>
             </>
           )}
@@ -390,6 +472,15 @@ export function SyncToSalesforce({
 
       {result && (
         <div className="mt-4 rounded-lg border border-ad-border bg-ad-surface p-3 text-sm">
+          {cleared && (
+            <p className="text-ad-muted">
+              Cleared {cleared.deletedLines} line item{cleared.deletedLines === 1 ? "" : "s"}
+              {cleared.clearedMarkupSlots > 0
+                ? ` and ${cleared.clearedMarkupSlots} markup link${cleared.clearedMarkupSlots === 1 ? "" : "s"}`
+                : ""}{" "}
+              off the Quote first.
+            </p>
+          )}
           {/* The name Box actually gave it. uploadMarkup steps a clashing name to " (2)"
               rather than stopping to ask, so this is where a rename becomes visible. */}
           <p className="font-medium text-ad-ink">Saved {result.fileName}</p>

@@ -10,7 +10,7 @@
 // rather than being created against some other book's price.
 
 import { soqlQuery } from "@/lib/salesforce";
-import { MarkupSyncError, parseQuoteLookup, soqlEscape } from "@/lib/markup-sync";
+import { MARKUP_SLOTS, MarkupSyncError, parseQuoteLookup, soqlEscape } from "@/lib/markup-sync";
 import { SHEET_PRODUCTS } from "@/lib/markup-layers/salesforce-picklists";
 
 export interface QuoteForLines {
@@ -20,6 +20,9 @@ export interface QuoteForLines {
   opportunityName: string | null;
   pricebook2Id: string | null;
   existingLines: number;
+  /** Site Mark Up slots holding a link, so the footer can say what clearing the Quote would
+   *  remove. The sheet never writes these — it only offers to clear them. */
+  markupSlotsUsed: number;
   /** Lightning record page, for the "Open the Quote" link. */
   url: string | null;
 }
@@ -31,6 +34,7 @@ interface QuoteRecord {
   Pricebook2Id?: string | null;
   Opportunity?: { Name?: string | null } | null;
   QuoteLineItems?: { totalSize?: number } | null;
+  [slotField: string]: unknown;
 }
 
 /** `https://ausdilaps.my.salesforce.com` → `https://ausdilaps.lightning.force.com`. The My
@@ -64,9 +68,10 @@ export async function resolveQuoteForLines(quoteInput: string): Promise<{
         : `QuoteNumber = '${soqlEscape(lookup.value)}'`;
 
   // LIMIT 2 so an ambiguous Quote Number errors instead of guessing.
+  const slotFields = MARKUP_SLOTS.map((s) => s.url).join(", ");
   const records = await soqlQuery<QuoteRecord>(
-    `SELECT Id, Name, QuoteNumber, Pricebook2Id, Opportunity.Name, (SELECT Id FROM QuoteLineItems) ` +
-      `FROM Quote WHERE ${where} LIMIT 2`
+    `SELECT Id, Name, QuoteNumber, Pricebook2Id, ${slotFields}, Opportunity.Name, ` +
+      `(SELECT Id FROM QuoteLineItems) FROM Quote WHERE ${where} LIMIT 2`
   );
   if (records.length === 0) throw new MarkupSyncError(`No Quote found for "${lookup.value}".`);
   if (records.length > 1) {
@@ -82,6 +87,10 @@ export async function resolveQuoteForLines(quoteInput: string): Promise<{
     opportunityName: q.Opportunity?.Name ?? null,
     pricebook2Id: q.Pricebook2Id ?? null,
     existingLines: q.QuoteLineItems?.totalSize ?? 0,
+    markupSlotsUsed: MARKUP_SLOTS.filter((slot) => {
+      const v = q[slot.url];
+      return v !== null && v !== undefined && v !== "";
+    }).length,
     url: lightningUrl(q.Id),
   };
 

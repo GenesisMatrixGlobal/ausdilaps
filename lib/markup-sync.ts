@@ -35,7 +35,7 @@ function boxFolderField(): string {
  * Note slot 1's URL field has no "1" in it while its name field does — that asymmetry is
  * real, not a typo.
  */
-const MARKUP_SLOTS = [
+export const MARKUP_SLOTS = [
   { url: "Site_Mark_Up__c", name: "Site_Mark_Up_1_Name__c" },
   { url: "Site_Mark_Up_2__c", name: "Site_Mark_Up_2_Name__c" },
   { url: "Site_Mark_Up_3__c", name: "Site_Mark_Up_3_Name__c" },
@@ -142,6 +142,7 @@ interface QuoteRecord {
   Name?: string | null;
   QuoteNumber?: string | null;
   Opportunity?: Record<string, unknown> | null;
+  QuoteLineItems?: { totalSize?: number } | null;
 }
 
 export interface ResolvedTarget {
@@ -162,6 +163,10 @@ export interface ResolvedTarget {
   nextMarkupSlot: number | null;
   markupSlotsUsed: number;
   markupSlotsTotal: number;
+  /** Line items already on the Quote, so the panel can offer to clear it and say what that
+   *  would remove. A subquery counts up to 200, which is far past any real markup job — the
+   *  CLEAR itself reports the true number it deleted (lib/quote-lines/clear.ts). */
+  existingLines: number;
   /** Set when a Quote LINE ITEM was pasted. The file still lands in the Quote's Box
    *  folder — same job, same place — but the link is written to the line item's own
    *  markup field rather than a Quote slot. */
@@ -235,7 +240,8 @@ export async function resolveQuoteTarget(opts: {
         : `QuoteNumber = '${soqlEscape(lookup.value)}'`;
   const slotFields = MARKUP_SLOTS.map((s) => s.url).join(", ");
   const records = await soqlQuery<QuoteRecord>(
-    `SELECT Id, Name, QuoteNumber, ${slotFields}, Opportunity.Name, Opportunity.${field} FROM Quote WHERE ${where} LIMIT 2`
+    `SELECT Id, Name, QuoteNumber, ${slotFields}, Opportunity.Name, Opportunity.${field}, ` +
+      `(SELECT Id FROM QuoteLineItems) FROM Quote WHERE ${where} LIMIT 2`
   );
 
   if (records.length === 0) {
@@ -256,6 +262,7 @@ export async function resolveQuoteTarget(opts: {
     quoteName: quote.Name ?? null,
     opportunityName,
     boxFolderLink: rawLink,
+    existingLines: quote.QuoteLineItems?.totalSize ?? 0,
     suggestedFilename: suggestFilename(
       quote.Name ?? null,
       quote.QuoteNumber ?? null,

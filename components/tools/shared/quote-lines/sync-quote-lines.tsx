@@ -22,7 +22,14 @@ export interface ResolvedQuote {
   number: string | null;
   opportunityName: string | null;
   existingLines: number;
+  markupSlotsUsed: number;
   url: string | null;
+}
+
+/** What "Clear the Quote first" actually removed — measured server-side, not predicted. */
+interface ClearResult {
+  deletedLines: number;
+  clearedMarkupSlots: number;
 }
 
 interface CreateResult {
@@ -47,6 +54,10 @@ export function SyncQuoteLines({ rows, initialQuoteInput }: SyncQuoteLinesProps 
   const [error, setError] = useState<string | null>(null);
   const [refused, setRefused] = useState<Refusal[]>([]);
   const [result, setResult] = useState<{ signature: string; outcome: CreateResult } | null>(null);
+  /** Replace rather than add to what is already on the Quote. OFF by default and re-set after
+   *  every run: deleting someone's line items is never a thing to do by momentum. */
+  const [clearFirst, setClearFirst] = useState(false);
+  const [cleared, setCleared] = useState<ClearResult | null>(null);
 
   const ticked = rows.filter((r) => r.selected);
   const blocked = ticked
@@ -59,10 +70,14 @@ export function SyncQuoteLines({ rows, initialQuoteInput }: SyncQuoteLinesProps 
   const signature = signatureOf(rows);
   const alreadyCreated = result?.signature === signature;
 
+  const hasSomethingToClear = !!quote && (quote.existingLines > 0 || quote.markupSlotsUsed > 0);
+
   function reset() {
     setQuote(null);
     setError(null);
     setRefused([]);
+    setClearFirst(false);
+    setCleared(null);
   }
 
   async function find() {
@@ -92,8 +107,29 @@ export function SyncQuoteLines({ rows, initialQuoteInput }: SyncQuoteLinesProps 
     if (!quote) return;
     setError(null);
     setRefused([]);
+    setCleared(null);
     setBusy("create");
     try {
+      // Clear BEFORE creating, and only when the button was enabled — which already requires
+      // every ticked row to be sendable. So the usual reason a create fails cannot leave the
+      // Quote emptied.
+      let clearedNow: ClearResult | null = null;
+      if (clearFirst) {
+        const cleanRes = await fetch("/api/salesforce/quote-lines/clear", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ quoteId: quote.id }),
+        });
+        const cleanJson = (await cleanRes.json().catch(() => null)) as
+          | { ok: boolean; result?: ClearResult; error?: string }
+          | null;
+        if (!cleanRes.ok || !cleanJson?.result) {
+          setError(cleanJson?.error ?? "Couldn't clear the Quote — nothing was created.");
+          return;
+        }
+        clearedNow = cleanJson.result;
+        setCleared(clearedNow);
+      }
       const res = await fetch("/api/salesforce/quote-lines/create", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -111,7 +147,13 @@ export function SyncQuoteLines({ rows, initialQuoteInput }: SyncQuoteLinesProps 
         return;
       }
       setResult({ signature, outcome: json.result });
-      setQuote({ ...quote, existingLines: quote.existingLines + json.result.created.length });
+      setQuote({
+        ...quote,
+        existingLines: (clearedNow ? 0 : quote.existingLines) + json.result.created.length,
+        markupSlotsUsed: clearedNow ? 0 : quote.markupSlotsUsed,
+      });
+      // A second run has to be ticked again deliberately.
+      setClearFirst(false);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -174,11 +216,40 @@ export function SyncQuoteLines({ rows, initialQuoteInput }: SyncQuoteLinesProps 
             {quote.name && <span className="text-ad-muted"> · {quote.name}</span>}
             {" — "}Opportunity <span className="font-medium text-ad-ink">{quote.opportunityName ?? "—"}</span>
           </p>
-          {quote.existingLines > 0 && (
+          {quote.existingLines > 0 && !clearFirst && (
             <p className="text-ad-orange">
               This Quote already has {quote.existingLines} line item{quote.existingLines === 1 ? "" : "s"}. Creating
               adds to them — it does not replace anything.
             </p>
+          )}
+          {hasSomethingToClear && (
+            <div>
+              <label className="flex items-start gap-2 font-medium text-ad-ink">
+                <input
+                  type="checkbox"
+                  checked={clearFirst}
+                  onChange={(e) => setClearFirst(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-ad-border"
+                />
+                <span>
+                  Clear the Quote first — delete{" "}
+                  {[
+                    quote.existingLines > 0 &&
+                      `its ${quote.existingLines} line item${quote.existingLines === 1 ? "" : "s"}`,
+                    quote.markupSlotsUsed > 0 &&
+                      `${quote.markupSlotsUsed} site markup link${quote.markupSlotsUsed === 1 ? "" : "s"}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" and ")}
+                </span>
+              </label>
+              {clearFirst && (
+                <p className="mt-1 pl-6 text-xs text-ad-muted">
+                  Replaces what is on the Quote instead of adding to it. The drawings stay in Box — only the
+                  Quote&apos;s links to them are cleared. Deleted line items go to the Salesforce Recycle Bin.
+                </p>
+              )}
+            </div>
           )}
           {unchecked > 0 && (
             <p className="text-ad-orange">
@@ -200,10 +271,12 @@ export function SyncQuoteLines({ rows, initialQuoteInput }: SyncQuoteLinesProps 
             }
           >
             {busy === "create"
-              ? "Creating…"
+              ? clearFirst
+                ? "Clearing…"
+                : "Creating…"
               : alreadyCreated
                 ? "Created"
-                : `Create ${ready} line item${ready === 1 ? "" : "s"}`}
+                : `${clearFirst ? "Clear and create" : "Create"} ${ready} line item${ready === 1 ? "" : "s"}`}
           </button>
         </div>
       )}
@@ -211,7 +284,14 @@ export function SyncQuoteLines({ rows, initialQuoteInput }: SyncQuoteLinesProps 
       {result && (
         <div className="mt-3 rounded-lg border border-ad-border bg-ad-surface p-3 text-sm">
           <p className="font-medium text-ad-ink">
-            Created {result.outcome.created.length} line item{result.outcome.created.length === 1 ? "" : "s"}
+            {cleared
+              ? `Cleared ${cleared.deletedLines} line item${cleared.deletedLines === 1 ? "" : "s"}${
+                  cleared.clearedMarkupSlots > 0
+                    ? ` and ${cleared.clearedMarkupSlots} markup link${cleared.clearedMarkupSlots === 1 ? "" : "s"}`
+                    : ""
+                }, then created `
+              : "Created "}
+            {result.outcome.created.length} line item{result.outcome.created.length === 1 ? "" : "s"}
             {quote?.number ? ` on Quote ${quote.number}` : ""}.
           </p>
           <p className="mt-1 text-ad-muted">

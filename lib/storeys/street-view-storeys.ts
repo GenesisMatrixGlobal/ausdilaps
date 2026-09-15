@@ -41,8 +41,21 @@ export const MAX_CAMERA_DISTANCE_M = 45;
 export const NEAREST_CAMERA_VETO_AT = 40;
 /** A dissenting count at or above this is a real disagreement, not noise, and blocks a clear. */
 export const DISSENT_MATTERS_AT = 50;
-/** The agreeing angles must average at least this to clear — two shaky agreements are not proof. */
-export const AGREEMENT_MIN_MEAN = 60;
+/** The COMBINED confidence of the facade-visible agreeing angles must reach this to clear.
+ *  Combined by accumulation, not averaging — see combinedConfidence(). */
+export const COMBINED_CLEAR_AT = 85;
+
+/** Independent views that agree REINFORCE each other: two photos at 62 and 68 that both count
+ *  one storey are far stronger evidence than either alone, and averaging them to 65 threw that
+ *  away (row 1 of the residential trial sat at "50%" with two plainly single-storey photos,
+ *  because three photos that could not see the house were averaged in). Noisy-OR: the chance
+ *  that NOT every agreeing view is wrong. 62 & 68 → 88; 55 ×3 → 91; 50 ×2 → 75; one photo
+ *  keeps its own number, so a lone view still cannot clear on its own. */
+export function combinedConfidence(confidences: number[]): number {
+  if (confidences.length === 0) return 0;
+  const allWrong = confidences.reduce((p, c) => p * (1 - Math.min(99, Math.max(0, c)) / 100), 1);
+  return Math.round((1 - allWrong) * 100);
+}
 
 export interface StoreyVerdict {
   storeys: number | null;
@@ -207,11 +220,10 @@ export function isConfident(v: { storeys: number | null; confidence: number; fac
 /** How the angles VOTE. One photo can be wrong with great confidence — a wrong image is the
  *  failure mode this whole module guards against — so a clear needs CORROBORATION:
  *
- *   - clear when two angles that SAW THE FACADE agree on the count, at least one of them is
- *     confident, and they average AGREEMENT_MIN_MEAN or better — or when THREE or more agree at
- *     that average even with none confident (three independent views at 60 are stronger
- *     evidence than one at 70; a service station read 1 storey five times at 60 and stayed
- *     orange under the old rule);
+ *   - only angles that SAW THE FACADE vote; a photo that could not see the building says
+ *     nothing (it neither supports nor drags the number down);
+ *   - clear when two or more voting angles agree on the count and their COMBINED confidence
+ *     (combinedConfidence — accumulated, not averaged) reaches COMBINED_CLEAR_AT;
  *   - a lone camera (nothing else to corroborate with) clears only at LONE_CAMERA_CONFIDENT;
  *   - a dissenting count at DISSENT_MATTERS_AT or better blocks a clear — unless it is a single
  *     non-confident dissent outvoted by three or more facade-visible agreeing angles that include
@@ -246,17 +258,20 @@ export function tallyVerdicts(verdicts: Judged[], camerasAvailable: number): Tal
   if (counted.length === 0) {
     return { storeys: null, confidence: 0, clear: false, reason: "no angle could count the storeys", wantsMore: verdicts.length < camerasAvailable };
   }
-  // Weight per count = summed confidence of the angles that saw it.
+  // The votes: angles that saw the facade. When none did, the best guess still comes from
+  // whatever was counted, but nothing can clear.
+  const voters = counted.filter((v) => v.facadeVisible);
+  const electorate = voters.length > 0 ? voters : counted;
   const weight = new Map<number, number>();
-  for (const v of counted) weight.set(v.storeys!, (weight.get(v.storeys!) ?? 0) + v.confidence);
+  for (const v of electorate) weight.set(v.storeys!, (weight.get(v.storeys!) ?? 0) + v.confidence);
   const ranked = [...weight.entries()].sort((a, b) => b[1] - a[1]);
   const [winner] = ranked[0];
   const agreeing = counted.filter((v) => v.storeys === winner);
-  // Only an angle that saw the facade can vouch for a count.
   const vouching = agreeing.filter((v) => v.facadeVisible);
   const confidentFor = vouching.filter(isConfident);
-  const dissent = counted.filter((v) => v.storeys !== winner && v.confidence >= DISSENT_MATTERS_AT);
-  const confidence = Math.round(agreeing.reduce((s, v) => s + v.confidence, 0) / agreeing.length);
+  // Dissent is judged among the voters too — a blind photo's guess cannot start a fight.
+  const dissent = voters.filter((v) => v.storeys !== winner && v.confidence >= DISSENT_MATTERS_AT);
+  const confidence = combinedConfidence((vouching.length > 0 ? vouching : agreeing).map((v) => v.confidence));
   const others = ranked.slice(1).map(([n]) => n);
 
   const exhausted = verdicts.length >= camerasAvailable;
@@ -277,11 +292,8 @@ export function tallyVerdicts(verdicts: Judged[], camerasAvailable: number): Tal
   if (dissent.length > 0 && !dissentOutvoted) {
     return { storeys: winner, confidence, clear: false, reason: `angles disagree (${[winner, ...others].join(" vs ")})`, wantsMore: false };
   }
-  if (vouching.length >= 2) {
-    const mean = Math.round(vouching.reduce((s, v) => s + v.confidence, 0) / vouching.length);
-    if (mean >= AGREEMENT_MIN_MEAN && (confidentFor.length > 0 || vouching.length >= 3)) {
-      return { storeys: winner, confidence: mean, clear: true, reason: `${vouching.length} angles agree${dissentOutvoted ? ", one outvoted" : ""}`, wantsMore: false };
-    }
+  if (vouching.length >= 2 && confidence >= COMBINED_CLEAR_AT) {
+    return { storeys: winner, confidence, clear: true, reason: `${vouching.length} angles agree${dissentOutvoted ? ", one outvoted" : ""}`, wantsMore: false };
   }
   if (camerasAvailable === 1 && confidentFor.length > 0 && vouching[0].confidence >= LONE_CAMERA_CONFIDENT) {
     return { storeys: winner, confidence, clear: true, reason: "one camera only, but a clear view", wantsMore: false };
@@ -297,7 +309,7 @@ export function tallyVerdicts(verdicts: Judged[], camerasAvailable: number): Tal
           ? "one angle only, not confident enough on its own"
           : vouching.length < 2
             ? "agreeing angles, but the facade was not clearly in view"
-            : "agreeing angles, not confident enough"
+            : `agreeing angles, combined ${confidence}% — not enough`
       : "not yet corroborated",
     wantsMore: !exhausted,
   };

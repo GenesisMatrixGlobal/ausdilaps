@@ -289,13 +289,29 @@ async function linkCoverPhotoToSurvey(
 ): Promise<CoverUploadResult> {
   const coverField = coverPhotoField();
   try {
-    // Enterprise-only, not public: this is a job document, unlike the marketing samples.
-    const link = await ensureSharedLink(file.id, token, "company");
+    // ⚠️ "open", NOT "company", and this is not a default anyone should quietly flip back.
+    //
+    // FormTitan fetches this URL ANONYMOUSLY when it merges the report. A "company" link
+    // answers an anonymous request with HTTP 200 and Box's LOGIN PAGE — 23KB of text/html
+    // where the merge expected a PNG — so the cover photo silently comes out blank. Measured
+    // against a Site Markup link that merges today: that one is `access: open` and returns
+    // 200 image/png, 967KB; ours was `access: company` and returned 200 text/html.
+    //
+    // ⚠️ A HEAD request is NOT a valid test of this. `curl -I` returns 404 for BOTH, which
+    // makes an open link and a company link look identical and is exactly how this was missed
+    // the first time round. Use GET and check the content-type.
+    //
+    // The cost is real and was weighed: an open link is readable by anyone holding the URL.
+    // That is the same exposure the Site Mark Up images already carry, the URL only ever
+    // travels in the Salesforce field and the merged report, and a cover photo is an aerial of
+    // a property with no personal data on it.
+    const link = await ensureSharedLink(file.id, token, "open");
 
-    // The DIRECT link, not the preview page. Salesforce's document merge fetches whatever is
-    // in this field expecting image bytes; the preview URL (app.box.com/s/...) returns an HTML
-    // viewer page, which is exactly how the markup sync once produced merged documents with a
-    // broken image in them.
+    // The DIRECT link, not the preview page. The merge fetches whatever is in this field
+    // expecting image bytes; the preview URL (app.box.com/s/...) returns an HTML viewer page,
+    // which is exactly how the markup sync once produced merged documents with a broken image
+    // in them. Both halves matter: the right URL FORM and the right access SCOPE. They are
+    // independent, and the scope is invisible in the URL.
     const sharedLink = link.downloadUrl;
     if (!sharedLink) {
       throw new CoverPhotoSyncError(

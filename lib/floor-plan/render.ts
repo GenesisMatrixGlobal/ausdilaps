@@ -14,7 +14,7 @@ import {
   deriveWalls,
   doorGeometry,
   labelAnchor,
-  labelRect,
+  labelWidth,
   openingsFor,
   outdoorIds,
   placeDoors,
@@ -255,8 +255,7 @@ function drawLevel(p: Placed, grid: { w: number; h: number }, scale: number, opt
     const g = doorGeometry(door);
     const px = (x: number) => r2(ox + x * scale);
     const py = (y: number) => r2(oy + y * scale);
-    const dash = door.confidence === "inferred" ? ` stroke-dasharray="${r2(scale * 0.14)}"` : "";
-    const stroke = `stroke="${INK}" stroke-width="${r2(internal * 0.8)}" fill="none"${dash}`;
+    const stroke = `stroke="${INK}" stroke-width="${r2(internal * 0.8)}" fill="none"`;
 
     for (const leaf of g.leaves) {
       const rad = r2(leaf.radius * scale);
@@ -356,14 +355,15 @@ function drawLines(level: Level, ox: number, oy: number, scale: number, internal
 
 function roomLabel(room: Room, ox: number, oy: number, scale: number): string {
   if (!room.label.trim()) return "";
-  const rect = labelRect(room);
   const anchor = labelAnchor(room);
   const base = Math.max(6, scale * 0.34);
-  const { lines, font } = fitLabel(room.label.trim(), rect.w * scale * 0.88, base);
+  // labelWidth, not rect.w: a turned label reads up the page, so the space it has to fit into
+  // is the rect's height.
+  const { lines, font } = fitLabel(room.label.trim(), labelWidth(room) * scale * 0.88, base);
   const cx = ox + anchor.x * scale;
   const cy = oy + anchor.y * scale;
   const startY = cy - ((lines.length - 1) * font * 1.15) / 2;
-  return lines
+  const body = lines
     .map(
       (line, i) =>
         `<text class="rm" x="${r2(cx)}" y="${r2(startY + i * font * 1.15)}" font-size="${r2(font)}">${esc(
@@ -371,6 +371,9 @@ function roomLabel(room: Room, ox: number, oy: number, scale: number): string {
         )}</text>`
     )
     .join("");
+  // -90 so it reads bottom-to-top, which is how every reference plan writes a name into a
+  // balcony or a hallway too narrow to take it across.
+  return room.labelAngle === 90 ? `<g transform="rotate(-90 ${r2(cx)} ${r2(cy)})">${body}</g>` : body;
 }
 
 /**

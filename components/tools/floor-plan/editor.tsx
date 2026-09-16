@@ -12,7 +12,7 @@
 // Every intermediate state goes through the same pure functions as the commit, which is why
 // the live preview is exactly what you get when you let go.
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   boundariesBetween,
   buildOwnerGrid,
@@ -26,17 +26,21 @@ import {
   subtractOpenings,
 } from "@/lib/floor-plan/grid";
 import {
+  addDoor,
   addLine,
   addMark,
+  addRect,
   addStair,
   moveRoom,
   resizeRoom,
+  resizeStair,
+  setLabelPlacement,
   updateDoor,
   updateMark,
   updateStair,
   type Edge,
 } from "@/lib/floor-plan/edit";
-import type { FloorPlan, Level } from "@/lib/floor-plan/types";
+import { OUTSIDE, type FloorPlan, type Level, type Line } from "@/lib/floor-plan/types";
 
 export type Selection =
   | { type: "room"; id: string }
@@ -46,8 +50,20 @@ export type Selection =
   | { type: "stair"; id: string }
   | null;
 
+/**
+ * What the Draw palette can put on the plan. Every one of these is the same gesture applied to
+ * a different thing, which is the point: adding another is an entry in a list, not a feature.
+ */
+export const DRAW_KINDS = ["room", "outdoor", "wall", "counter", "fence", "stairs", "door", "number"] as const;
+export type DrawKind = (typeof DRAW_KINDS)[number];
+
 /** Anything but "select" turns the canvas into a drawing surface. */
-export type Tool = "select" | "fence" | "number" | "stairs";
+export type Tool = "select" | DrawKind;
+
+/** Drag out a rectangle. */
+const RECT_KINDS = new Set<Tool>(["room", "outdoor", "stairs"]);
+/** Drag along a grid line. */
+const LINE_KINDS = new Set<Tool>(["wall", "counter", "fence"]);
 
 interface EditorProps {
   plan: FloorPlan;
@@ -59,6 +75,8 @@ interface EditorProps {
   highlightWall?: { a: string; b: string } | null;
   /** The value the Number tool will place next. */
   markText: string;
+  /** With a room selected, a drawn rectangle joins it instead of starting a new one. */
+  extendSelected: boolean;
   onSelect: (selection: Selection) => void;
   onChange: (level: Level) => void;
   onError: (message: string | null) => void;
@@ -66,18 +84,28 @@ interface EditorProps {
   onMarkPlaced: () => void;
 }
 
+type Point = { x: number; y: number };
+
 type Drag =
-  | { mode: "move"; roomId: string; from: { x: number; y: number }; base: Level }
-  | { mode: "resize"; roomId: string; edge: Edge; from: { x: number; y: number }; base: Level }
-  | { mode: "door"; doorId: string; from: { x: number; y: number }; base: Level; baseAt: number }
-  // A fence run is drawn, not dragged from something existing, so it carries its own geometry
-  // until it is committed on pointer-up.
-  | { mode: "fence"; orient: "h" | "v"; pos: number; from: number; to: number }
-  // Same story for a staircase, which is rubber-banded out in two axes rather than one.
-  | { mode: "stair-draw"; x0: number; y0: number; x1: number; y1: number }
-  | { mode: "mark"; markId: string; from: { x: number; y: number }; base: Level; baseAt: { x: number; y: number } }
-  | { mode: "stair"; stairId: string; from: { x: number; y: number }; base: Level; baseAt: { x: number; y: number } }
+  | { mode: "move"; roomId: string; from: Point; base: Level }
+  | { mode: "resize"; roomId: string; edge: Edge; from: Point; base: Level }
+  | { mode: "door"; doorId: string; from: Point; base: Level; baseAt: number }
+  | { mode: "mark"; markId: string; from: Point; base: Level; baseAt: Point }
+  | { mode: "stair"; stairId: string; from: Point; base: Level; baseAt: Point }
+  | { mode: "stair-resize"; stairId: string; edge: Edge; from: Point; base: Level }
+  | { mode: "label"; roomId: string; from: Point; base: Level; baseAt: Point }
+  // Drawn, not dragged from something that exists, so these carry their own geometry until
+  // pointer-up commits them.
+  | { mode: "line"; kind: Line["kind"]; orient: "h" | "v"; pos: number; from: number; to: number }
+  | { mode: "rect"; kind: "room" | "outdoor" | "stairs"; x0: number; y0: number; x1: number; y1: number }
+  | { mode: "pan"; from: Point; base: Box }
   | null;
+
+/** The visible window on the grid, in grid units. */
+type Box = { x: number; y: number; w: number; h: number };
+
+const MIN_SPAN = 4;
+const ZOOM_STEP = 1.25;
 
 const STEEL = "#46688a";
 const INK = "#2f343a";
@@ -91,6 +119,7 @@ export function FloorPlanEditor({
   selection,
   highlightWall,
   markText,
+  extendSelected,
   onSelect,
   onChange,
   onError,
@@ -99,9 +128,13 @@ export function FloorPlanEditor({
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<Drag>(null);
   const [preview, setPreview] = useState<Level | null>(null);
+  const [view, setView] = useState<{ box: Box; key: string } | null>(null);
 
   const level = preview ?? plan.levels[levelIndex];
   const grid = plan.grid;
+  const fitBox: Box = { x: -0.5, y: -0.5, w: grid.w + 1, h: grid.h + 1 };
+  const viewKey = `${grid.w}x${grid.h}:${levelIndex}`;
+  const viewBox = view && view.key === viewKey ? view.box : fitBox;
   const owner = buildOwnerGrid(level.rooms, grid);
   const walls = deriveWalls(owner, grid, outdoorIds(level.rooms));
   const { placed: doors } = placeDoors(owner, grid, level.doors);
@@ -110,17 +143,114 @@ export function FloorPlanEditor({
   // While a tool is drawing, nothing already on the canvas may swallow the press.
   const drawing = tool !== "select";
 
-  /** Pointer position in grid units. Uses the SVG's own transform, so it survives any scale. */
-  function toGrid(e: React.PointerEvent): { x: number; y: number } {
+  /** Pointer position in grid units. Uses the SVG's own transform, so it survives any zoom. */
+  const clientToGrid = useCallback((cx: number, cy: number): Point => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const pt = svg.createSVGPoint();
-    pt.x = e.clientX;
-    pt.y = e.clientY;
+    pt.x = cx;
+    pt.y = cy;
     const ctm = svg.getScreenCTM();
     if (!ctm) return { x: 0, y: 0 };
     const p = pt.matrixTransform(ctm.inverse());
     return { x: p.x, y: p.y };
+  }, []);
+
+  function toGrid(e: React.PointerEvent): Point {
+    return clientToGrid(e.clientX, e.clientY);
+  }
+
+  const gw = grid.w + 1;
+  const gh = grid.h + 1;
+
+  const putView = useCallback((next: Box) => setView({ box: next, key: viewKey }), [viewKey]);
+  const updateView = useCallback(
+    (fn: (cur: Box) => Box) =>
+      setView((cur) => ({
+        box: fn(cur && cur.key === viewKey ? cur.box : { x: -0.5, y: -0.5, w: gw, h: gh }),
+        key: viewKey,
+      })),
+    [viewKey, gw, gh]
+  );
+
+  /** Keep the window inside the grid, and never let it shrink past a few cells. */
+  const clampBox = useCallback(
+    (b: Box): Box => {
+      const w = Math.min(Math.max(MIN_SPAN, b.w), gw);
+      const h = b.h * (w / b.w);
+      return {
+        w,
+        h,
+        x: Math.min(Math.max(b.x, -0.5), -0.5 + gw - w),
+        y: Math.min(Math.max(b.y, -0.5), -0.5 + gh - h),
+      };
+    },
+    [gw, gh]
+  );
+
+  /** Scale about a fixed grid point, so whatever is under the cursor stays under it. */
+  const zoomBy = useCallback(
+    (factor: number, focus: Point) => {
+      updateView((b) => {
+        const w = Math.min(Math.max(MIN_SPAN, b.w / factor), gw);
+        const k = w / b.w;
+        return clampBox({
+          x: focus.x - (focus.x - b.x) * k,
+          y: focus.y - (focus.y - b.y) * k,
+          w,
+          h: b.h * k,
+        });
+      });
+    },
+    [gw, clampBox, updateView]
+  );
+
+  // React's onWheel is passive, so it cannot preventDefault and the page scrolls instead.
+  // Pinch on a trackpad arrives as a wheel event with ctrlKey set; a plain wheel pans.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        const factor = Math.min(4, Math.max(0.25, Math.exp(-e.deltaY * 0.01)));
+        zoomBy(factor, clientToGrid(e.clientX, e.clientY));
+        return;
+      }
+      updateView((b) => {
+        const perPx = b.w / Math.max(1, svg.clientWidth);
+        return clampBox({ ...b, x: b.x + e.deltaX * perPx, y: b.y + e.deltaY * perPx });
+      });
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, [zoomBy, clientToGrid, clampBox, updateView]);
+
+  /**
+   * The wall line nearest a point, and who is either side of it.
+   *
+   * This is what makes "click a wall to put a door in it" work: a door is stored as the pair
+   * of rooms it joins, and the pair is exactly what a wall line already tells you.
+   */
+  function wallAt(p: Point): { a: string; b: string; orient: "h" | "v"; pos: number; at: number } | null {
+    const cell = (x: number, y: number) =>
+      x < 0 || y < 0 || x >= grid.w || y >= grid.h ? null : owner[y][x];
+
+    const vx = Math.round(p.x);
+    const hy = Math.round(p.y);
+    const vertical = Math.abs(p.x - vx) <= Math.abs(p.y - hy);
+
+    const lo = vertical ? cell(vx - 1, Math.floor(p.y)) : cell(Math.floor(p.x), hy - 1);
+    const hi = vertical ? cell(vx, Math.floor(p.y)) : cell(Math.floor(p.x), hy);
+    if (lo === hi) return null;
+
+    return {
+      a: lo ?? OUTSIDE,
+      b: hi ?? OUTSIDE,
+      orient: vertical ? "v" : "h",
+      pos: vertical ? vx : hy,
+      at: Math.floor(vertical ? p.y : p.x),
+    };
   }
 
   function begin(e: React.PointerEvent, next: Drag) {
@@ -134,7 +264,7 @@ export function FloorPlanEditor({
     if (!drag) return;
     const now = toGrid(e);
 
-    if (drag.mode === "fence") {
+    if (drag.mode === "line") {
       // Snap to the nearest grid line and extend along it. The axis is locked at pointer-down
       // so a wobbly drag cannot flip the run halfway through.
       const along = Math.round(drag.orient === "v" ? now.y : now.x);
@@ -142,8 +272,23 @@ export function FloorPlanEditor({
       return;
     }
 
-    if (drag.mode === "stair-draw") {
+    if (drag.mode === "rect") {
       setDrag({ ...drag, x1: Math.round(now.x), y1: Math.round(now.y) });
+      return;
+    }
+
+    if (drag.mode === "pan") {
+      // The pointer has already moved with the content, so read the delta in SCREEN terms and
+      // convert once — using grid coords here would chase its own tail.
+      const svg = svgRef.current;
+      const perPx = drag.base.w / Math.max(1, svg?.clientWidth ?? 1);
+      putView(
+        clampBox({
+          ...drag.base,
+          x: drag.base.x - (e.clientX - drag.from.x) * perPx,
+          y: drag.base.y - (e.clientY - drag.from.y) * perPx,
+        })
+      );
       return;
     }
 
@@ -155,6 +300,16 @@ export function FloorPlanEditor({
           x: drag.baseAt.x + (now.x - drag.from.x),
           y: drag.baseAt.y + (now.y - drag.from.y),
         },
+      });
+      if (result.ok) setPreview(result.level);
+      return;
+    }
+
+    if (drag.mode === "label") {
+      // Free, like a mark: the whole point is to put the name where the room's centre is busy.
+      const result = setLabelPlacement(drag.base, drag.roomId, {
+        labelDx: drag.baseAt.x + (now.x - drag.from.x),
+        labelDy: drag.baseAt.y + (now.y - drag.from.y),
       });
       if (result.ok) setPreview(result.level);
       return;
@@ -211,14 +366,17 @@ export function FloorPlanEditor({
       setPreview(drag.base);
       return;
     }
-    const result = resizeRoom(drag.base, grid, drag.roomId, drag.edge, delta);
+    const result =
+      drag.mode === "stair-resize"
+        ? resizeStair(drag.base, grid, drag.stairId, drag.edge, delta)
+        : resizeRoom(drag.base, grid, drag.roomId, drag.edge, delta);
     if (result.ok) setPreview(result.level);
   }
 
   function onPointerUp() {
     if (!drag) return;
 
-    if (drag.mode === "fence") {
+    if (drag.mode === "line") {
       const from = Math.min(drag.from, drag.to);
       const to = Math.max(drag.from, drag.to);
       if (to > from) {
@@ -227,7 +385,7 @@ export function FloorPlanEditor({
           pos: drag.pos,
           from,
           to,
-          kind: "fence",
+          kind: drag.kind,
         });
         if (result.ok) onChange(result.level);
         else onError(result.error);
@@ -236,16 +394,34 @@ export function FloorPlanEditor({
       return;
     }
 
-    if (drag.mode === "stair-draw") {
-      const result = addStair(plan.levels[levelIndex], {
-        x: Math.min(drag.x0, drag.x1),
-        y: Math.min(drag.y0, drag.y1),
-        w: Math.abs(drag.x1 - drag.x0),
-        h: Math.abs(drag.y1 - drag.y0),
-        dir: "up",
-      });
+    if (drag.mode === "rect") {
+      const x = Math.min(drag.x0, drag.x1);
+      const y = Math.min(drag.y0, drag.y1);
+      const w = Math.abs(drag.x1 - drag.x0);
+      const h = Math.abs(drag.y1 - drag.y0);
+      const target = plan.levels[levelIndex];
+
+      let result;
+      if (drag.kind === "stairs") {
+        result = addStair(target, { x, y, w, h, dir: "up" });
+      } else if (extendSelected && selection?.type === "room") {
+        result = addRect(target, grid, { x, y, w, h }, { roomId: selection.id });
+      } else {
+        const kind = drag.kind === "outdoor" ? "outdoor" : "room";
+        const n = target.rooms.filter((r) => r.kind === kind).length + 1;
+        result = addRect(target, grid, { x, y, w, h }, {
+          label: kind === "outdoor" ? `Area ${n}` : `Room ${n}`,
+          kind,
+        });
+      }
+
       if (result.ok) onChange(result.level);
       else onError(result.error);
+      setDrag(null);
+      return;
+    }
+
+    if (drag.mode === "pan") {
       setDrag(null);
       return;
     }
@@ -254,6 +430,7 @@ export function FloorPlanEditor({
     setDrag(null);
     setPreview(null);
   }
+
 
   const selectedRoom =
     selection?.type === "room" ? level.rooms.find((r) => r.id === selection.id) : undefined;
@@ -270,24 +447,71 @@ export function FloorPlanEditor({
     box = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
   }
 
-  const handles: Array<{ edge: Edge; x: number; y: number; cursor: string }> = box
-    ? [
-        { edge: "n", x: box.x + box.w / 2, y: box.y, cursor: "ns-resize" },
-        { edge: "s", x: box.x + box.w / 2, y: box.y + box.h, cursor: "ns-resize" },
-        { edge: "w", x: box.x, y: box.y + box.h / 2, cursor: "ew-resize" },
-        { edge: "e", x: box.x + box.w, y: box.y + box.h / 2, cursor: "ew-resize" },
-      ]
-    : [];
+  const edgeHandles = (b: { x: number; y: number; w: number; h: number } | null) =>
+    b
+      ? ([
+          { edge: "n", x: b.x + b.w / 2, y: b.y, cursor: "ns-resize" },
+          { edge: "s", x: b.x + b.w / 2, y: b.y + b.h, cursor: "ns-resize" },
+          { edge: "w", x: b.x, y: b.y + b.h / 2, cursor: "ew-resize" },
+          { edge: "e", x: b.x + b.w, y: b.y + b.h / 2, cursor: "ew-resize" },
+        ] as Array<{ edge: Edge; x: number; y: number; cursor: string }>)
+      : [];
+
+  const handles = edgeHandles(box);
+
+  const selectedStair =
+    selection?.type === "stair" ? level.stairs.find((s) => s.id === selection.id) : undefined;
+  const stairBox = selectedStair
+    ? { x: selectedStair.x, y: selectedStair.y, w: selectedStair.w, h: selectedStair.h }
+    : null;
+  const stairHandles = edgeHandles(stairBox);
+
+  const centre: Point = { x: viewBox.x + viewBox.w / 2, y: viewBox.y + viewBox.h / 2 };
+  const zoomed = viewBox.w < fitBox.w - 0.001;
 
   return (
+    <div className="relative">
+      {/* On-screen controls as well as the gestures. A pinch nobody knows about is not a
+          feature — the same lesson as "delete a door" and "rename a room". */}
+      <div className="absolute right-2 top-2 z-10 flex flex-col overflow-hidden rounded-lg border border-ad-border bg-white/90 text-ad-muted shadow-sm backdrop-blur">
+        {[
+          { label: "+", title: "Zoom in", on: () => zoomBy(ZOOM_STEP, centre) },
+          { label: "−", title: "Zoom out", on: () => zoomBy(1 / ZOOM_STEP, centre) },
+        ].map((b) => (
+          <button
+            key={b.label}
+            type="button"
+            title={b.title}
+            onClick={b.on}
+            className="h-7 w-7 text-sm leading-none hover:bg-ad-surface hover:text-ad-ink"
+          >
+            {b.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          title="Fit the whole plan"
+          onClick={() => setView(null)}
+          disabled={!zoomed}
+          className="h-7 w-7 border-t border-ad-border text-[0.6rem] hover:bg-ad-surface hover:text-ad-ink disabled:opacity-40"
+        >
+          Fit
+        </button>
+      </div>
     <svg
       ref={svgRef}
-      viewBox={`-0.5 -0.5 ${grid.w + 1} ${grid.h + 1}`}
+      viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
       className="w-full touch-none select-none"
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onPointerDown={(e) => {
+        // Middle button pans in any mode, which is what a middle button does everywhere else.
+        if (e.button === 1) {
+          (e.target as Element).setPointerCapture?.(e.pointerId);
+          setDrag({ mode: "pan", from: { x: e.clientX, y: e.clientY }, base: viewBox });
+          return;
+        }
         if (tool === "select") {
           onSelect(null);
           return;
@@ -304,23 +528,52 @@ export function FloorPlanEditor({
           return;
         }
 
-        (e.target as Element).setPointerCapture?.(e.pointerId);
-
-        if (tool === "stairs") {
-          const x = Math.round(at.x);
-          const y = Math.round(at.y);
-          setDrag({ mode: "stair-draw", x0: x, y0: y, x1: x, y1: y });
+        if (tool === "door") {
+          // A door is stored as the pair of rooms it joins, and a wall line is exactly that
+          // pair — so clicking the wall IS naming the door.
+          const hit = wallAt(at);
+          if (!hit) {
+            onError("Click on a wall — a door goes between two rooms.");
+            return;
+          }
+          const target = plan.levels[levelIndex];
+          const added = addDoor(target, hit.a, hit.b);
+          if (!added.ok) {
+            onError(added.error);
+            return;
+          }
+          // Hang it on the wall that was actually clicked, at the point clicked.
+          const placed = added.level.doors[added.level.doors.length - 1];
+          const put = updateDoor(added.level, placed.id, {
+            wall: { orient: hit.orient, pos: hit.pos },
+            at: hit.at,
+          });
+          if (put.ok) {
+            onChange(put.level);
+            onSelect({ type: "door", id: placed.id });
+          } else onError(put.error);
           return;
         }
 
-        // Fence. Whichever axis the press is closer to a line on becomes the run's axis.
-        // Fences follow boundaries, which on this grid are the lines between cells.
+        (e.target as Element).setPointerCapture?.(e.pointerId);
+
+        if (!RECT_KINDS.has(tool) && !LINE_KINDS.has(tool)) return;
+
+        if (RECT_KINDS.has(tool)) {
+          const x = Math.round(at.x);
+          const y = Math.round(at.y);
+          setDrag({ mode: "rect", kind: tool as "room" | "outdoor" | "stairs", x0: x, y0: y, x1: x, y1: y });
+          return;
+        }
+
+        // A line. Whichever axis the press is closer to a line on becomes the run's axis —
+        // these follow boundaries, which on this grid are the lines between cells.
         const dx = Math.abs(at.x - Math.round(at.x));
         const dy = Math.abs(at.y - Math.round(at.y));
         const orient = dx <= dy ? "v" : "h";
         const pos = Math.round(orient === "v" ? at.x : at.y);
         const start = Math.round(orient === "v" ? at.y : at.x);
-        setDrag({ mode: "fence", orient, pos, from: start, to: start });
+        setDrag({ mode: "line", kind: tool as Line["kind"], orient, pos, from: start, to: start });
       }}
       style={{ maxHeight: "70vh", cursor: drawing ? "crosshair" : undefined }}
     >
@@ -412,7 +665,7 @@ export function FloorPlanEditor({
             </g>
           );
         })}
-        {drag?.mode === "stair-draw" && (
+        {drag?.mode === "rect" && (
           <rect
             x={Math.min(drag.x0, drag.x1)}
             y={Math.min(drag.y0, drag.y1)}
@@ -422,6 +675,7 @@ export function FloorPlanEditor({
             fillOpacity={0.12}
             stroke={STEEL}
             strokeWidth={0.08}
+            strokeDasharray={drag.kind === "outdoor" ? "0.3 0.2" : undefined}
             pointerEvents="none"
           />
         )}
@@ -516,7 +770,7 @@ export function FloorPlanEditor({
             </g>
           );
         })}
-        {drag?.mode === "fence" && (
+        {drag?.mode === "line" && (
           <line
             x1={drag.orient === "v" ? drag.pos : Math.min(drag.from, drag.to)}
             y1={drag.orient === "v" ? Math.min(drag.from, drag.to) : drag.pos}
@@ -524,7 +778,7 @@ export function FloorPlanEditor({
             y2={drag.orient === "v" ? Math.max(drag.from, drag.to) : drag.pos}
             stroke={STEEL}
             strokeWidth={0.12}
-            strokeDasharray="0.3 0.2"
+            strokeDasharray={drag.kind === "fence" ? "0.3 0.2" : undefined}
             pointerEvents="none"
           />
         )}
@@ -548,7 +802,6 @@ export function FloorPlanEditor({
                 stroke={stroke}
                 strokeWidth={width}
                 fill="none"
-                strokeDasharray={door.confidence === "inferred" ? 0.14 : undefined}
                 pointerEvents="none"
               />
             ))}
@@ -604,22 +857,67 @@ export function FloorPlanEditor({
       })}
       </g>
 
+      {/* Room names. Draggable, because the anchor is the centre of the room's biggest rect
+          and that is exactly where a staircase or a number tends to be.
+          Only once the room is SELECTED, though: the grab box is invisible and sits above
+          everything, so while it was always live it covered whatever was under the name —
+          a staircase in the middle of a room could not be picked up at all. */}
       <g pointerEvents="none">
         {level.rooms.map((room) => {
           const a = labelAnchor(room);
+          const nudged = room.labelDx !== 0 || room.labelDy !== 0;
+          const width = Math.max(1, room.label.length * 0.22);
+          const grabbable = !drawing && selection?.type === "room" && selection.id === room.id;
           return (
-            <text
+            <g
               key={room.id}
-              x={a.x}
-              y={a.y}
-              fontSize={0.42}
-              textAnchor="middle"
-              dominantBaseline="central"
-              fill={INK}
-              fontFamily="Arial, Helvetica, sans-serif"
+              transform={room.labelAngle === 90 ? `rotate(-90 ${a.x} ${a.y})` : undefined}
+              style={{ cursor: grabbable ? "move" : undefined }}
+              onPointerDown={(e) => {
+                if (!grabbable) return;
+                begin(e, {
+                  mode: "label",
+                  roomId: room.id,
+                  from: toGrid(e),
+                  base: plan.levels[levelIndex],
+                  baseAt: { x: room.labelDx, y: room.labelDy },
+                });
+              }}
             >
-              {room.label}
-            </text>
+              <text
+                x={a.x}
+                y={a.y}
+                fontSize={0.42}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill={INK}
+                fontFamily="Arial, Helvetica, sans-serif"
+                pointerEvents="none"
+              >
+                {room.label}
+              </text>
+              {/* Text is a ragged hit target; grab a box around it instead. */}
+              <rect
+                x={a.x - width / 2}
+                y={a.y - 0.3}
+                width={width}
+                height={0.6}
+                fill="transparent"
+                pointerEvents={grabbable ? "all" : "none"}
+              />
+              {nudged && (
+                <line
+                  x1={a.x - room.labelDx}
+                  y1={a.y - room.labelDy}
+                  x2={a.x}
+                  y2={a.y}
+                  stroke={STEEL}
+                  strokeWidth={0.03}
+                  strokeDasharray="0.12 0.1"
+                  pointerEvents="none"
+                />
+              )}
+            </g>
           );
         })}
       </g>
@@ -675,6 +973,45 @@ export function FloorPlanEditor({
         })}
       </g>
 
+      {stairBox && (
+        <g>
+          <rect
+            x={stairBox.x}
+            y={stairBox.y}
+            width={stairBox.w}
+            height={stairBox.h}
+            fill="none"
+            stroke={STEEL}
+            strokeWidth={0.05}
+            strokeDasharray={0.2}
+            pointerEvents="none"
+          />
+          {stairHandles.map((h) => (
+            <rect
+              key={h.edge}
+              x={h.x - 0.28}
+              y={h.y - 0.28}
+              width={0.56}
+              height={0.56}
+              rx={0.12}
+              fill="#ffffff"
+              stroke={STEEL}
+              strokeWidth={0.06}
+              style={{ cursor: h.cursor }}
+              onPointerDown={(e) =>
+                begin(e, {
+                  mode: "stair-resize",
+                  stairId: selection!.id,
+                  edge: h.edge,
+                  from: toGrid(e),
+                  base: plan.levels[levelIndex],
+                })
+              }
+            />
+          ))}
+        </g>
+      )}
+
       {box && (
         <g>
           <rect
@@ -714,5 +1051,6 @@ export function FloorPlanEditor({
         </g>
       )}
     </svg>
+    </div>
   );
 }

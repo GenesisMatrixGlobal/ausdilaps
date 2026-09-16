@@ -171,7 +171,6 @@ export type DoorPlacement = {
   /** -1 opens toward decreasing x (vertical wall) or y (horizontal); +1 the other way. */
   swingDir: -1 | 1;
   kind: Door["kind"];
-  confidence: "visible" | "inferred";
 };
 
 /** Opening width in cells, by kind. A double or sliding door is twice a single leaf. */
@@ -287,7 +286,6 @@ export function placeDoors(
       hingeAt: door.hinge === "end" ? "to" : "from",
       swingDir,
       kind: door.kind,
-      confidence: door.confidence,
     });
   }
 
@@ -301,7 +299,19 @@ export function labelRect(room: Room): Rect {
 
 export function labelAnchor(room: Room): { x: number; y: number } {
   const r = labelRect(room);
-  return { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+  return { x: r.x + r.w / 2 + room.labelDx, y: r.y + r.h / 2 + room.labelDy };
+}
+
+/**
+ * How much room the label has across its own reading direction.
+ *
+ * A turned label reads up the page, so the width it must fit into is the rect's HEIGHT. Get
+ * this wrong and a long name in a narrow balcony shrinks for the wrong reason — which is the
+ * one case turning the label was for.
+ */
+export function labelWidth(room: Room): number {
+  const r = labelRect(room);
+  return room.labelAngle === 90 ? r.h : r.w;
 }
 
 /** A hole in a wall run: a doorway, or a wall the user removed. */

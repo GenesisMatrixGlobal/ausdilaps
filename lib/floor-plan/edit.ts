@@ -9,11 +9,13 @@
 
 import { rectsFromCells, repairInteriorGaps, roomCells } from "./grid";
 import {
+  LABEL_DEFAULTS,
   OUTSIDE,
   type Annotation,
   type Door,
   type Line,
   type Level,
+  type Rect,
   type RemovedWall,
   type Room,
   type Stair,
@@ -220,8 +222,6 @@ export function addDoor(level: Level, a: string, b: string): EditResult {
     // External doors swing in; anything else opens into the second room until flipped.
     swingInto: b === OUTSIDE ? "a" : "b",
     hinge: "start",
-    // Added by hand, so it is a decision rather than a guess — not dashed.
-    confidence: "visible",
   };
   return { ok: true, level: { ...level, doors: [...level.doors, door] } };
 }
@@ -270,9 +270,117 @@ export function splitRoom(level: Level, grid: Grid, roomId: string, axis: "v" | 
   // fromOwnerMap only knows about rooms already on the level, so introduce the new one first.
   const seeded: Level = {
     ...level,
-    rooms: [...level.rooms, { id: newId, label: `${room.label || "Room"} 2`, kind: room.kind, rects: [] }],
+    rooms: [
+      ...level.rooms,
+      { ...LABEL_DEFAULTS, id: newId, label: `${room.label || "Room"} 2`, kind: room.kind, rects: [] },
+    ],
   };
   return fromOwnerMap(seeded, grid, map);
+}
+
+let roomSeq = 0;
+
+/**
+ * Paint a rectangle of cells — a new room, or another piece of one that already exists.
+ *
+ * Both cases are the same operation because a room IS its cells: `rects` is already an array,
+ * so carrying a balcony around a second side of the building needs no new concept, only a
+ * second rectangle handed to the same paint-then-rebuild pipeline every other edit uses.
+ *
+ * Cells are taken from whoever held them, which is what makes drawing over a neighbour behave
+ * the way drawing does everywhere else. fromOwnerMap still refuses to erase a room outright.
+ */
+export function addRect(
+  level: Level,
+  grid: Grid,
+  rect: Rect,
+  target: { roomId: string } | { label: string; kind: Room["kind"] }
+): EditResult {
+  const x0 = Math.max(0, Math.min(rect.x, grid.w - 1));
+  const y0 = Math.max(0, Math.min(rect.y, grid.h - 1));
+  const x1 = Math.min(grid.w, rect.x + rect.w);
+  const y1 = Math.min(grid.h, rect.y + rect.h);
+  if (x1 - x0 < 1 || y1 - y0 < 1) return { ok: false, error: "Drag out a bigger area." };
+
+  const existing = "roomId" in target ? level.rooms.find((r) => r.id === target.roomId) : undefined;
+  if ("roomId" in target && !existing) return { ok: false, error: "Room not found." };
+
+  const id = existing ? existing.id : `room-${Date.now().toString(36)}-${roomSeq++}`;
+  const map = ownerMap(level.rooms);
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) map.set(key(x, y), id);
+
+  const seeded: Level = existing
+    ? level
+    : {
+        ...level,
+        rooms: [
+          ...level.rooms,
+          {
+            ...LABEL_DEFAULTS,
+            id,
+            label: (target as { label: string }).label,
+            kind: (target as { kind: Room["kind"] }).kind,
+            rects: [],
+          },
+        ],
+      };
+  return fromOwnerMap(seeded, grid, map);
+}
+
+/** Drag one edge of a staircase. Whole cells: the tread count follows the length. */
+export function resizeStair(level: Level, grid: Grid, stairId: string, edge: Edge, delta: number): EditResult {
+  const stair = level.stairs.find((s) => s.id === stairId);
+  if (!stair) return { ok: false, error: "Staircase not found." };
+  if (delta === 0) return { ok: true, level };
+
+  let { x, y, w, h } = stair;
+  if (edge === "e") w = w + delta;
+  else if (edge === "w") { x = x - delta; w = w + delta; }
+  else if (edge === "s") h = h + delta;
+  else { y = y - delta; h = h + delta; }
+
+  // Clamp rather than refuse, the way a room edge does — over-dragging should feel like the
+  // edge stopping, not like an error.
+  if (w < 1) { if (edge === "w") x = x + (w - 1); w = 1; }
+  if (h < 1) { if (edge === "n") y = y + (h - 1); h = 1; }
+  x = Math.max(0, Math.min(x, grid.w - 1));
+  y = Math.max(0, Math.min(y, grid.h - 1));
+  w = Math.max(1, Math.min(Math.round(w), grid.w - Math.floor(x)));
+  h = Math.max(1, Math.min(Math.round(h), grid.h - Math.floor(y)));
+
+  return updateStair(level, stairId, { x, y, w, h });
+}
+
+/**
+ * Turn a staircase a quarter turn about its own centre.
+ *
+ * Resizing a 4x1 into a 1x4 turns it too, because the flight runs along the longer side — but
+ * that moves the footprint as well. This keeps it where it is, which is what you want once it
+ * is already in the right place.
+ */
+export function rotateStair(level: Level, grid: Grid, stairId: string): EditResult {
+  const stair = level.stairs.find((s) => s.id === stairId);
+  if (!stair) return { ok: false, error: "Staircase not found." };
+  const cx = stair.x + stair.w / 2;
+  const cy = stair.y + stair.h / 2;
+  const w = stair.h;
+  const h = stair.w;
+  const x = Math.max(0, Math.min(cx - w / 2, grid.w - w));
+  const y = Math.max(0, Math.min(cy - h / 2, grid.h - h));
+  return updateStair(level, stairId, { x, y, w, h });
+}
+
+/** Nudge a room's label off its anchor, or turn it to read up the page. */
+export function setLabelPlacement(
+  level: Level,
+  roomId: string,
+  patch: Partial<Pick<Room, "labelDx" | "labelDy" | "labelAngle">>
+): EditResult {
+  const idx = level.rooms.findIndex((r) => r.id === roomId);
+  if (idx === -1) return { ok: false, error: "Room not found." };
+  const rooms = [...level.rooms];
+  rooms[idx] = { ...rooms[idx], ...patch };
+  return { ok: true, level: { ...level, rooms } };
 }
 
 let lineSeq = 0;
@@ -385,6 +493,14 @@ export function updateStair(level: Level, stairId: string, patch: Partial<Stair>
 
 export function deleteStair(level: Level, stairId: string): EditResult {
   return { ok: true, level: { ...level, stairs: level.stairs.filter((s) => s.id !== stairId) } };
+}
+
+/** Room or outdoor area. Changes nothing but how its boundaries draw. */
+export function setRoomKind(level: Level, roomId: string, kind: Room["kind"]): EditResult {
+  return {
+    ok: true,
+    level: { ...level, rooms: level.rooms.map((r) => (r.id === roomId ? { ...r, kind } : r)) },
+  };
 }
 
 export function renameRoom(level: Level, roomId: string, label: string): EditResult {

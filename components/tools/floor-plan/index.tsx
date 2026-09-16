@@ -31,6 +31,9 @@ import {
   removeWall,
   renameRoom,
   restoreWall,
+  rotateStair,
+  setLabelPlacement,
+  setRoomKind,
   splitRoom,
   updateDoor,
   updateLine,
@@ -40,7 +43,7 @@ import {
 } from "@/lib/floor-plan/edit";
 import { renderPlan } from "@/lib/floor-plan/render";
 import { a4Pixels, floorPlanSchema, OUTSIDE, type FloorPlan, type Level } from "@/lib/floor-plan/types";
-import { FloorPlanEditor, type Selection, type Tool } from "./editor";
+import { DRAW_KINDS, FloorPlanEditor, type DrawKind, type Selection, type Tool } from "./editor";
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_UNDO = 40;
@@ -137,49 +140,15 @@ const COMPASS = [
   { deg: 270, label: "Left" },
 ] as const;
 
-function Panel({
-  title,
-  count,
-  defaultOpen,
-  children,
-}: {
-  title: string;
-  count: number;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  // `open` has to be held in state rather than left to the DOM: React treats it as a
-  // controlled attribute, so any re-render of the tool (hovering a wall row is enough) would
-  // otherwise snap every panel back to its initial state mid-use.
-  const [open, setOpen] = useState(!!defaultOpen);
-  return (
-    <details
-      open={open}
-      onToggle={(e) => setOpen(e.currentTarget.open)}
-      className="group [&[open]]:pb-4"
-    >
-      {/* The padding lives on the summary, not the details, so the whole row is the click
-          target — with it on the wrapper the row was 41px tall but only the middle 24px
-          toggled anything. */}
-      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-2.5 hover:bg-ad-surface">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ad-ink">
-          <span className="inline-block text-[0.6rem] text-ad-muted transition-transform group-open:rotate-90">
-            ▶
-          </span>
-          {title}
-        </h3>
-        <span className="text-xs tabular-nums text-ad-muted">{count}</span>
-      </summary>
-      <div className="px-4">{children}</div>
-    </details>
-  );
-}
-
 export function FloorPlanTool() {
   const [plan, setPlan] = useState<FloorPlan | null>(null);
   const [history, setHistory] = useState<FloorPlan[]>([]);
   const [view, setView] = useState<"edit" | "sheet">("edit");
   const [tool, setTool] = useState<Tool>("select");
+  /** So the Draw button returns you to whatever you were drawing last. */
+  const [lastKind, setLastKind] = useState<DrawKind>("room");
+  const [extendSelected, setExtendSelected] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
   const [levelIndex, setLevelIndex] = useState(0);
   const [selection, setSelection] = useState<Selection>(null);
   const [sketchUrl, setSketchUrl] = useState<string | null>(null);
@@ -232,19 +201,6 @@ export function FloorPlanTool() {
     }
     return rows;
   }, [plan, level]);
-
-  const marks = useMemo(
-    () => level?.annotations.filter((a) => a.kind === "mark") ?? [],
-    [level]
-  );
-
-  const inferredDoors = useMemo(
-    () =>
-      plan
-        ? plan.levels.reduce((n, l) => n + l.doors.filter((d) => d.confidence === "inferred").length, 0)
-        : 0,
-    [plan]
-  );
 
   /**
    * Undo bookkeeping.
@@ -308,20 +264,75 @@ export function FloorPlanTool() {
     }
   }
 
+  const deleteSelection = useCallback(() => {
+    if (!level || !selection) return;
+    const result =
+      selection.type === "room"
+        ? deleteRoom(level, selection.id)
+        : selection.type === "door"
+          ? deleteDoor(level, selection.id)
+          : selection.type === "line"
+            ? deleteLine(level, selection.id)
+            : selection.type === "stair"
+              ? deleteStair(level, selection.id)
+              : deleteMark(level, selection.id);
+    if (result.ok) {
+      setError(null);
+      setLevel(result.level);
+      setSelection(null);
+    } else {
+      setError(result.error);
+    }
+  }, [level, selection, setLevel]);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
-      // Don't hijack undo while someone is typing a room name.
+      // Don't hijack undo or delete while someone is typing a room name.
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         undo();
       }
+      if (e.key === "Backspace" || e.key === "Delete") {
+        e.preventDefault();
+        deleteSelection();
+      }
       if (e.key === "Escape") setSelection(null);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo]);
+  }, [undo, deleteSelection]);
+
+  function startBlank() {
+    setError(null);
+    setPlan({
+      address: "",
+      suburb: "",
+      grid: { w: 24, h: 18 },
+      north: 0,
+      northNote: "",
+      orientation: "portrait",
+      levels: [
+        {
+          id: "level-1",
+          name: "Ground Level",
+          rooms: [],
+          doors: [],
+          lines: [],
+          removedWalls: [],
+          stairs: [],
+          annotations: [],
+        },
+      ],
+    });
+    setHistory([]);
+    setLevelIndex(0);
+    setSelection(null);
+    setTool("room");
+    setLastKind("room");
+    setView("edit");
+  }
 
   async function handleSketch(file: File) {
     if (!ACCEPTED.includes(file.type)) {
@@ -493,6 +504,21 @@ export function FloorPlanTool() {
       )
     : 0;
 
+  const selectedLine =
+    level && selection?.type === "line" ? level.lines.find((l) => l.id === selection.id) : undefined;
+  const selectedStair =
+    level && selection?.type === "stair" ? level.stairs.find((s) => s.id === selection.id) : undefined;
+  const selectedMark =
+    level && selection?.type === "mark"
+      ? level.annotations.find((a) => a.id === selection.id)
+      : undefined;
+
+  /** Only the walls the selected room actually has — the global list was mostly noise. */
+  const roomWalls = useMemo(
+    () => (selectedRoom ? walls.filter((w) => w.a === selectedRoom.id || w.b === selectedRoom.id) : []),
+    [walls, selectedRoom]
+  );
+
   const roomLabel = (id: string) =>
     id === OUTSIDE ? "Outside" : level?.rooms.find((r) => r.id === id)?.label || "Unnamed";
 
@@ -560,7 +586,15 @@ export function FloorPlanTool() {
               onClick={() => jsonInput.current?.click()}
               className="text-sm text-ad-muted underline hover:text-ad-ink"
             >
-              or reopen a saved .json plan
+              reopen a saved .json plan
+            </button>
+            <span className="px-1.5 text-sm text-ad-muted">or</span>
+            <button
+              type="button"
+              onClick={startBlank}
+              className="text-sm text-ad-muted underline hover:text-ad-ink"
+            >
+              start a blank plan and draw it
             </button>
           </div>
         </>
@@ -600,39 +634,28 @@ export function FloorPlanTool() {
               </div>
               {view === "edit" && (
                 <div className="flex gap-1 rounded-lg border border-ad-border p-1">
-                  {(
-                    [
-                      { key: "select", label: "Select" },
-                      { key: "fence", label: "Fence" },
-                      { key: "number", label: "Number" },
-                      { key: "stairs", label: "Stairs" },
-                    ] as const
-                  ).map((t) => (
+                  {([
+                    { key: "select", label: "Select" },
+                    { key: "draw", label: "Draw" },
+                  ] as const).map((t) => (
                     <button
                       key={t.key}
                       type="button"
                       onClick={() => {
-                        setTool(t.key);
-                        setSelection(null);
+                        setTool(t.key === "select" ? "select" : lastKind);
+                        if (t.key === "draw") setSelection(null);
                       }}
                       className={cn(
                         "rounded px-3 py-1 text-xs font-medium",
-                        tool === t.key ? "bg-ad-steel/10 text-ad-ink" : "text-ad-muted hover:text-ad-ink"
+                        (t.key === "select") === (tool === "select")
+                          ? "bg-ad-steel/10 text-ad-ink"
+                          : "text-ad-muted hover:text-ad-ink"
                       )}
                     >
                       {t.label}
                     </button>
                   ))}
                 </div>
-              )}
-              {view === "edit" && tool === "number" && (
-                <input
-                  value={markText}
-                  onChange={(e) => setMarkText(e.target.value.replace(/\D/g, "").slice(0, 3))}
-                  inputMode="numeric"
-                  aria-label="Number to place"
-                  className="w-14 rounded-lg border border-ad-border px-2 py-1.5 text-center text-xs font-semibold text-ad-ink outline-none focus:border-ad-steel"
-                />
               )}
               <button
                 type="button"
@@ -664,6 +687,49 @@ export function FloorPlanTool() {
               )}
             </div>
 
+            {view === "edit" && tool !== "select" && (
+              <div className="mb-3 flex flex-wrap items-center gap-1 rounded-lg border border-ad-border bg-ad-surface p-1.5">
+                {DRAW_KINDS.map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => {
+                      setTool(k);
+                      setLastKind(k);
+                    }}
+                    className={cn(
+                      "rounded px-2.5 py-1 text-xs font-medium capitalize",
+                      tool === k
+                        ? "bg-white text-ad-ink shadow-sm"
+                        : "text-ad-muted hover:text-ad-ink"
+                    )}
+                  >
+                    {k === "number" ? "№" : k}
+                  </button>
+                ))}
+                {tool === "number" && (
+                  <input
+                    value={markText}
+                    onChange={(e) => setMarkText(e.target.value.replace(/\D/g, "").slice(0, 3))}
+                    inputMode="numeric"
+                    aria-label="Number to place"
+                    className="ml-1 w-12 rounded border border-ad-border px-1 py-1 text-center text-xs font-semibold text-ad-ink outline-none focus:border-ad-steel"
+                  />
+                )}
+                {(tool === "room" || tool === "outdoor") && selection?.type === "room" && (
+                  <label className="ml-2 flex items-center gap-1.5 text-xs text-ad-muted">
+                    <input
+                      type="checkbox"
+                      checked={extendSelected}
+                      onChange={(e) => setExtendSelected(e.target.checked)}
+                      className="accent-ad-steel"
+                    />
+                    Add to “{selectedRoom?.label || "selected"}”
+                  </label>
+                )}
+              </div>
+            )}
+
             <div className="rounded-xl border border-ad-border bg-white p-4">
               {view === "edit" ? (
                 <FloorPlanEditor
@@ -673,6 +739,7 @@ export function FloorPlanTool() {
                   selection={selection}
                   highlightWall={hoverWall}
                   markText={markText}
+                  extendSelected={extendSelected}
                   onSelect={setSelection}
                   onChange={setLevel}
                   onError={setError}
@@ -691,535 +758,398 @@ export function FloorPlanTool() {
 
             {view === "edit" && (
               <p className="mt-2 text-xs text-ad-muted">
-                {tool === "select" ? (
-                  <>
-                    Click a room to select it. Drag it to move, drag a handle to resize — growing a
-                    room takes space from its neighbour, so a handle on a shared wall moves that
-                    wall. Drag a door, a number or a staircase to reposition it. ⌘Z undoes.
-                  </>
-                ) : tool === "fence" ? (
-                  "Drag along a grid line to draw a fence."
-                ) : tool === "number" ? (
-                  "Click anywhere to drop the number. It steps on by one each time."
-                ) : (
-                  "Drag out a rectangle where the stairs go."
-                )}
+                {tool === "select"
+                  ? "Click anything to select it — a room, its name, a door, a line, a staircase, a number. Drag to move, drag a handle to resize. Backspace deletes, ⌘Z undoes. ⌘-scroll or pinch to zoom."
+                  : tool === "door"
+                    ? "Click on a wall. A door goes between the two rooms either side of it."
+                    : tool === "number"
+                      ? "Click anywhere to drop the number. It steps on by one each time."
+                      : tool === "stairs"
+                        ? "Drag out a rectangle where the stairs go."
+                        : tool === "room" || tool === "outdoor"
+                          ? "Drag out a rectangle. It takes any cells it covers from their current owner."
+                          : "Drag along a grid line."}
               </p>
             )}
           </div>
 
           <div className="space-y-5">
-            {selectedRoom && (
-              <div className="rounded-xl border border-ad-steel bg-ad-steel/5 p-5">
-                <h3 className="text-sm font-semibold text-ad-ink">Room</h3>
-                <input
-                  value={selectedRoom.label}
-                  onChange={(e) =>
-                    apply(renameRoom(level, selectedRoom.id, e.target.value), `rename:${selectedRoom.id}`)
-                  }
-                  className="mt-2 w-full rounded-lg border border-ad-border p-2 text-sm outline-none focus:border-ad-steel"
-                />
-                <p className="mt-3 text-xs font-medium text-ad-ink">Add a door to…</p>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {doorCandidates(level, selectedRoom.id)
-                    .filter(
-                      (c) =>
-                        !level.doors.some(
-                          (d) =>
-                            (d.a === selectedRoom.id && d.b === c.id) ||
-                            (d.b === selectedRoom.id && d.a === c.id)
-                        )
-                    )
-                    .map((c) => (
+            {/*
+              One contextual panel, not six lists.
+              The lists existed because things were hard to hit on the canvas; with zoom and
+              honest hit targets you select the thing itself, so what is left is showing the
+              selected thing's own controls. Walls are the exception and always were — they are
+              derived, so there is nothing to click that is not already a resize handle. They
+              live under the room they belong to instead, which is better scoped than a global
+              list anyway.
+            */}
+            <div className="rounded-xl border border-ad-border bg-white p-5">
+              <div className="flex items-baseline justify-between">
+                <h3 className="text-sm font-semibold text-ad-ink">
+                  {selectedRoom
+                    ? selectedRoom.kind === "outdoor" ? "Outdoor area" : "Room"
+                    : selectedDoor
+                      ? "Door"
+                      : selectedLine
+                        ? selectedLine.kind === "fence" ? "Fence" : selectedLine.kind === "wall" ? "Wall" : "Counter"
+                        : selectedStair
+                          ? "Staircase"
+                          : selectedMark
+                            ? "Number"
+                            : "Nothing selected"}
+                </h3>
+                {selection && (
+                  <button
+                    type="button"
+                    onClick={() => setSelection(null)}
+                    className="text-xs text-ad-muted hover:text-ad-ink"
+                  >
+                    Deselect
+                  </button>
+                )}
+              </div>
+
+              {!selection && (
+                <p className="mt-2 text-xs text-ad-muted">
+                  Click anything on the plan to select it — a room, its name, a door, a line, a
+                  staircase, a number. Its controls appear here. Backspace deletes.
+                </p>
+              )}
+
+              {selectedRoom && (
+                <>
+                  <input
+                    value={selectedRoom.label}
+                    ref={nameRef}
+                    onChange={(e) =>
+                      apply(renameRoom(level, selectedRoom.id, e.target.value), `rename:${selectedRoom.id}`)
+                    }
+                    className="mt-2 w-full rounded-lg border border-ad-border p-2 text-sm outline-none focus:border-ad-steel"
+                  />
+                  <div className="mt-2 flex gap-1 rounded-lg border border-ad-border p-1">
+                    {([
+                      { key: "room", label: "Room" },
+                      { key: "outdoor", label: "Outdoor" },
+                    ] as const).map((k) => (
                       <button
-                        key={c.id}
+                        key={k.key}
                         type="button"
-                        onClick={() => apply(addDoor(level, selectedRoom.id, c.id))}
-                        className="rounded border border-ad-border bg-white px-2 py-1 text-xs text-ad-ink hover:border-ad-steel"
+                        onClick={() => apply(setRoomKind(level, selectedRoom.id, k.key))}
+                        className={cn(
+                          "flex-1 rounded px-2 py-1 text-xs font-medium",
+                          selectedRoom.kind === k.key
+                            ? "bg-ad-steel/10 text-ad-ink"
+                            : "text-ad-muted hover:text-ad-ink"
+                        )}
                       >
-                        + {c.label}
+                        {k.label}
                       </button>
                     ))}
-                </div>
-                {/* Splitting is how a wall gets ADDED: walls exist where two rooms meet, so
-                    handing half the cells to a new room makes one appear. Position it after
-                    with the edge handles. */}
-                <p className="mt-4 text-xs font-medium text-ad-ink">Add a wall by splitting</p>
-                <div className="mt-1 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => apply(splitRoom(level, plan.grid, selectedRoom.id, "v"))}
-                    className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
-                  >
-                    Split ｜ left/right
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => apply(splitRoom(level, plan.grid, selectedRoom.id, "h"))}
-                    className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
-                  >
-                    Split — top/bottom
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    apply(deleteRoom(level, selectedRoom.id));
-                    setSelection(null);
-                  }}
-                  className="mt-4 w-full rounded-lg border border-ad-orange px-2 py-1.5 text-xs font-medium text-ad-ink hover:bg-ad-orange/10"
-                >
-                  Delete room
-                </button>
-              </div>
-            )}
+                  </div>
 
-            {selectedDoor && (
-              <div className="rounded-xl border border-ad-steel bg-ad-steel/5 p-5">
-                <h3 className="text-sm font-semibold text-ad-ink">Door</h3>
-                <p className="mt-1 text-xs text-ad-muted">
-                  {roomLabel(selectedDoor.a)} → {roomLabel(selectedDoor.b)}
-                </p>
-                {/* "opening" is already modelled and already renders as a gap with no arc —
-                    subtractOpenings cuts the wall either way. This is the missing button. */}
-                <div className="mt-3 flex gap-1 rounded-lg border border-ad-border p-1">
-                  {(
-                    [
+                  <p className="mt-4 text-xs font-medium text-ad-ink">Name</p>
+                  <div className="mt-1 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        apply(
+                          setLabelPlacement(level, selectedRoom.id, {
+                            labelAngle: selectedRoom.labelAngle === 90 ? 0 : 90,
+                          })
+                        )
+                      }
+                      className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
+                    >
+                      {selectedRoom.labelAngle === 90 ? "Lay flat" : "Turn upright"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedRoom.labelDx === 0 && selectedRoom.labelDy === 0}
+                      onClick={() =>
+                        apply(setLabelPlacement(level, selectedRoom.id, { labelDx: 0, labelDy: 0 }))
+                      }
+                      className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel disabled:opacity-40"
+                    >
+                      Re-centre
+                    </button>
+                  </div>
+
+                  {roomWalls.length > 0 && (
+                    <>
+                      <p className="mt-4 text-xs font-medium text-ad-ink">Walls</p>
+                      <ul className="mt-1 space-y-0.5">
+                        {roomWalls.map((w) => (
+                          <li
+                            key={w.key}
+                            className="flex items-center gap-1"
+                            onMouseEnter={() => setHoverWall({ a: w.a, b: w.b })}
+                            onMouseLeave={() => setHoverWall(null)}
+                          >
+                            <span
+                              className={cn(
+                                "flex-1 truncate px-1 py-0.5 text-xs",
+                                w.removed ? "text-ad-muted line-through" : "text-ad-muted"
+                              )}
+                            >
+                              to {roomLabel(w.a === selectedRoom.id ? w.b : w.a)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                apply(
+                                  w.removed
+                                    ? restoreWall(level, w.removed.id)
+                                    : removeWall(level, w.a, w.b)
+                                )
+                              }
+                              className="shrink-0 rounded px-2 py-0.5 text-xs text-ad-muted hover:bg-ad-surface hover:text-ad-ink"
+                            >
+                              {w.removed ? "Restore" : "Remove"}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  <p className="mt-4 text-xs font-medium text-ad-ink">Add a door to…</p>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {doorCandidates(level, selectedRoom.id)
+                      .filter(
+                        (c) =>
+                          !level.doors.some(
+                            (d) =>
+                              (d.a === selectedRoom.id && d.b === c.id) ||
+                              (d.b === selectedRoom.id && d.a === c.id)
+                          )
+                      )
+                      .map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => apply(addDoor(level, selectedRoom.id, c.id))}
+                          className="rounded border border-ad-border bg-white px-2 py-1 text-xs text-ad-ink hover:border-ad-steel"
+                        >
+                          + {c.label}
+                        </button>
+                      ))}
+                  </div>
+
+                  {/* Splitting is how a wall gets ADDED: walls exist where two rooms meet, so
+                      handing half the cells to a new room makes one appear. Position it after
+                      with the edge handles. */}
+                  <p className="mt-4 text-xs font-medium text-ad-ink">Add a wall by splitting</p>
+                  <div className="mt-1 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => apply(splitRoom(level, plan.grid, selectedRoom.id, "v"))}
+                      className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
+                    >
+                      Split ｜ left/right
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => apply(splitRoom(level, plan.grid, selectedRoom.id, "h"))}
+                      className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
+                    >
+                      Split — top/bottom
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {selectedDoor && (
+                <>
+                  <p className="mt-1 text-xs text-ad-muted">
+                    {roomLabel(selectedDoor.a)} → {roomLabel(selectedDoor.b)}
+                  </p>
+                  <div className="mt-3 flex gap-1 rounded-lg border border-ad-border p-1">
+                    {([
                       { key: "swing", label: "Swing" },
                       { key: "double", label: "Double" },
                       { key: "sliding", label: "Sliding" },
                       { key: "opening", label: "Open" },
-                    ] as const
-                  ).map((k) => (
+                    ] as const).map((k) => (
+                      <button
+                        key={k.key}
+                        type="button"
+                        onClick={() => apply(updateDoor(level, selectedDoor.id, { kind: k.key }))}
+                        className={cn(
+                          "flex-1 rounded px-1.5 py-1 text-xs font-medium",
+                          selectedDoor.kind === k.key
+                            ? "bg-ad-steel/10 text-ad-ink"
+                            : "text-ad-muted hover:text-ad-ink"
+                        )}
+                      >
+                        {k.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
                     <button
-                      key={k.key}
                       type="button"
-                      onClick={() => apply(updateDoor(level, selectedDoor.id, { kind: k.key }))}
-                      className={cn(
-                        "flex-1 rounded px-1.5 py-1 text-xs font-medium",
-                        selectedDoor.kind === k.key
-                          ? "bg-ad-steel/10 text-ad-ink"
-                          : "text-ad-muted hover:text-ad-ink"
-                      )}
+                      disabled={selectedDoor.kind === "opening" || selectedDoor.kind === "sliding"}
+                      onClick={() =>
+                        apply(
+                          updateDoor(level, selectedDoor.id, {
+                            swingInto: selectedDoor.swingInto === "a" ? "b" : "a",
+                          })
+                        )
+                      }
+                      className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel disabled:opacity-40"
                     >
-                      {k.label}
+                      Flip side
                     </button>
-                  ))}
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        apply(
+                          updateDoor(level, selectedDoor.id, {
+                            hinge: selectedDoor.hinge === "start" ? "end" : "start",
+                          })
+                        )
+                      }
+                      className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
+                    >
+                      Flip hinge
+                    </button>
+                  </div>
+                  {selectedDoorWalls.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const at = selectedDoorWalls.findIndex(
+                          (w) =>
+                            selectedDoor.wall &&
+                            w.orient === selectedDoor.wall.orient &&
+                            w.pos === selectedDoor.wall.pos
+                        );
+                        const next = selectedDoorWalls[(at + 1) % selectedDoorWalls.length];
+                        // Clear `at` too: an offset measured along the old wall means nothing
+                        // on the new one, and keeping it would land the door somewhere arbitrary.
+                        apply(updateDoor(level, selectedDoor.id, { wall: next, at: undefined }));
+                      }}
+                      className="mt-2 w-full rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
+                    >
+                      Next wall — {selectedDoorWallIndex + 1} of {selectedDoorWalls.length}
+                    </button>
+                  )}
+                  {selectedDoor.at !== undefined && (
+                    <button
+                      type="button"
+                      onClick={() => apply(updateDoor(level, selectedDoor.id, { at: undefined }))}
+                      className="mt-2 w-full rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-muted hover:text-ad-ink"
+                    >
+                      Re-centre on wall
+                    </button>
+                  )}
+                </>
+              )}
+
+              {selectedLine && (
+                <>
+                  <p className="mt-1 text-xs text-ad-muted">
+                    {selectedLine.orient === "v" ? "Vertical" : "Horizontal"} ·{" "}
+                    {Math.round(selectedLine.to - selectedLine.from)} cells
+                  </p>
+                  <div className="mt-3 flex gap-1 rounded-lg border border-ad-border p-1">
+                    {([
+                      { key: "fence", label: "Fence" },
+                      { key: "wall", label: "Wall" },
+                      { key: "counter", label: "Counter" },
+                    ] as const).map((k) => (
+                      <button
+                        key={k.key}
+                        type="button"
+                        onClick={() => apply(updateLine(level, selectedLine.id, { kind: k.key }))}
+                        className={cn(
+                          "flex-1 rounded px-1.5 py-1 text-xs font-medium",
+                          selectedLine.kind === k.key
+                            ? "bg-ad-steel/10 text-ad-ink"
+                            : "text-ad-muted hover:text-ad-ink"
+                        )}
+                      >
+                        {k.label}
+                      </button>
+                    ))}
+                  </div>
                   <button
                     type="button"
-                    disabled={selectedDoor.kind === "opening" || selectedDoor.kind === "sliding"}
                     onClick={() =>
                       apply(
-                        updateDoor(level, selectedDoor.id, {
-                          swingInto: selectedDoor.swingInto === "a" ? "b" : "a",
+                        updateLine(level, selectedLine.id, {
+                          gate:
+                            selectedLine.gate !== undefined
+                              ? undefined
+                              : Math.round((selectedLine.from + selectedLine.to) / 2 - 0.5),
                         })
                       )
                     }
-                    className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
-                  >
-                    Flip side
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      apply(
-                        updateDoor(level, selectedDoor.id, {
-                          hinge: selectedDoor.hinge === "start" ? "end" : "start",
-                        })
-                      )
-                    }
-                    className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
-                  >
-                    Flip hinge
-                  </button>
-                </div>
-                {selectedDoorWalls.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const at = selectedDoorWalls.findIndex(
-                        (w) =>
-                          selectedDoor.wall &&
-                          w.orient === selectedDoor.wall.orient &&
-                          w.pos === selectedDoor.wall.pos
-                      );
-                      const next = selectedDoorWalls[(at + 1) % selectedDoorWalls.length];
-                      // Clear `at` too: an offset measured along the old wall means nothing
-                      // on the new one, and keeping it would land the door somewhere arbitrary.
-                      apply(updateDoor(level, selectedDoor.id, { wall: next, at: undefined }));
-                    }}
                     className="mt-2 w-full rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
                   >
-                    Next wall — {selectedDoorWallIndex + 1} of {selectedDoorWalls.length}
+                    {selectedLine.gate !== undefined ? "Remove the gate" : "Add a gate"}
                   </button>
-                )}
-                {selectedDoor.at !== undefined && (
-                  <button
-                    type="button"
-                    onClick={() => apply(updateDoor(level, selectedDoor.id, { at: undefined }))}
-                    className="mt-2 w-full rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-muted hover:text-ad-ink"
-                  >
-                    Re-centre on wall
-                  </button>
-                )}
-                {selectedDoor.confidence === "inferred" && (
-                  <button
-                    type="button"
-                    onClick={() => apply(updateDoor(level, selectedDoor.id, { confidence: "visible" }))}
-                    className="mt-2 w-full rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
-                  >
-                    Confirm — it&apos;s really there
-                  </button>
-                )}
+                </>
+              )}
+
+              {selectedStair && (
+                <>
+                  <p className="mt-1 text-xs text-ad-muted">
+                    {selectedStair.w} × {selectedStair.h} cells · going {selectedStair.dir}
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => apply(rotateStair(level, plan.grid, selectedStair.id))}
+                      className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
+                    >
+                      Turn 90°
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        apply(
+                          updateStair(level, selectedStair.id, {
+                            dir: selectedStair.dir === "up" ? "down" : "up",
+                          })
+                        )
+                      }
+                      className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
+                    >
+                      Flip the arrow
+                    </button>
+                  </div>
+                  <p className="mt-2 text-xs text-ad-muted">Drag a handle to resize it.</p>
+                </>
+              )}
+
+              {selectedMark && (
+                <input
+                  value={selectedMark.text}
+                  inputMode="numeric"
+                  aria-label="Number"
+                  onChange={(e) =>
+                    apply(
+                      updateMark(level, selectedMark.id, {
+                        text: e.target.value.replace(/\D/g, "").slice(0, 3),
+                      }),
+                      `mark:${selectedMark.id}`
+                    )
+                  }
+                  className="mt-2 w-24 rounded-lg border border-ad-border p-2 text-center text-sm font-semibold outline-none focus:border-ad-steel"
+                  style={{ color: "#d92b2b" }}
+                />
+              )}
+
+              {selection && (
                 <button
                   type="button"
-                  onClick={() => {
-                    apply(deleteDoor(level, selectedDoor.id));
-                    setSelection(null);
-                  }}
-                  className="mt-2 w-full rounded-lg border border-ad-orange px-2 py-1.5 text-xs font-medium text-ad-ink hover:bg-ad-orange/10"
+                  onClick={deleteSelection}
+                  className="mt-4 w-full rounded-lg border border-ad-orange px-2 py-1.5 text-xs font-medium text-ad-ink hover:bg-ad-orange/10"
                 >
-                  Delete door
+                  Delete
                 </button>
-              </div>
-            )}
-
-            {/*
-              Every room, listed, with the name editable right here. Renaming has always been
-              possible by selecting a room on the canvas, but nobody found it — the same failure
-              the Doors list below was added to fix. A list beats a hidden field.
-            */}
-            <div className="divide-y divide-ad-border overflow-hidden rounded-xl border border-ad-border bg-white">
-            <Panel title="Rooms" count={level.rooms.length} defaultOpen>
-              <ul className="mt-2 space-y-1">
-                {level.rooms.map((room) => {
-                  const isSelected = selection?.type === "room" && selection.id === room.id;
-                  return (
-                    <li key={room.id} className="flex items-center gap-1">
-                      <input
-                        value={room.label}
-                        onFocus={() => setSelection({ type: "room", id: room.id })}
-                        onChange={(e) =>
-                          apply(renameRoom(level, room.id, e.target.value), `rename:${room.id}`)
-                        }
-                        className={cn(
-                          "min-w-0 flex-1 rounded border px-2 py-1 text-xs outline-none",
-                          isSelected
-                            ? "border-ad-steel bg-ad-steel/5 text-ad-ink"
-                            : "border-transparent text-ad-muted hover:border-ad-border hover:text-ad-ink focus:border-ad-steel"
-                        )}
-                      />
-                      {room.kind === "outdoor" && (
-                        <span className="shrink-0 text-[0.65rem] uppercase tracking-wide text-ad-muted">
-                          outdoor
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        aria-label={`Delete ${room.label || "room"}`}
-                        onClick={() => {
-                          apply(deleteRoom(level, room.id));
-                          if (isSelected) setSelection(null);
-                        }}
-                        className="shrink-0 rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-orange/10 hover:text-ad-ink"
-                      >
-                        ✕
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-              <p className="mt-2 text-xs text-ad-muted">
-                Type to rename. Click a room on the plan to move, resize or split it.
-              </p>
-            </Panel>
-
-            {/*
-              Walls are derived from cell ownership, so there is nothing to click on the canvas
-              that isn't already a room's resize handle — the two would fight for the same
-              pixels. Hence a list, hovered to show you which one you mean. Removing leaves both
-              rooms named and changes nothing structural, so Restore is just a filter.
-            */}
-            <Panel title="Walls" count={walls.filter((w) => !w.removed).length}>
-              <ul className="mt-2 space-y-1">
-                {walls.map((w) => (
-                  <li key={w.key} className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onMouseEnter={() => setHoverWall({ a: w.a, b: w.b })}
-                      onMouseLeave={() => setHoverWall(null)}
-                      onFocus={() => setHoverWall({ a: w.a, b: w.b })}
-                      onBlur={() => setHoverWall(null)}
-                      className={cn(
-                        "flex-1 truncate rounded px-2 py-1 text-left text-xs",
-                        w.removed
-                          ? "text-ad-muted line-through"
-                          : "text-ad-muted hover:bg-ad-surface hover:text-ad-ink"
-                      )}
-                    >
-                      {roomLabel(w.a)} · {roomLabel(w.b)}
-                      {w.orphan && (
-                        <span className="ml-1 no-underline text-ad-orange">not touching</span>
-                      )}
-                    </button>
-                    {w.removed ? (
-                      <button
-                        type="button"
-                        onClick={() => apply(restoreWall(level, w.removed!.id))}
-                        className="shrink-0 rounded px-2 py-1 text-xs text-ad-steel hover:bg-ad-surface"
-                      >
-                        Restore
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        aria-label={`Remove the wall between ${roomLabel(w.a)} and ${roomLabel(w.b)}`}
-                        onClick={() => apply(removeWall(level, w.a, w.b))}
-                        className="shrink-0 rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-orange/10 hover:text-ad-ink"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-2 text-xs text-ad-muted">
-                Removing a wall leaves both rooms named — open plan. Nothing else moves, so
-                Restore always puts it back.
-              </p>
-            </Panel>
-
-            <Panel title="Lines" count={level.lines.length}>
-              {level.lines.length === 0 ? (
-                <p className="mt-2 text-xs text-ad-muted">
-                  None. Switch the canvas to <span className="font-medium text-ad-ink">Fence</span>,
-                  then drag along a grid line to draw one.
-                </p>
-              ) : (
-                <ul className="mt-2 space-y-1">
-                  {level.lines.map((line, i) => {
-                    const isSelected = selection?.type === "line" && selection.id === line.id;
-                    const hasGate = line.gate !== undefined;
-                    return (
-                      <li key={line.id} className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setSelection({ type: "line", id: line.id })}
-                          className={cn(
-                            "flex-1 truncate rounded px-2 py-1 text-left text-xs capitalize",
-                            isSelected
-                              ? "bg-ad-steel/10 font-medium text-ad-ink"
-                              : "text-ad-muted hover:bg-ad-surface hover:text-ad-ink"
-                          )}
-                        >
-                          {line.kind} {i + 1} · {line.orient === "v" ? "vertical" : "horizontal"} ·{" "}
-                          {Math.round(line.to - line.from)} cells
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            apply(
-                              updateLine(level, line.id, {
-                                // Centre the gate on the run; drag it later if it wants moving.
-                                gate: hasGate ? undefined : Math.round((line.from + line.to) / 2 - 0.5),
-                              })
-                            )
-                          }
-                          className={cn(
-                            "shrink-0 rounded px-2 py-1 text-xs",
-                            hasGate
-                              ? "bg-ad-steel/10 font-medium text-ad-ink"
-                              : "text-ad-muted hover:bg-ad-surface hover:text-ad-ink"
-                          )}
-                        >
-                          Gate
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Delete ${line.kind} ${i + 1}`}
-                          onClick={() => {
-                            apply(deleteLine(level, line.id));
-                            if (isSelected) setSelection(null);
-                          }}
-                          className="shrink-0 rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-orange/10 hover:text-ad-ink"
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
               )}
-            </Panel>
-
-            {/*
-              Every door, listed. Selecting one on the canvas means hitting a doorway-sized
-              target, which is a sliver on screen at any sensible zoom — so removing a door
-              cannot be a canvas-only gesture. This also puts the inferred ones somewhere you
-              can review them as a set rather than hunting for dashes in the drawing.
-            */}
-            <Panel title="Doors" count={level.doors.length}>
-              {level.doors.length === 0 ? (
-                <p className="mt-2 text-xs text-ad-muted">
-                  None. Select a room to add one between it and a neighbour.
-                </p>
-              ) : (
-                <ul className="mt-2 space-y-1">
-                  {level.doors.map((door) => {
-                    const isSelected = selection?.type === "door" && selection.id === door.id;
-                    return (
-                      <li key={door.id} className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setSelection({ type: "door", id: door.id })}
-                          className={cn(
-                            "flex-1 truncate rounded px-2 py-1 text-left text-xs",
-                            isSelected
-                              ? "bg-ad-steel/10 font-medium text-ad-ink"
-                              : "text-ad-muted hover:bg-ad-surface hover:text-ad-ink"
-                          )}
-                        >
-                          {roomLabel(door.a)} → {roomLabel(door.b)}
-                          {door.confidence === "inferred" && (
-                            <span className="ml-1 text-ad-orange">•</span>
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Delete door between ${roomLabel(door.a)} and ${roomLabel(door.b)}`}
-                          onClick={() => {
-                            apply(deleteDoor(level, door.id));
-                            if (isSelected) setSelection(null);
-                          }}
-                          className="rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-orange/10 hover:text-ad-ink"
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              {inferredDoors > 0 && (
-                <p className="mt-2 text-xs text-ad-muted">
-                  <span className="text-ad-orange">•</span> not drawn on the sketch — check or
-                  delete these.
-                </p>
-              )}
-            </Panel>
-
-            <Panel title="Numbers" count={marks.length}>
-              {marks.length === 0 ? (
-                <p className="mt-2 text-xs text-ad-muted">
-                  None. Switch the canvas to <span className="font-medium text-ad-ink">Number</span>,
-                  then click where each one goes.
-                </p>
-              ) : (
-                <ul className="mt-2 space-y-1">
-                  {marks.map((mark) => {
-                    const isSelected = selection?.type === "mark" && selection.id === mark.id;
-                    return (
-                      <li key={mark.id} className="flex items-center gap-1">
-                        <input
-                          value={mark.text}
-                          inputMode="numeric"
-                          aria-label="Number"
-                          onFocus={() => setSelection({ type: "mark", id: mark.id })}
-                          onChange={(e) =>
-                            apply(
-                              updateMark(level, mark.id, {
-                                text: e.target.value.replace(/\D/g, "").slice(0, 3),
-                              }),
-                              `mark:${mark.id}`
-                            )
-                          }
-                          className={cn(
-                            "w-16 rounded border px-2 py-1 text-center text-xs font-semibold outline-none",
-                            isSelected
-                              ? "border-ad-steel bg-ad-steel/5"
-                              : "border-transparent hover:border-ad-border focus:border-ad-steel"
-                          )}
-                          style={{ color: "#d92b2b" }}
-                        />
-                        <span className="flex-1 truncate text-xs text-ad-muted">
-                          {mark.anchor.type === "free"
-                            ? `${Math.round(mark.anchor.x)}, ${Math.round(mark.anchor.y)}`
-                            : ""}
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`Delete number ${mark.text}`}
-                          onClick={() => {
-                            apply(deleteMark(level, mark.id));
-                            if (isSelected) setSelection(null);
-                          }}
-                          className="shrink-0 rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-orange/10 hover:text-ad-ink"
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </Panel>
-
-            <Panel title="Stairs" count={level.stairs.length}>
-              {level.stairs.length === 0 ? (
-                <p className="mt-2 text-xs text-ad-muted">
-                  None. Switch the canvas to <span className="font-medium text-ad-ink">Stairs</span>,
-                  then drag out a rectangle where they go.
-                </p>
-              ) : (
-                <ul className="mt-2 space-y-1">
-                  {level.stairs.map((stair, i) => {
-                    const isSelected = selection?.type === "stair" && selection.id === stair.id;
-                    return (
-                      <li key={stair.id} className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setSelection({ type: "stair", id: stair.id })}
-                          className={cn(
-                            "flex-1 truncate rounded px-2 py-1 text-left text-xs",
-                            isSelected
-                              ? "bg-ad-steel/10 font-medium text-ad-ink"
-                              : "text-ad-muted hover:bg-ad-surface hover:text-ad-ink"
-                          )}
-                        >
-                          Stairs {i + 1} · {stair.w}×{stair.h} · {stair.dir === "up" ? "up" : "down"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            apply(
-                              updateStair(level, stair.id, {
-                                dir: stair.dir === "up" ? "down" : "up",
-                              })
-                            )
-                          }
-                          className="shrink-0 rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-surface hover:text-ad-ink"
-                        >
-                          Flip
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Delete staircase ${i + 1}`}
-                          onClick={() => {
-                            apply(deleteStair(level, stair.id));
-                            if (isSelected) setSelection(null);
-                          }}
-                          className="shrink-0 rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-orange/10 hover:text-ad-ink"
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </Panel>
             </div>
 
             <div className="rounded-xl border border-ad-border bg-white p-5">
@@ -1294,16 +1224,10 @@ export function FloorPlanTool() {
               )}
             </div>
 
-            {(issues.length > 0 || inferredDoors > 0) && (
+            {issues.length > 0 && (
               <div className="rounded-xl border border-ad-orange bg-ad-orange/10 p-5">
                 <h3 className="text-sm font-semibold text-ad-ink">Worth checking</h3>
                 <ul className="mt-2 space-y-1 text-xs text-ad-ink">
-                  {inferredDoors > 0 && (
-                    <li>
-                      {inferredDoors} door{inferredDoors === 1 ? " was" : "s were"} not drawn on the
-                      sketch — shown dashed.
-                    </li>
-                  )}
                   {issues.map((issue, i) => (
                     <li key={i}>
                       {issue.level}: {issue.detail}

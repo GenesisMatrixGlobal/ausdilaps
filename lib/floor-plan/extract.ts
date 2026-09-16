@@ -16,7 +16,7 @@
 // 6.5k -> 4.1k on the same page, which shows the API was not already downscaling these.
 
 import { repairInteriorGaps } from "./grid";
-import { OUTSIDE, type Door, type FloorPlan, type Room } from "./types";
+import { LABEL_DEFAULTS, OUTSIDE, type Door, type FloorPlan, type Room } from "./types";
 import { recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
 
 const MODEL = process.env.ANTHROPIC_FLOOR_PLAN_MODEL ?? "claude-opus-5";
@@ -89,7 +89,6 @@ const SCHEMA = {
               properties: {
                 betweenA: { type: "string", description: "Room label, or 'outside'" },
                 betweenB: { type: "string", description: "Room label, or 'outside'" },
-                confidence: { type: "string", enum: ["visible", "inferred"] },
               },
               required: ["betweenA", "betweenB", "confidence"],
               additionalProperties: false,
@@ -150,10 +149,11 @@ Set kind to "outdoor" for anything that is not enclosed building interior — fr
 yard, driveway, carport, canopy, hard stand, parking, assembly area, courtyard, deck. Set it
 to "room" for everything else, including garages, sheds and warehouses, which are enclosed.
 
-Doors: list them as a pair of room labels that the doorway connects, or a room label and
-"outside" for an external door. Mark confidence "visible" ONLY where the sketch actually
-shows a gap, arc or door mark in a wall. Use "inferred" if you are filling in a doorway that
-must logically exist but is not drawn. Do not guess wildly — an empty list is fine.
+Doors: list ONLY doorways the drawing actually shows — a gap, an arc, or a door mark in a
+wall. Give each as a pair of room labels it connects, or a room label and "outside" for an
+external one. Do NOT add a doorway because one must logically exist: a door drawn where there
+is none is worse than a missing one on a dilapidation plan, and adding it by hand afterwards
+is one click. An empty list is a fine answer.
 
 North: work out which way up the page reads, place the rooms in that orientation, then report
 northDegrees against THAT SAME orientation — 0 = north points toward the top of your grid,
@@ -187,7 +187,7 @@ caption is a level, not a room. Return one entry in levels for each, using the c
 name, and give each level its own grid coordinates starting from the top-left.`;
 
 type RawRoom = { label: string; kind: "room" | "outdoor"; rects: Array<{ x: number; y: number; w: number; h: number }> };
-type RawDoor = { betweenA: string; betweenB: string; confidence: "visible" | "inferred" };
+type RawDoor = { betweenA: string; betweenB: string };
 type RawLevel = { name: string; rooms: RawRoom[]; doors: RawDoor[] };
 type RawPlan = {
   address: string;
@@ -212,7 +212,7 @@ function toFloorPlan(raw: RawPlan): FloorPlan {
     const parsed: Room[] = level.rooms.map((room, ri) => {
       const id = `l${li}-${slug(room.label, `room-${ri}`)}-${ri}`;
       byLabel.set(room.label.trim().toLowerCase(), id);
-      return { id, label: room.label.trim(), kind: room.kind ?? "room", rects: room.rects };
+      return { ...LABEL_DEFAULTS, id, label: room.label.trim(), kind: room.kind ?? "room", rects: room.rects };
     });
 
     // Close seams between separately-placed rectangles before anything derives walls from
@@ -245,7 +245,6 @@ function toFloorPlan(raw: RawPlan): FloorPlan {
         // door's arc outside the building, sweeping open ground.
         swingInto: b === OUTSIDE ? "a" : "b",
         hinge: "start",
-        confidence: door.confidence,
       });
     });
 

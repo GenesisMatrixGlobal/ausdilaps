@@ -40,12 +40,7 @@ function summarise(plan: FloorPlan): string[] {
   if (plan.northNote) out.push(`  north?   ${plan.northNote}`);
 
   for (const level of plan.levels) {
-    const doors = level.doors.length;
-    const inferred = level.doors.filter((d) => d.confidence === "inferred").length;
-    out.push(
-      `  level    "${level.name}" — ${level.rooms.length} rooms, ${doors} doors` +
-        (inferred ? ` (${inferred} inferred)` : "")
-    );
+    out.push(`  level    "${level.name}" — ${level.rooms.length} rooms, ${level.doors.length} doors`);
     out.push(
       `           ${level.rooms.map((r) => r.label + (r.kind === "outdoor" ? "*" : "")).join(", ")}`
     );

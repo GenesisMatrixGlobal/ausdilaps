@@ -34,8 +34,28 @@ export const roomSchema = z.object({
    */
   kind: z.enum(["room", "outdoor"]).default("room"),
   rects: z.array(rectSchema).min(1),
+  /**
+   * Nudge the label off the room's computed anchor, in grid units, and turn it.
+   *
+   * The anchor is the centre of the room's biggest rect, which is right nearly always and
+   * wrong exactly when something else is already there — a staircase, a number, a counter.
+   * 90 turns the text to read up the page, which is the only way a name fits in a balcony one
+   * cell wide; every reference plan does it.
+   */
+  labelDx: z.number().default(0),
+  labelDy: z.number().default(0),
+  labelAngle: z.union([z.literal(0), z.literal(90)]).default(0),
 });
 export type Room = z.infer<typeof roomSchema>;
+
+/**
+ * Label defaults, to spread into a freshly built Room.
+ *
+ * Zod fills these in when PARSING, but a Room built in code is not parsed — so without this
+ * every construction site has to know the current set of label fields, and adding another one
+ * means hunting them all down.
+ */
+export const LABEL_DEFAULTS = { labelDx: 0, labelDy: 0, labelAngle: 0 } as const;
 
 export const OUTSIDE = "outside" as const;
 
@@ -79,8 +99,6 @@ export const doorSchema = z.object({
   at: z.number().optional(),
   /** Which end of the opening the leaf is hinged at. */
   hinge: z.enum(["start", "end"]).default("start"),
-  /** "inferred" = not actually drawn on the sketch. Rendered lighter, listed for checking. */
-  confidence: z.enum(["visible", "inferred"]).default("visible"),
 });
 export type Door = z.infer<typeof doorSchema>;
 

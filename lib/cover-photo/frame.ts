@@ -17,7 +17,7 @@ const WORLD_PX = 256; // tile size at zoom 0 — the unit mercatorSpan works in
 const EARTH_CIRCUMFERENCE_M = 40075016.686;
 
 /** Ground added around the parcel, as a fraction of its own span on each side. */
-const MARGIN_FACTOR = 0.45;
+const MARGIN_FACTOR = 0.35;
 
 /**
  * Narrowest the frame is ever allowed to get, east-west.
@@ -27,7 +27,7 @@ const MARGIN_FACTOR = 0.45;
  * neighbour and no label in shot, which is the opposite of what a report cover is for. This
  * floor puts the property, both neighbours and the road in frame.
  */
-const MIN_FRAME_METRES = 150;
+const MIN_FRAME_METRES = 115;
 
 function worldPxPerMetre(lat: number): number {
   return WORLD_PX / (EARTH_CIRCUMFERENCE_M * Math.cos((lat * Math.PI) / 180));

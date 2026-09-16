@@ -21,14 +21,16 @@ export const COVER_ASPECT = COVER_WIDTH_PX / COVER_HEIGHT_PX;
 
 /** 6-digit hex, no leading '#': the form buildStaticMapUrl wants. Maps JS wants a '#', and
  *  the map component prefixes it — one constant, two consumers, no second copy to drift. */
-export const COVER_GREEN = "22c55e";
+export const COVER_GREEN = "16a34a";
 
 /** Heavier than the markup's OUTLINE_WEIGHT of 2. There is exactly one shape on a cover
  *  photo and it is the point of the image, so it reads at report-print size. Expressed in
  *  the same logical (pre-`scale`) pixel space Static Maps' `size` describes. */
 export const COVER_OUTLINE_WEIGHT = 3;
 
-/** Light enough that the roof, driveway and boundary features stay readable through it —
- *  a cover photo is a photograph of the property first and a diagram second. */
-export const COVER_FILL_OPACITY_PERCENT = 28;
+/** Dark enough to read at a glance on a busy aerial, light enough that the roof, driveway and
+ *  boundary features stay visible through it — a cover photo is a photograph of the property
+ *  first and a diagram second. Raised from 28% with a darker green (Rhys, 2026-09-16) after
+ *  looking at real exports: the lighter fill washed out over pale roofs and concrete. */
+export const COVER_FILL_OPACITY_PERCENT = 38;
 export const COVER_STROKE_OPACITY_PERCENT = 100;

@@ -191,15 +191,9 @@ export function CoverPhotoTool() {
       {error && <p className="text-sm text-ad-orange">{error}</p>}
       {note && <p className="text-sm text-ad-muted">{note}</p>}
 
-      <CoverMap
-        ref={mapRef}
-        ring={ring}
-        ringKey={ringKey}
-        drawing={drawing}
-        onRingChange={setRing}
-        fitRequest={fitRequest}
-      />
-
+      {/* Above the map, not below it (Rhys, 2026-09-16). The map is the tall element on the
+          page, so a toolbar under it sits off the bottom of the screen on a laptop by the
+          time the operator has scrolled the drawing into view. */}
       <div className="flex flex-wrap items-center gap-3">
         {/* Drawing is the exception, not the default — most cover photos are the cadastre
             boundary untouched. The button says which of the two states you are in rather than
@@ -247,6 +241,15 @@ export function CoverPhotoTool() {
         </button>
         <SyncCoverPhoto getImageBase64={renderImage} disabled={!hasBoundary} />
       </div>
+
+      <CoverMap
+        ref={mapRef}
+        ring={ring}
+        ringKey={ringKey}
+        drawing={drawing}
+        onRingChange={setRing}
+        fitRequest={fitRequest}
+      />
 
       <p className="text-xs text-ad-muted">
         The photo is exactly what the map shows, at {COVER_WIDTH_PX}&times;{COVER_HEIGHT_PX}. Pan

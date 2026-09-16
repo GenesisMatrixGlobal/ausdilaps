@@ -65,7 +65,9 @@ export function CloseoutMarkupTool() {
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fitRequest, setFitRequest] = useState<{ key: string; rings: LatLng[][] } | null>(null);
+  const [fitRequest, setFitRequest] = useState<
+    { key: string; rings: LatLng[][]; padding?: "tight" | "context" } | null
+  >(null);
 
   const shapes = useShapes();
   const mapRef = useRef<MarkupMapCommands | null>(null);
@@ -111,6 +113,24 @@ export function CloseoutMarkupTool() {
         .filter((r) => r.selected && !r.ring && generated)
         .map((r) => ({ id: r.property.key, at: r.point, color: r.property.color })),
     [rows, generated]
+  );
+
+  /**
+   * Frame everything that is DRAWN.
+   *
+   * A pin has no ring, so it goes in as a degenerate two-point one — the map's fit filter
+   * takes those, and a pinned property still has to be inside the frame or the drawing quietly
+   * omits it. `padding: "context"` leaves a tenth of the shorter side clear: a closeout is read
+   * by someone who was never on site, and properties running to the edge of the image give
+   * them nothing to place the job by.
+   */
+  const frameFrom = useCallback(
+    (items: { ring: LatLng[] | null; point: LatLng }[], key: string) => {
+      const rings = items.map((i) => i.ring ?? [i.point, i.point]).filter((r) => r.length >= 2);
+      if (rings.length === 0) return;
+      setFitRequest({ key, rings, padding: "context" });
+    },
+    []
   );
 
   const reset = useCallback(() => {
@@ -190,10 +210,7 @@ export function CloseoutMarkupTool() {
       const map = new Map(json.parcels.map((p) => [p.key, p]));
       setParcels(map);
       setGenerated(true);
-      // Frame everything that was drawn, outlines and pins alike — a pin has no ring, so it is
-      // framed as a degenerate two-point one (the map's fit filter takes those).
-      const rings = json.parcels.map((p) => p.ring ?? [p.point, p.point]).filter((r) => r.length >= 2);
-      setFitRequest({ key: `${opportunity.id}:${Date.now()}`, rings });
+      frameFrom(json.parcels, `${opportunity.id}:${Date.now()}`);
     } catch (e) {
       if (run === runRef.current) setError((e as Error).message);
     } finally {
@@ -309,8 +326,7 @@ export function CloseoutMarkupTool() {
       )
     );
     setGenerated(true);
-    const rings = parsed.file.properties.map((p) => p.ring ?? [p.point, p.point]).filter((r) => r.length >= 2);
-    setFitRequest({ key: `open:${Date.now()}`, rings });
+    frameFrom(parsed.file.properties, `open:${Date.now()}`);
     if (parsed.skipped > 0) {
       setError(`${parsed.skipped} propert${parsed.skipped === 1 ? "y" : "ies"} in that file couldn't be read and were skipped.`);
     }
@@ -444,6 +460,17 @@ export function CloseoutMarkupTool() {
             <div className={cn("mt-6 flex flex-col gap-4 xl:flex-row xl:items-start", BREAKOUT_XL)}>
               <div className="relative w-full min-w-0 xl:flex-1">
                 <MapLegend present={drawnColours} />
+                {/* Panning away from the framing is easy and the export takes whatever the map
+                    is left on, so there has to be a way back to it. Ticking rows changes what
+                    is drawn WITHOUT moving the camera — yanking it while someone works through
+                    a 39-row sheet would be worse — so this is how the frame catches up. */}
+                <button
+                  type="button"
+                  onClick={() => frameFrom(rows.filter((r) => r.selected), `fit:${Date.now()}`)}
+                  className="absolute right-3 top-16 z-10 rounded-lg border border-ad-border bg-white/95 px-2.5 py-1.5 text-xs font-medium text-ad-ink shadow-sm backdrop-blur-sm hover:bg-white"
+                >
+                  Fit to properties
+                </button>
                 <MarkupMap
                   ref={mapRef}
                   shapes={shapes}

@@ -216,7 +216,18 @@ export function MarkupMap({
    * still loading and silently does nothing — the operator's first markup would never be
    * framed. Keyed, so it re-fits when a NEW markup arrives and not when a checkbox changes.
    */
-  fitRequest: { key: string; rings: LatLng[][] } | null;
+  /**
+   * Frame these rings once, when `key` changes.
+   *
+   * `padding` is how much room to leave around them:
+   *   "tight"   — 40px, the markup tabs' framing. A subject and its adjoining lots; the point
+   *               of the drawing is the boundaries, and context is what the operator pans for.
+   *   "context" — a tenth of the shorter side. A closeout drawing is read by someone who was
+   *               never on site, so the properties need to sit IN somewhere rather than fill
+   *               the frame edge to edge. Proportional, not a bigger fixed number, or the same
+   *               request frames differently on a laptop and on a wide monitor.
+   */
+  fitRequest: { key: string; rings: LatLng[][]; padding?: "tight" | "context" } | null;
   ref?: React.Ref<MarkupMapCommands>;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -736,7 +747,17 @@ export function MarkupMap({
     if (rings.length === 0) return;
     const bounds = new google.maps.LatLngBounds();
     for (const ring of rings) for (const p of ring) bounds.extend(new google.maps.LatLng(p.lat, p.lng));
-    map.fitBounds(bounds, 40);
+
+    // fitBounds centres on the bounds by construction, so "centre it on the highlights" is
+    // handled as long as every drawn thing is in `rings` — pins included, as degenerate
+    // two-point ones.
+    const div = map.getDiv();
+    const shorter = Math.min(div.clientWidth || 0, div.clientHeight || 0);
+    const padding =
+      latest.current.fitRequest?.padding === "context" && shorter > 0
+        ? Math.max(40, Math.round(shorter * 0.1))
+        : 40;
+    map.fitBounds(bounds, padding);
     // A single small lot fits all the way to maxZoom, where the imagery is upsampled. Clamp
     // once the fit has settled — `idle`, not bounds_changed, so this fires after the
     // animation rather than fighting it.

@@ -156,18 +156,21 @@ function Panel({
     <details
       open={open}
       onToggle={(e) => setOpen(e.currentTarget.open)}
-      className="group rounded-xl border border-ad-border bg-white p-5"
+      className="group [&[open]]:pb-4"
     >
-      <summary className="flex cursor-pointer list-none items-baseline justify-between">
-        <h3 className="text-sm font-semibold text-ad-ink">
-          <span className="mr-1.5 inline-block text-ad-muted transition-transform group-open:rotate-90">
-            ▸
+      {/* The padding lives on the summary, not the details, so the whole row is the click
+          target — with it on the wrapper the row was 41px tall but only the middle 24px
+          toggled anything. */}
+      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-2.5 hover:bg-ad-surface">
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ad-ink">
+          <span className="inline-block text-[0.6rem] text-ad-muted transition-transform group-open:rotate-90">
+            ▶
           </span>
           {title}
         </h3>
-        <span className="text-xs text-ad-muted">{count}</span>
+        <span className="text-xs tabular-nums text-ad-muted">{count}</span>
       </summary>
-      {children}
+      <div className="px-4">{children}</div>
     </details>
   );
 }
@@ -888,6 +891,7 @@ export function FloorPlanTool() {
               possible by selecting a room on the canvas, but nobody found it — the same failure
               the Doors list below was added to fix. A list beats a hidden field.
             */}
+            <div className="divide-y divide-ad-border overflow-hidden rounded-xl border border-ad-border bg-white">
             <Panel title="Rooms" count={level.rooms.length} defaultOpen>
               <ul className="mt-2 space-y-1">
                 {level.rooms.map((room) => {
@@ -1216,6 +1220,7 @@ export function FloorPlanTool() {
                 </ul>
               )}
             </Panel>
+            </div>
 
             <div className="rounded-xl border border-ad-border bg-white p-5">
               <h3 className="text-sm font-semibold text-ad-ink">Title block</h3>

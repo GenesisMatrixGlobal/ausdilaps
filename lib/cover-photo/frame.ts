@@ -65,10 +65,13 @@ function toAspect(center: LatLng, spanX: number, spanY: number): { spanX: number
     : { spanX, spanY: spanX / COVER_ASPECT };
 }
 
-/** How much ground one click of the toolbar's Zoom control adds or removes. 1.3 is a
- *  noticeable step without being a whole Google zoom level (which doubles the ground and
- *  overshoots every time). */
-const ZOOM_STEP = 1.3;
+/** How much ground one click of the toolbar's Zoom control adds or removes.
+ *
+ *  A whole Google zoom level doubles the ground and overshoots every time, so this was 1.3 —
+ *  still too big a jump in practice (Rhys, 2026-09-16: "it goes in way too far"), because the
+ *  default frame is already tight at 90 m and one click took it to 69. 1.15 is a nudge you can
+ *  repeat to taste, which is what a framing control should be. */
+const ZOOM_STEP = 1.15;
 
 /**
  * The frame Generate lands on: the parcel, its margin, the metre floor, at the report's

@@ -84,8 +84,13 @@ export function CoverPhotoTool() {
     []
   );
 
-  async function generate() {
-    if (!place) return;
+  /**
+   * Resolves the boundary and frames it.
+   *
+   * Takes the place as an ARGUMENT rather than reading `place` off state, because the address
+   * dropdown calls it in the same tick as setPlace() — where the new value is not visible yet.
+   */
+  async function generate(target: PlaceSelection) {
     setBusy(true);
     setError(null);
     setNote(null);
@@ -94,15 +99,15 @@ export function CoverPhotoTool() {
       let resolved: LatLng[] = [];
       let message: string | null = null;
 
-      if (isCadastreState(place.state)) {
+      if (isCadastreState(target.state)) {
         const res = await fetch("/api/cover-photo/parcel", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            street: place.street,
-            suburb: place.suburb,
-            postcode: place.postcode || undefined,
-            state: place.state,
+            street: target.street,
+            suburb: target.suburb,
+            postcode: target.postcode || undefined,
+            state: target.state,
           }),
         });
         const json = await res.json();
@@ -113,7 +118,7 @@ export function CoverPhotoTool() {
         resolved = json.ring ?? [];
         message = json.note ?? null;
       } else {
-        message = `There's no parcel cadastre for ${place.state || "that state"} — draw the boundary by hand.`;
+        message = `There's no parcel cadastre for ${target.state || "that state"} — draw the boundary by hand.`;
       }
 
       loadRing(resolved);
@@ -124,8 +129,8 @@ export function CoverPhotoTool() {
       frame(
         resolved.length >= 3
           ? coverViewFor(resolved, 0)
-          : place.location
-            ? boxAround(place.location)
+          : target.location
+            ? boxAround(target.location)
             : null
       );
       if (resolved.length < 3) {
@@ -177,9 +182,10 @@ export function CoverPhotoTool() {
   const hasBoundary = ring.length >= 3;
 
   /** Re-frames one step in or out. Bounded so a held-down button can't leave the operator
-   *  looking at a continent or at four roof tiles. */
+   *  looking at a continent or at four roof tiles — the range is wider than it looks because
+   *  ZOOM_STEP is deliberately a small nudge (1.15), so -6..+10 is about 0.3x to 4x. */
   function stepZoom(by: number) {
-    const next = Math.max(-4, Math.min(6, zoomStepRef.current + by));
+    const next = Math.max(-6, Math.min(10, zoomStepRef.current + by));
     if (next === zoomStepRef.current) return;
     zoomStepRef.current = next;
     frame(coverViewFor(ring, next));
@@ -193,13 +199,17 @@ export function CoverPhotoTool() {
             onSelect={(selected) => {
               setPlace(selected);
               setError(null);
+              // Generate on PICK. Showing an empty map and waiting for a button press read as
+              // "something is broken" — there is nothing else a picked address could mean here
+              // (Rhys, 2026-09-16). The button stays, as Regenerate.
+              void generate(selected);
             }}
             placeholder="Start typing the property address…"
           />
         </div>
         <button
           className={cn(buttonVariants({ variant: "primary", size: "md" }))}
-          onClick={generate}
+          onClick={() => place && generate(place)}
           disabled={busy || !place}
         >
           {busy ? "Working…" : generated ? "Regenerate" : "Generate"}

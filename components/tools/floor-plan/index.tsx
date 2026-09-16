@@ -339,10 +339,18 @@ export function FloorPlanTool() {
       const upload = await fitForUpload(file);
       const image = await readAsBase64(upload);
 
+      // Send the type of what we are ACTUALLY sending. This used to be hardcoded to
+      // image/jpeg, which was true only by accident: fitForUpload re-encodes as JPEG, but it
+      // returns the original file untouched when that is already small enough. So a PNG under
+      // the budget went up as PNG bytes labelled JPEG, and the API rejected it outright —
+      // "the image appears to be a image/png image". Every PNG, WebP and GIF small enough to
+      // skip re-encoding failed this way, which includes every screenshot and every
+      // web-resolution plan; a big phone photo worked only because re-encoding made the lie
+      // true. The route has always accepted all four types.
       const res = await fetch("/api/floor-plan/extract", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ image, mediaType: "image/jpeg" }),
+        body: JSON.stringify({ image, mediaType: upload.type || file.type }),
       });
 
       // A non-JSON body means something upstream rejected this before the route ran — Vercel

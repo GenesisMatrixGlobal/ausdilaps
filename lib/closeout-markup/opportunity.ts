@@ -7,7 +7,7 @@ import { MarkupSyncError } from "@/lib/markup-sync";
 import { lightningUrl } from "@/lib/quote-lines/resolve";
 import { soqlQuery, soqlQueryAll } from "@/lib/salesforce";
 import { parseSalesforceRecord, soqlEscape } from "@/lib/salesforce-links";
-import { groupWorkOrders, isCouncilAsset } from "./group";
+import { groupWorkOrders } from "./group";
 import type {
   CloseoutOpportunity,
   CloseoutProperty,
@@ -152,16 +152,20 @@ export async function resolveCloseout(input: string): Promise<ResolvedCloseout> 
     siteMarkupUrl: r.Site_Mark_Ups__c ?? null,
   }));
 
-  // Reference images for the council assets ONLY — a second query, and only for the handful of
-  // work orders that need one. Asking for every survey on a 1,900-work-order job would be a
-  // large read for something no other row uses.
-  const coverPhotos = await coverPhotosFor(rows.filter(isCouncilAsset).map((r) => r.id));
-  for (const row of rows) {
-    const url = coverPhotos.get(row.id);
-    if (url) row.coverPhotoUrl = url;
-  }
-
   const { properties, unmapped, skipped, councilAssets } = groupWorkOrders(rows);
+
+  // Reference images, and ONLY for the rows that need one: the council assets and anything the
+  // tool could not place. Both are drawn by hand, so both need something to draw from; every
+  // other row already has its boundary. Asking for every survey on a 1,900-work-order job would
+  // be a large read for something nothing uses.
+  //
+  // After grouping, not before, because "could not be placed" is grouping's answer.
+  const coverPhotos = await coverPhotosFor([
+    ...councilAssets.map((c) => c.workOrderId),
+    ...unmapped.map((u) => u.id),
+  ]);
+  for (const c of councilAssets) c.coverPhotoUrl = coverPhotos.get(c.workOrderId) ?? null;
+  for (const u of unmapped) u.coverPhotoUrl = coverPhotos.get(u.id) ?? null;
 
   return {
     opportunity: {

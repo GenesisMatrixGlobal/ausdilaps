@@ -163,6 +163,8 @@ export function parseCloseoutFile(text: string, maxRingPoints = 2000): ParseClos
               number: str(u.number) || null,
               street: str(u.street) || null,
               reason: str(u.reason),
+              coverPhotoUrl: str(u.coverPhotoUrl) || null,
+              siteMarkupUrl: str(u.siteMarkupUrl) || null,
             }))
         : [],
       councilAssets: Array.isArray(doc.councilAssets)

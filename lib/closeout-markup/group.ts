@@ -292,6 +292,19 @@ function pickState(rows: WorkOrderRow[], postcode: string | null): AuStateCode |
   return stateFromPostcode(postcode) ?? null;
 }
 
+/** An unmapped row, carrying whatever reference images its work order has — the operator has
+ *  to draw this one by hand, so it needs something to draw from. */
+function reference(row: WorkOrderRow, reason: string): UnmappedWorkOrder {
+  return {
+    id: row.id,
+    number: row.number,
+    street: row.street,
+    reason,
+    coverPhotoUrl: row.coverPhotoUrl ?? null,
+    siteMarkupUrl: row.siteMarkupUrl ?? null,
+  };
+}
+
 export interface GroupResult {
   properties: CloseoutProperty[];
   unmapped: UnmappedWorkOrder[];
@@ -345,7 +358,7 @@ export function groupWorkOrders(rows: WorkOrderRow[]): GroupResult {
       continue;
     }
     if (row.latitude == null || row.longitude == null) {
-      unmapped.push({ id: row.id, number: row.number, street: row.street, reason: "No location on the work order" });
+      unmapped.push(reference(row, "No location on the work order"));
       continue;
     }
     const key = locationKey(row.latitude, row.longitude);
@@ -386,7 +399,7 @@ export function groupWorkOrders(rows: WorkOrderRow[]): GroupResult {
         // `Access Letters`, `Wulugul Walk`, `Hickson Road Staircase`. Real work, not a place
         // this drawing can show — listed rather than silently dropped.
         for (const r of rows) {
-          unmapped.push({ id: r.id, number: r.number, street: r.street, reason: "Not a street address" });
+          unmapped.push(reference(r, "Not a street address"));
         }
         continue;
       }

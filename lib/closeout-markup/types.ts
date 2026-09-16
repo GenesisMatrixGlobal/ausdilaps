@@ -92,6 +92,10 @@ export interface UnmappedWorkOrder {
   number: string | null;
   street: string | null;
   reason: string;
+  /** Same reference a council asset gets. An inspection the tool could not place still has to
+   *  go on the drawing by hand, and the operator needs something to place it FROM. */
+  coverPhotoUrl: string | null;
+  siteMarkupUrl: string | null;
 }
 
 /** One physical property — every work order that shares its location, collapsed. */

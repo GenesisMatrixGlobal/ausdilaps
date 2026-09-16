@@ -35,7 +35,7 @@ import type { CloseoutProperty } from "@/lib/closeout-markup/types";
 import { buildCloseoutFile, parseCloseoutFile } from "@/lib/closeout-markup/file";
 import { MARKUP_STYLES } from "@/lib/kml/standard-markup/style";
 import type { LatLng } from "@/lib/kml/types";
-import { CLOSEOUT_SHAPE_PALETTE, CouncilAssets } from "./council-assets";
+import { CLOSEOUT_SHAPE_PALETTE, DrawByHand } from "./draw-by-hand";
 import { MapLegend } from "./map-legend";
 import { OpportunityCard } from "./opportunity-card";
 import { StatusTable } from "./status-table";
@@ -524,9 +524,6 @@ export function CloseoutMarkupTool() {
                 />
               </div>
               <div className="w-full space-y-4 xl:w-80 xl:shrink-0">
-                {/* Above the shape tools, because that is the order of the job: open the
-                    reference, then draw it. */}
-                <CouncilAssets assets={councilAssets} />
                 <ShapePanel shapes={shapes} commands={mapRef} palette={CLOSEOUT_SHAPE_PALETTE} />
               </div>
             </div>
@@ -540,6 +537,7 @@ export function CloseoutMarkupTool() {
             capped={overCap}
             max={MAX_CLOSEOUT_LOTS}
             unmapped={unmapped}
+            councilAssets={councilAssets}
           />
         </>
       )}
@@ -556,29 +554,16 @@ function StatusTableSection(props: {
   capped: boolean;
   max: number;
   unmapped: UnmappedWorkOrder[];
+  councilAssets: CouncilAsset[];
 }) {
-  const { unmapped, ...table } = props;
+  const { unmapped, councilAssets, ...table } = props;
   return (
     <>
       <StatusTable {...table} />
-      {unmapped.length > 0 && (
-        // Folded, but always reachable. These are real work orders with real statuses that no
-        // drawing can place — an induction booking, a job named after an asset rather than an
-        // address. Dropping them silently would make the closeout look complete when it is not.
-        <details className="mt-4 rounded-xl border border-ad-border bg-white px-4 py-3 text-sm">
-          <summary className="cursor-pointer text-ad-steel">
-            {unmapped.length} work order{unmapped.length === 1 ? "" : "s"} couldn&apos;t be placed on a map
-          </summary>
-          <ul className="mt-3 space-y-1 text-ad-muted">
-            {unmapped.map((u) => (
-              <li key={u.id}>
-                <span className="text-ad-ink">{u.number ?? u.id}</span>
-                {u.street ? ` · ${u.street}` : ""} — {u.reason}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+      {/* Everything the automatic pass could not draw, directly under the sheet and never
+          folded away. These are real work orders with real statuses; hiding them behind a
+          disclosure would let a closeout look complete when it is not. */}
+      <DrawByHand councilAssets={councilAssets} unmapped={unmapped} />
     </>
   );
 }

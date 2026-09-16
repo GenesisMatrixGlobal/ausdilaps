@@ -7,6 +7,7 @@
 
 import type { LatLng } from "@/lib/kml/types";
 import { isFiniteNumber, parseLatLng, parseLatLngList } from "./latlng-parse";
+import { MARKUP_COLOR_KEYS, type MarkupColorKey } from "@/lib/kml/standard-markup/style";
 
 export const BUILDING_MARKUP_FILE_KIND = "ausdilaps.building-markup";
 /** 2 added stable shape ids and the subject's own lot/plan + area. Version 1 files still
@@ -16,7 +17,11 @@ export const BUILDING_MARKUP_FILE_VERSION = 2;
 
 export type MarkupMapType = "satellite" | "hybrid" | "roadmap";
 type ShapeMode = "line" | "area";
+/** Hand-drawn shapes stay at the legend's three original rows — see SHAPE_COLORS. */
 type ShapeColor = "orange" | "blue" | "red";
+/** A LOT may carry any markup colour. The Closeout Markup colours a lot by how its work orders
+ *  went, so green and purple reach the save file even though no shape can be drawn in them. */
+type LotColor = MarkupColorKey;
 
 export interface SavedNeighbour {
   id: string;
@@ -24,8 +29,9 @@ export interface SavedNeighbour {
   areaSqm: number | null;
   /** How the lot is drawn. Absent means blue — every lot before 2026-09-11 was. A multi-property
    *  markup draws the address the operator SEARCHED in red: that is the whole of what "project
-   *  site" ever meant on the drawing, so it is a colour on a lot, not a second kind of thing. */
-  color?: "red" | "blue";
+   *  site" ever meant on the drawing, so it is a colour on a lot, not a second kind of thing.
+   *  A Closeout Markup instead colours each lot green/red/orange/purple by inspection status. */
+  color?: LotColor;
   /** From the state's address layer at generate time. Stored rather than re-looked-up on open
    *  for the same reason the geometry is: it is what was on the drawing that got signed off,
    *  and the address layer may say something different today. Optional — version-1 files and
@@ -118,6 +124,7 @@ const LINE_ITEM_FIELDS = new Set([
 
 const MODES: ShapeMode[] = ["line", "area"];
 const COLORS: ShapeColor[] = ["orange", "blue", "red"];
+const LOT_COLORS: LotColor[] = [...MARKUP_COLOR_KEYS];
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
@@ -177,7 +184,10 @@ export function parseBuildingMarkupFile(
       id: str(n.id),
       ring,
       areaSqm: isFiniteNumber(n.areaSqm) ? n.areaSqm : null,
-      ...(n.color === "red" ? { color: "red" as const } : {}),
+      // ⚠️ Any recognised colour, not just red. This used to read `n.color === "red" ? … : {}`,
+      // which silently turned every non-red lot blue on reopen. Harmless while a lot could only
+      // BE red or blue; it would have thrown away the entire meaning of a Closeout Markup.
+      ...(LOT_COLORS.includes(n.color as LotColor) ? { color: n.color as LotColor } : {}),
       // No `label`. A lot's number is now the quote item number, derived from the tick state at
       // render time (see line-items.ts), so storing one would go stale the moment a lot was
       // unticked. Version-2 files that carry one are simply ignored.

@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+import { LEGEND_LABELS } from "./overlay-paths";
+import { MARKUP_COLOR_KEYS } from "./style";
+
 export const standardMarkupRequestSchema = z.object({
   street: z.string().trim().min(1, "Street address is required").max(200),
   suburb: z.string().trim().min(1, "Suburb is required").max(200),
@@ -59,8 +62,9 @@ export const standardMarkupRenderRequestSchema = z.object({
        *  the legend needed them, silently stripped here. */
       street: z.string().max(200).nullish(),
       suburb: z.string().max(120).nullish(),
-      /** Red for the searched address on a multi-property markup; blue is every lot before it. */
-      color: z.enum(["red", "blue"]).default("blue"),
+      /** Red for the searched address on a multi-property markup; blue is every lot before it.
+       *  The Closeout Markup uses the wider set — what a colour MEANS is said by `legend`. */
+      color: z.enum(MARKUP_COLOR_KEYS).default("blue"),
     })
   ),
   mapType: z.enum(["satellite", "hybrid", "roadmap"]).default("hybrid"),
@@ -108,6 +112,37 @@ export const standardMarkupRenderRequestSchema = z.object({
    *  open when the rename shipped doesn't 400 and lose the operator's drawing. Read only
    *  when `shapes` is empty — see the render route. */
   councilAssets: z.array(markupShapeSchema).max(5).default([]),
+  /** Properties with a position and a colour but no outline, drawn as a numbered badge alone.
+   *  The Closeout Markup's fallback where the cadastre has no cover (SA/WA/ACT) or the geocode
+   *  is too coarse to trust a parcel. Capped well above the tool's own 60 so the cap that bites
+   *  is the one the operator was told about. */
+  points: z
+    .array(
+      z.object({
+        id: z.string().max(200),
+        at: latLngSchema,
+        label: z.string().max(4).default(""),
+        color: z.enum(MARKUP_COLOR_KEYS).default("blue"),
+      })
+    )
+    .max(120)
+    .default([]),
+  /**
+   * What each colour means in the exported legend. Absent = the markup tabs' three fixed rows.
+   *
+   * The label is an enum over overlay-paths.ts's GENERATED glyph set, not a free string: there
+   * are no fonts on Vercel's runtime, so a label with no baked outlines renders as blank space
+   * in a drawing that may already be on its way to a client. A 400 here is the honest failure.
+   */
+  legend: z
+    .array(
+      z.object({
+        color: z.enum(MARKUP_COLOR_KEYS),
+        label: z.enum(LEGEND_LABELS),
+      })
+    )
+    .max(MARKUP_COLOR_KEYS.length)
+    .optional(),
 });
 
 export type StandardMarkupRenderRequest = z.infer<typeof standardMarkupRenderRequestSchema>;

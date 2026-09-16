@@ -3,7 +3,7 @@
 // in the markup adapter. Output is identical to what the sheet showed before the split.
 
 import { formatArea } from "@/lib/kml/standard-markup/measure";
-import { SHAPE_COLORS } from "@/lib/kml/standard-markup/style";
+import { markupColor } from "@/lib/kml/standard-markup/style";
 import { PRODUCT_BY_COLOR } from "../salesforce-picklists";
 import type { LineItemSource } from "../source";
 import type { MarkupLayer } from "../types";
@@ -36,9 +36,13 @@ export function sourceFromLayer(layer: MarkupLayer): LineItemSource {
     suburb: layer.suburb,
     lotPlan: layer.lotPlan,
     measured: measuredLabel(layer),
-    swatch: SHAPE_COLORS[layer.color],
+    swatch: markupColor(layer.color),
     seed: {
-      product: PRODUCT_BY_COLOR[layer.color],
+      // A colour outside the quote palette (green/purple — a Closeout Markup's inspection
+      // statuses) seeds NO product. That tool does not quote and never builds sources through
+      // this adapter, but if one ever arrives here the row should come up blank and be refused
+      // by rowReason() with a reason on screen, rather than be handed a plausible wrong product.
+      product: PRODUCT_BY_COLOR[layer.color as keyof typeof PRODUCT_BY_COLOR] ?? "",
       // An orange shape is council / external infrastructure by definition — that is what the
       // colour MEANS on these markups, and it is what the operator was typing into this cell
       // by hand every time. A lot or the subject has a real address instead, and a red or blue

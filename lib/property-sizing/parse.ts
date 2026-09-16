@@ -50,7 +50,7 @@ const STARTS_WITH_NUMBER_RE =
 // name word. Deliberately excludes HILL, PARK, RIDGE, LAKE, GREEN, HEIGHTS, POINT, VIEW
 // and friends: those are valid types but appear inside names ("Green Hill Rd") and suburbs
 // ("Park Ridge", "Chapel Hill") far more often than they end a street.
-const STREET_TYPES = new Set([
+export const STREET_TYPES = new Set([
   "AVE", "AV", "AVENUE",
   "ST", "STREET",
   "RD", "ROAD",

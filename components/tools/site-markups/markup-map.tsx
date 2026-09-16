@@ -3,14 +3,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { LatLng } from "@/lib/kml/types";
 import { bufferLineToPolygon, closeRing } from "@/lib/kml/standard-markup/geometry";
-import {
-  FILL_OPACITY_PERCENT,
-  NEIGHBOUR_FILL,
-  OUTLINE_WEIGHT,
-  SHAPE_COLORS,
-  SITE_RED,
-  STROKE_OPACITY_PERCENT,
-} from "@/lib/kml/standard-markup/style";
+import { FILL_OPACITY_PERCENT, MARKUP_STYLES, OUTLINE_WEIGHT, SHAPE_COLORS, SITE_RED, STROKE_OPACITY_PERCENT, markupColor, type MarkupColorKey } from "@/lib/kml/standard-markup/style";
 import {
   MAPS_AUTH_FAILURE_MESSAGE,
   MapsKeyMissingError,
@@ -192,6 +185,7 @@ export function MarkupMap({
   subjectRing,
   hideSubject,
   lots,
+  points = [],
   numbers,
   pickMode,
   onPick,
@@ -202,7 +196,11 @@ export function MarkupMap({
   subjectRing: LatLng[];
   hideSubject: boolean;
   /** Only the lots that are ticked on the MAP. Unticking one removes its polygon and its badge. */
-  lots: { id: string; ring: LatLng[]; color?: "red" | "blue" }[];
+  lots: { id: string; ring: LatLng[]; color?: MarkupColorKey }[];
+  /** Properties with a position but no boundary, drawn as a badge alone. The Closeout Markup's
+   *  fallback where no cadastre covers the state, or several addresses share one geocode and no
+   *  parcel can be attributed to any of them. Absent on the markup tabs. */
+  points?: { id: string; at: LatLng; color?: MarkupColorKey }[];
   /** Quote item number per layer key. A layer absent from this map is drawn but NOT numbered —
    *  which is how the project site gets shown to a client without becoming a line item. Derived
    *  once by the tab from rowsFrom(), so the bubble, the sheet and the legend always agree. */
@@ -233,6 +231,7 @@ export function MarkupMap({
   );
   const shapeHandles = useRef<Map<string, ShapeHandles>>(new Map());
   const lotHandles = useRef<Map<string, LotHandles>>(new Map());
+  const pointHandles = useRef<Map<string, { color: string; badge: MapBadge }>>(new Map());
   const subjectRef = useRef<google.maps.Polygon | null>(null);
 
   // Live props for handlers attached once, which would otherwise capture the first render's
@@ -503,6 +502,8 @@ export function MarkupMap({
         l.badge.destroy();
       });
       lotHandles.current.clear();
+      pointHandles.current.forEach((h) => h.badge.destroy());
+      pointHandles.current.clear();
       subjectRef.current?.setMap(null);
       subjectRef.current = null;
     },
@@ -638,7 +639,11 @@ export function MarkupMap({
     }
 
     for (const lot of lots) {
-      const hex = `#${lot.color === "red" ? SITE_RED : NEIGHBOUR_FILL}`;
+      // Outline and fill are separate: a part-inspected property on a Closeout Markup is a green
+      // outline round an orange fill. Every other key is the same colour twice.
+      const style = MARKUP_STYLES[lot.color ?? "blue"] ?? MARKUP_STYLES.blue;
+      const hex = `#${style.stroke}`;
+      const fillHex = `#${style.fill}`;
       let h = handles.get(lot.id);
       // A lot that changed colour (the same address re-generated with the surrounding-assets
       // switch flipped) is rebuilt: the badge has no colour setter, and a stale blue pin on a
@@ -664,7 +669,7 @@ export function MarkupMap({
             strokeColor: hex,
             strokeOpacity: STROKE_OPACITY,
             strokeWeight: OUTLINE_WEIGHT,
-            fillColor: hex,
+            fillColor: fillHex,
             fillOpacity: FILL_OPACITY,
           }),
           // Matching the outline it sits on — the bubble's colour is the item's own colour
@@ -683,6 +688,44 @@ export function MarkupMap({
     // cadastre is re-resolved, which replaces the whole list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, lotSignature]);
+
+  // Outline-less properties. A badge and nothing else — same teardrop as a lot's, because it
+  // means the same thing to the reader: this numbered item is here. Only the boundary is
+  // missing, and the sheet says so per row.
+  const pointSignature = points
+    .map((p) => `${p.id}:${p.color ?? "blue"}:${numbers.get(lotKey(p.id)) ?? ""}:${p.at.lat},${p.at.lng}`)
+    .join("|");
+  useEffect(() => {
+    if (!map) return;
+    const handles = pointHandles.current;
+    const wanted = new Map(points.map((p) => [p.id, p]));
+
+    for (const [id, h] of handles) {
+      if (!wanted.has(id)) {
+        h.badge.destroy();
+        handles.delete(id);
+      }
+    }
+
+    for (const point of points) {
+      const hex = `#${markupColor(point.color)}`;
+      let h = handles.get(point.id);
+      // Same rule as a lot's: the badge has no colour setter, so a recolour is a rebuild.
+      if (h && h.color !== hex) {
+        h.badge.destroy();
+        handles.delete(point.id);
+        h = undefined;
+      }
+      if (!h) {
+        h = { color: hex, badge: createMapBadge(map, "teardrop", hex) };
+        handles.set(point.id, h);
+      }
+      const number = numbers.get(lotKey(point.id)) ?? null;
+      h.badge.setLabel(number === null ? "" : String(number));
+      h.badge.setPosition(number === null ? null : point.at);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, pointSignature]);
 
   // Frame a newly arrived markup, once the map is actually ready for it.
   const fitKey = fitRequest?.key ?? null;

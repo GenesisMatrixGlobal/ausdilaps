@@ -16,6 +16,11 @@
 // Generator needed the same rename-on-409 loop — one copy, not two.
 import { BoxConfigError, ensureSharedLink, findChildFolder, getAccessToken as getBoxToken, listFolderItems, parseBoxFolderId, sanitiseBoxFilename, splitExtension, uploadFileAutoRenamed } from "@/lib/box";
 import { SalesforceConfigError, soqlQuery, updateRecord } from "@/lib/salesforce";
+import { parseSalesforceRecord, soqlEscape } from "@/lib/salesforce-links";
+
+// Re-exported so the modules that already import it from here keep working — the parser and
+// the escaper moved together into lib/salesforce-links.ts when a third tool needed them.
+export { soqlEscape };
 
 /** Folder naming convention inside an Opportunity's Box folder. Constants rather than
  *  config: when the convention has drifted the operator pastes a folder link instead, which
@@ -77,7 +82,6 @@ export function isConfigError(e: unknown): boolean {
 
 type QuoteLookup = { kind: "id" | "number" | "lineItemId"; value: string };
 
-const SF_ID = /^[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?$/;
 
 /**
  * Works out what was pasted: a Lightning/Classic record URL, a bare 15- or 18-character
@@ -95,43 +99,22 @@ export function parseQuoteLookup(input: string): QuoteLookup {
   const trimmed = input.trim();
   if (!trimmed) throw new MarkupSyncError("Paste a Salesforce Quote URL, Id or number.");
 
-  if (/^https?:\/\//i.test(trimmed)) {
-    let path: string;
-    try {
-      path = new URL(trimmed).pathname;
-    } catch {
-      throw new MarkupSyncError("That doesn't look like a valid URL.");
-    }
-
-    // Lightning: /lightning/r/Quote/0Q0.../view or /lightning/r/QuoteLineItem/0QL.../view
-    const lightning = path.match(/\/r\/([^/]+)\/([a-zA-Z0-9]{15,18})/);
-    if (lightning) {
-      const [, object, id] = lightning;
-      return { kind: object === "QuoteLineItem" ? "lineItemId" : idKind(id), value: id };
-    }
-
-    // Classic and anything else: the last path segment shaped like a record Id.
-    const candidates = path.split("/").filter((seg) => SF_ID.test(seg));
-    if (candidates.length > 0) {
-      const id = candidates[candidates.length - 1];
-      return { kind: idKind(id), value: id };
-    }
-
-    throw new MarkupSyncError("Couldn't find a Salesforce record Id in that URL.");
+  const ref = parseSalesforceRecord(trimmed);
+  if (ref) {
+    // The object name from a Lightning URL is authoritative; a bare Id falls back to its key
+    // prefix. Guessing wrong only means the record isn't found, which reads as a clear error
+    // rather than writing to the wrong place.
+    const isLineItem =
+      ref.object === "QuoteLineItem" || ref.id.startsWith(QUOTE_LINE_ITEM_PREFIX);
+    return { kind: isLineItem ? "lineItemId" : "id", value: ref.id };
   }
 
-  if (SF_ID.test(trimmed)) return { kind: idKind(trimmed), value: trimmed };
+  // A URL we couldn't read an Id out of is a mistake worth naming; anything else is taken as
+  // a Quote NUMBER, which is the other thing this box accepts.
+  if (/^https?:\/\//i.test(trimmed)) {
+    throw new MarkupSyncError("Couldn't find a Salesforce record Id in that URL.");
+  }
   return { kind: "number", value: trimmed };
-}
-
-function idKind(id: string): "id" | "lineItemId" {
-  return id.startsWith(QUOTE_LINE_ITEM_PREFIX) ? "lineItemId" : "id";
-}
-
-/** SOQL string literals escape backslash and single quote — without this a quote number
- *  containing an apostrophe would break the query (or worse). */
-export function soqlEscape(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
 interface QuoteRecord {

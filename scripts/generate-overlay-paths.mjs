@@ -23,7 +23,17 @@ const OUT_PATH = "lib/kml/standard-markup/overlay-paths.ts";
 const LEGEND_FONT_SIZE = 18;
 const COMPASS_FONT_SIZE = 20;
 
-const LEGEND_LABELS = ["Project Site", "Neighbouring Assets", "Council / External Assets"];
+const LEGEND_LABELS = [
+  // Building Markup / Measure — a colour means what the lot IS.
+  "Project Site",
+  "Neighbouring Assets",
+  "Council / External Assets",
+  // Closeout Markup — a colour means how the property's work orders WENT.
+  "Inspected",
+  "Not inspected",
+  "Pending",
+  "Partially inspected",
+];
 const COMPASS_LABEL = "N";
 
 const font = opentype.parse(
@@ -73,6 +83,15 @@ ${legendEntries}
 export const LEGEND_LABEL_WIDTHS: Record<string, number> = {
 ${legendWidths}
 };
+
+/** Every label there is baked geometry for. The render schema validates against this, so a
+ *  caller asking for a legend row we have no glyphs for is a 400 rather than a blank strip
+ *  of legend in a drawing that has already gone to a client. */
+export const LEGEND_LABELS = [
+${LEGEND_LABELS.map((l) => `  ${JSON.stringify(l)},`).join("\n")}
+] as const;
+
+export type LegendLabel = (typeof LEGEND_LABELS)[number];
 
 /** The compass "N", centred on the origin both axes. */
 export const COMPASS_N_PATH =

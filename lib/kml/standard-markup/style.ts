@@ -30,6 +30,47 @@ export const SHAPE_COLORS = { orange: "e8642a", blue: NEIGHBOUR_FILL, red: SITE_
 
 export type ShapeColorKey = keyof typeof SHAPE_COLORS;
 
+/** Inspected green, for the Closeout Markup — a lot there is coloured by how its work orders
+ *  went, not by whether it is the project site. */
+export const INSPECTED_GREEN = "16a34a";
+
+/**
+ * How a LOT is drawn: an outline colour and a fill colour.
+ *
+ * A pair rather than one hex, because "partly inspected" is a green outline with an orange
+ * fill — part done, work left — rather than a fifth colour in the palette. That was Rhys's
+ * call over a purple, and it is the better one: it reads as what it means, and it adds no new
+ * colour to a drawing a client sees.
+ *
+ * ⚠️ Solid fill, NOT stripes. `google.maps.Polygon` takes a single `fillColor` and cannot
+ * render a pattern, so a striped export would not match the live map — and preview/export
+ * parity is the standing hazard in this pipeline. Everything drawn here has to be something
+ * both renderers can do.
+ *
+ * Every other key is the same colour twice, so a caller can always read `.stroke` for "the
+ * colour of this thing" (badges, swatches) without a special case.
+ */
+export const MARKUP_STYLES = {
+  red: { stroke: SITE_RED, fill: SITE_RED },
+  blue: { stroke: NEIGHBOUR_FILL, fill: NEIGHBOUR_FILL },
+  orange: { stroke: SHAPE_COLORS.orange, fill: SHAPE_COLORS.orange },
+  green: { stroke: INSPECTED_GREEN, fill: INSPECTED_GREEN },
+  partial: { stroke: INSPECTED_GREEN, fill: SHAPE_COLORS.orange },
+} as const;
+
+export type MarkupColorKey = keyof typeof MARKUP_STYLES;
+
+export const MARKUP_COLOR_KEYS = Object.keys(MARKUP_STYLES) as [
+  MarkupColorKey,
+  ...MarkupColorKey[],
+];
+
+/** The one colour that stands for a key — its outline. What a badge, a sheet swatch or a
+ *  legend label is drawn in when only one colour is available. */
+export function markupColor(key: MarkupColorKey | undefined): string {
+  return MARKUP_STYLES[key ?? "blue"]?.stroke ?? NEIGHBOUR_FILL;
+}
+
 export const FILL_OPACITY_PERCENT = 50;
 export const STROKE_OPACITY_PERCENT = 90;
 /** The site fill is the one thing drawn at full stroke opacity. */

@@ -18,17 +18,14 @@ import { textToSvgPathsCentred } from "@/lib/kml/overlay/text-path";
 // because this legend is the colour key alone.
 import { PANEL_PAD, panelRect } from "@/lib/kml/overlay/legend";
 import { badgeAnchor, measureShape, ringAnchor, ringFor } from "./measure";
-import { COMPASS_N_PATH, LEGEND_LABEL_PATHS, LEGEND_LABEL_WIDTHS } from "./overlay-paths";
-import { latLngToPixel, type LatLngBox } from "./projection";
 import {
-  FILL_OPACITY_PERCENT,
-  NEIGHBOUR_FILL,
-  OUTLINE_WEIGHT,
-  SHAPE_COLORS,
-  SITE_RED,
-  SITE_STROKE_OPACITY_PERCENT,
-  STROKE_OPACITY_PERCENT,
-} from "./style";
+  COMPASS_N_PATH,
+  LEGEND_LABEL_PATHS,
+  LEGEND_LABEL_WIDTHS,
+  type LegendLabel,
+} from "./overlay-paths";
+import { latLngToPixel, type LatLngBox } from "./projection";
+import { FILL_OPACITY_PERCENT, MARKUP_STYLES, OUTLINE_WEIGHT, SHAPE_COLORS, SITE_RED, SITE_STROKE_OPACITY_PERCENT, STROKE_OPACITY_PERCENT, markupColor, type MarkupColorKey } from "./style";
 import { bufferLineToPolygon, centroidOf, closeRing, simplifyRing } from "./geometry";
 
 export { GoogleMapsConfigError };
@@ -66,12 +63,27 @@ export interface NumberedNeighbour {
    *  the client over the ticked sheet rows, so the bubble, the sheet and this legend agree.
    *  Empty means: draw the outline, no bubble, no legend row. */
   label: string;
-  /** Red for the address a multi-property markup was searched from. Absent = blue. */
-  color?: "red" | "blue";
+  /** What this lot is drawn as. Absent = blue.
+   *
+   *  Red is the address a multi-property markup was searched from. The Closeout Markup uses the
+   *  wider set — green/red/orange/purple for how the property's work orders went — which is why
+   *  this is the whole key set rather than the two the markup tabs use. Nothing here decides
+   *  what a colour MEANS; the caller says that with `legend`. */
+  color?: MarkupColorKey;
   /** From the state address layer. ⚠️ NOT DRAWN — it named this lot in the retired legend
    *  schedule; see `name` on MarkupShapeInput. Optional: a lot the layer
    *  had nothing for simply falls back to its lot/plan. */
   street?: string | null;
+}
+
+/** A property drawn as a badge with no outline — see `points` on RenderMapInput. */
+export interface MarkupPoint {
+  id: string;
+  at: LatLng;
+  /** The item number, or "" to draw nothing. Same rule as a neighbour's: a pin is a numbered
+   *  item, so an unnumbered point has nothing to show and is skipped. */
+  label: string;
+  color?: MarkupColorKey;
 }
 
 /** Assigns each neighbour a stable display number, in the order given — call this once,
@@ -107,6 +119,17 @@ export interface RenderMapInput {
    * them), because the operator now points the camera themselves.
    */
   bounds: LatLngBox;
+  /**
+   * Properties with a COLOUR and a position but no outline — drawn as a badge alone.
+   *
+   * The Closeout Markup needs these: the cadastre only covers QLD/NSW/VIC, so an SA or WA job
+   * has no parcel ring to draw, and a coarse geocode has no trustworthy one. Dropping those
+   * properties would silently under-report a job's progress, which is the one thing a closeout
+   * drawing must not do. A pin says "this property, this status, boundary unknown".
+   */
+  points?: MarkupPoint[];
+  /** What each colour means in the legend. Absent = the markup tabs' three fixed rows. */
+  legend?: { color: MarkupColorKey; label: LegendLabel }[];
   /** ⚠️ NOT DRAWN, same as `name` above — these fed the legend's project-site row. Retained
    *  rather than removed so the item schedule can come back without a schema change. */
   subjectStreet?: string | null;
@@ -182,11 +205,16 @@ function markupPolygons(
         ]),
     ...kept.map((n) => {
       const red = n.color === "red";
+      // Outline and fill are separate: a part-inspected property on a Closeout Markup is a green
+      // outline round an orange fill. Every other key is the same colour twice.
+      const style = MARKUP_STYLES[n.color ?? "blue"] ?? MARKUP_STYLES.blue;
       return {
         ring: simplify(n.ring),
-        fillColor: red ? SITE_RED : NEIGHBOUR_FILL,
+        fillColor: style.fill,
         fillOpacityPercent: FILL_OPACITY_PERCENT,
-        strokeColor: red ? SITE_RED : NEIGHBOUR_FILL,
+        strokeColor: style.stroke,
+        // Red keeps full stroke opacity: it is the project site, and that convention predates
+        // there being more than two lot colours. Every other colour reads as an ordinary lot.
         strokeOpacityPercent: red ? SITE_STROKE_OPACITY_PERCENT : STROKE_OPACITY_PERCENT,
         strokeWeight: OUTLINE_WEIGHT,
       };
@@ -326,12 +354,45 @@ const MARGIN = 20;
  * The labels are the only three strings overlay-paths.ts has pre-baked glyphs for, so this may
  * filter them but must never invent one.
  */
-function colourKeys(shown: { red: boolean; blue: boolean; orange: boolean }): [string, string][] {
-  const keys: [string, string][] = [];
-  if (shown.red) keys.push([SITE_RED, "Project Site"]);
-  if (shown.blue) keys.push([NEIGHBOUR_FILL, "Neighbouring Assets"]);
-  if (shown.orange) keys.push([SHAPE_COLORS.orange, "Council / External Assets"]);
-  return keys;
+const DEFAULT_LEGEND: { color: MarkupColorKey; label: LegendLabel }[] = [
+  { color: "red", label: "Project Site" },
+  { color: "blue", label: "Neighbouring Assets" },
+  { color: "orange", label: "Council / External Assets" },
+];
+
+/** A legend row: the label, and the two colours its lot is drawn in. `stroke` is only set when
+ *  it differs from the fill, so a single-colour row renders exactly as it always has. */
+interface LegendRow {
+  fill: string;
+  stroke: string | null;
+  label: string;
+}
+
+function colourKeys(
+  shown: ReadonlySet<MarkupColorKey>,
+  /** What the colours mean on THIS drawing. Absent = the markup tabs' three rows.
+   *
+   *  A colour means something different per tool — blue is a neighbouring asset on a Building
+   *  Markup and nothing at all on a Closeout Markup, where green is "inspected". Rather than
+   *  teach this file about every tool, the caller states the mapping and the "only show a
+   *  colour the reader can actually see" rule below still does the filtering. */
+  legend?: { color: MarkupColorKey; label: LegendLabel }[]
+): LegendRow[] {
+  return (legend ?? DEFAULT_LEGEND)
+    .filter((row) => shown.has(row.color))
+    .map((row) => {
+      const style = MARKUP_STYLES[row.color];
+      return {
+        fill: style.fill,
+        // ⚠️ The label is drawn the way the LOT is drawn — "Partially inspected" comes out in
+        // orange with a green edge, matching the outline-and-fill on the map. There is no
+        // swatch box in this legend to two-tone instead, and adding one would change every
+        // existing markup's export. Null for a single-colour row, which keeps those
+        // byte-identical.
+        stroke: style.stroke === style.fill ? null : style.stroke,
+        label: row.label,
+      };
+    });
 }
 
 /**
@@ -357,18 +418,20 @@ function colourKeys(shown: { red: boolean; blue: boolean; orange: boolean }): [s
  * panel, its corner radius, its border and the text together, which is the only way they stay in
  * proportion to each other.
  */
-function legendSvg(keys: [string, string][]): string {
+function legendSvg(keys: LegendRow[]): string {
   if (keys.length === 0) return "";
 
   const KEY_ROW_HEIGHT = 30;
-  const width = PANEL_PAD * 2 + Math.max(0, ...keys.map(([, label]) => LEGEND_LABEL_WIDTHS[label] ?? 0));
+  const width = PANEL_PAD * 2 + Math.max(0, ...keys.map(({ label }) => LEGEND_LABEL_WIDTHS[label] ?? 0));
   const height = PANEL_PAD * 2 + keys.length * KEY_ROW_HEIGHT;
 
   const inner = [
     panelRect(0, 0, width, height),
     ...keys.map(
-      ([color, label], i) =>
-        `<path transform="translate(${PANEL_PAD}, ${PANEL_PAD + 22 + i * KEY_ROW_HEIGHT})" d="${LEGEND_LABEL_PATHS[label]}" fill="#${color}" />`
+      ({ fill, stroke, label }, i) =>
+        `<path transform="translate(${PANEL_PAD}, ${PANEL_PAD + 22 + i * KEY_ROW_HEIGHT})" d="${LEGEND_LABEL_PATHS[label]}" fill="#${fill}"` +
+        (stroke ? ` stroke="#${stroke}" stroke-width="1.1" stroke-linejoin="round"` : "") +
+        ` />`
     ),
   ].join("\n      ");
 
@@ -394,6 +457,7 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
   const visible = input.neighbours.filter((n) => !excluded.has(n.id));
   const hideSubject = input.hideSubject ?? false;
   const shapes = input.shapes ?? [];
+  const points = input.points ?? [];
   const flags: string[] = [];
 
   const overlayOutlines = input.overlayOutlines ?? false;
@@ -452,7 +516,18 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
       .map((n) => ({
         at: ringAnchor(n.ring) ?? centroidOf(n.ring),
         label: n.label,
-        color: n.color === "red" ? SITE_RED : NEIGHBOUR_FILL,
+        color: markupColor(n.color),
+        shape: "teardrop" as const,
+      })),
+    // Outline-less properties. A teardrop, same as a lot's, because it means the same thing to
+    // the reader: this numbered item is here. Only the boundary is missing, and the sheet says
+    // so per row.
+    ...points
+      .filter((p) => p.label)
+      .map((p) => ({
+        at: p.at,
+        label: p.label,
+        color: markupColor(p.color),
         shape: "teardrop" as const,
       })),
     ...drawnShapes
@@ -467,13 +542,14 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
   ];
 
   // What colours are actually on the drawing. A colour counts whether it arrived as cadastre
-  // geometry or as a hand-drawn shape: red is the subject boundary or a redrawn site, blue is a
-  // detected lot or a shape inside the property, orange is only ever a drawn shape.
-  const keys = colourKeys({
-    red: !hideSubject || kept.some((n) => n.color === "red") || drawnShapes.some((x) => x.shape.color === "red"),
-    blue: kept.some((n) => n.color !== "red") || drawnShapes.some((x) => x.shape.color === "blue"),
-    orange: drawnShapes.some((x) => x.shape.color === "orange"),
-  });
+  // geometry, as a pin, or as a hand-drawn shape — a key explaining a colour the reader cannot
+  // see invites "so where is the project site?".
+  const shown = new Set<MarkupColorKey>();
+  if (!hideSubject) shown.add("red");
+  for (const n of kept) shown.add(n.color ?? "blue");
+  for (const p of points) shown.add(p.color ?? "blue");
+  for (const x of drawnShapes) shown.add(x.shape.color);
+  const keys = colourKeys(shown, input.legend);
 
   // Chrome at fixed pixel size, composited over the stitched frame in one sharp call.
   const overlay = Buffer.from(

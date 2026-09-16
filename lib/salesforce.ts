@@ -18,9 +18,31 @@ interface SalesforceSession {
   apiVersion: string;
 }
 
+/**
+ * A token, and when to stop trusting it.
+ *
+ * Salesforce access tokens live far longer than a request, and a flow that reads an
+ * Opportunity and then its work orders used to pay a full token round trip PER QUERY. Cached
+ * in module scope, so it is per serverless instance and disappears with it — which is the
+ * right lifetime: nothing is persisted, and a cold start simply fetches one.
+ *
+ * The TTL is deliberately short relative to Salesforce's own session timeout. A token revoked
+ * or expired early still fails as an ordinary 401 from the call that uses it; this is a
+ * round-trip saving, not a correctness mechanism.
+ */
+let cachedSession: { session: SalesforceSession; expiresAt: number } | null = null;
+const TOKEN_TTL_MS = 10 * 60 * 1000;
+
 /** Throws SalesforceConfigError when credentials are absent, so callers can tell
  *  "not set up yet" apart from "Salesforce said no". */
 async function getAccessToken(): Promise<SalesforceSession> {
+  if (cachedSession && cachedSession.expiresAt > Date.now()) return cachedSession.session;
+  const session = await fetchAccessToken();
+  cachedSession = { session, expiresAt: Date.now() + TOKEN_TTL_MS };
+  return session;
+}
+
+async function fetchAccessToken(): Promise<SalesforceSession> {
   const clientId = process.env.SF_CLIENT_ID;
   const clientSecret = process.env.SF_CLIENT_SECRET;
   const loginUrl = process.env.SF_LOGIN_URL ?? "https://login.salesforce.com";
@@ -97,6 +119,45 @@ export async function soqlQuery<T>(soql: string): Promise<T[]> {
 
   const data = (await res.json()) as { records?: T[] };
   return data.records ?? [];
+}
+
+/**
+ * Every row a query returns, following Salesforce's pagination.
+ *
+ * `soqlQuery` reads one page and stops. Salesforce caps a page at 2,000 records and reports
+ * the rest under `nextRecordsUrl`, so a larger result is silently TRUNCATED rather than
+ * refused — which on a work-order query would quietly under-report a job's progress. The
+ * biggest opportunity in the org today is 1,913 work orders; the next one will not be.
+ *
+ * `MAX_PAGES` is a runaway guard, not a real limit: 20 pages is 40,000 records, more than the
+ * whole WorkOrder table. Hitting it throws rather than returning a partial answer.
+ */
+export async function soqlQueryAll<T>(soql: string): Promise<T[]> {
+  const { token, instanceUrl, apiVersion } = await getAccessToken();
+  const MAX_PAGES = 20;
+
+  const first = new URL(`${instanceUrl}/services/data/${apiVersion}/query`);
+  first.searchParams.set("q", soql);
+
+  const all: T[] = [];
+  let next: string | null = first.toString();
+  for (let page = 0; next; page++) {
+    if (page >= MAX_PAGES) {
+      throw new Error(
+        `Salesforce query returned more than ${MAX_PAGES} pages — narrow the query rather than trusting a partial result.`
+      );
+    }
+    const res: Response = await fetch(next, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) throw await salesforceError(res, "Salesforce query");
+    const data = (await res.json()) as { records?: T[]; nextRecordsUrl?: string; done?: boolean };
+    all.push(...(data.records ?? []));
+    // nextRecordsUrl is a PATH on the same instance, not an absolute URL.
+    next = data.nextRecordsUrl ? `${instanceUrl}${data.nextRecordsUrl}` : null;
+  }
+  return all;
 }
 
 export async function updateRecord(

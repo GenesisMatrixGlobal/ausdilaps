@@ -23,7 +23,7 @@ import {
   MIN_SHAPE_WIDTH_M,
 } from "./shapes";
 import { MarkupMap, type MarkupMapCommands } from "./markup-map";
-import { NEIGHBOUR_FILL, SITE_RED } from "@/lib/kml/standard-markup/style";
+import { SITE_RED, markupColor, type MarkupColorKey } from "@/lib/kml/standard-markup/style";
 import { LineItemsTable } from "@/components/tools/shared/quote-lines/line-items-table";
 import { BREAKOUT_XL } from "@/components/tools/shared/quote-lines/styles";
 import { StreetViewLink } from "./street-view-link";
@@ -63,7 +63,7 @@ interface Neighbour {
   ring: LatLng[];
   areaSqm: number | null;
   /** Red for the address a multi-property markup was searched from; absent = blue. */
-  color?: "red" | "blue";
+  color?: MarkupColorKey;
   /** From the state's address layer — see lib/kml/standard-markup/parcels/addresses.ts.
    *  Null when the layer had nothing for this lot, or the lookup failed. */
   street?: string | null;
@@ -1587,7 +1587,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
                       onChange={() => toggleNeighbour(n.id)}
                       className="h-4 w-4 accent-ad-steel"
                     />
-                    {rowBadge(lotKey(n.id), `#${n.color === "red" ? SITE_RED : NEIGHBOUR_FILL}`)}
+                    {rowBadge(lotKey(n.id), `#${markupColor(n.color)}`)}
                     {/* The street address, not "Lot 1" — the numbered badge beside it already
                         ties the row to its pin on the image, so repeating the number as the
                         label spent the only line of text in the row on something already on

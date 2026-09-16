@@ -15,7 +15,7 @@
 
 import type { LatLng } from "@/lib/kml/types";
 import type { ShapeMode } from "@/lib/kml/standard-markup/measure";
-import type { ShapeColorKey } from "@/lib/kml/standard-markup/style";
+import type { MarkupColorKey } from "@/lib/kml/standard-markup/style";
 
 export type LayerKind = "subject" | "lot" | "shape";
 
@@ -53,8 +53,11 @@ export interface MarkupLayer {
   mode: ShapeMode | null;
   /** How the layer is drawn on the markup, so the sheet's row can carry the same swatch the
    *  operator is looking at on the image — and, more usefully, decide internal vs external.
-   *  Subject is red and a detected lot is blue by construction; a shape carries its own. */
-  color: ShapeColorKey;
+   *  Subject is red and a detected lot is blue by construction; a shape carries its own.
+   *
+   *  A LOT may be any markup colour — a Closeout Markup colours one green/red/orange/purple by
+   *  inspection status. A SHAPE is still only the three a hand can draw. */
+  color: MarkupColorKey;
   /** False for a lot the operator unticked, or the subject with hideSubject set. Excluded
    *  layers stay in the list so the UI can show them greyed rather than vanishing. */
   included: boolean;

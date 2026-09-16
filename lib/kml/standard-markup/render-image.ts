@@ -430,7 +430,7 @@ function legendSvg(keys: LegendRow[]): string {
     ...keys.map(
       ({ fill, stroke, label }, i) =>
         `<path transform="translate(${PANEL_PAD}, ${PANEL_PAD + 22 + i * KEY_ROW_HEIGHT})" d="${LEGEND_LABEL_PATHS[label]}" fill="#${fill}"` +
-        (stroke ? ` stroke="#${stroke}" stroke-width="1.1" stroke-linejoin="round"` : "") +
+        (stroke ? ` stroke="#${stroke}" stroke-width="0.8" stroke-linejoin="round"` : "") +
         ` />`
     ),
   ].join("\n      ");

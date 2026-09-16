@@ -12,8 +12,14 @@
  *  exceptions — the Project Site reads as the site because it's red, not because it's
  *  thicker. Expressed in the 500-unit coordinate space Static Maps' `size` describes,
  *  which is also the overlay SVG's viewBox, so the same number means the same thing on
- *  both sides. */
-export const OUTLINE_WEIGHT = 2;
+ *  both sides.
+ *
+ *  Widened from 2 to 4 on 2026-09-16 at Rhys's request — an outline needs to stand out a
+ *  little more, and it is doing real work now that a part-inspected property is told apart
+ *  from a finished one by its EDGE colour. ⚠️ This is the shared constant, so it thickened
+ *  Building Markup's and Measure's exports too; that was the ask ("the outline on
+ *  everything"), and a per-tool weight would break the one-weight rule above. */
+export const OUTLINE_WEIGHT = 4;
 
 /** 6-digit hex, no leading '#': that's the form buildStaticMapUrl wants. The overlay
  *  prefixes '#' itself. */
@@ -37,10 +43,14 @@ export const INSPECTED_GREEN = "16a34a";
 /**
  * How a LOT is drawn: an outline colour and a fill colour.
  *
- * A pair rather than one hex, because "partly inspected" is a green outline with an orange
- * fill — part done, work left — rather than a fifth colour in the palette. That was Rhys's
- * call over a purple, and it is the better one: it reads as what it means, and it adds no new
- * colour to a drawing a client sees.
+ * A pair rather than one hex, because "partly inspected" is a GREEN FILL with an ORANGE
+ * OUTLINE rather than a fifth colour in the palette. That was Rhys's call over a purple, and
+ * it is the better one: it adds no new colour to a drawing a client sees.
+ *
+ * ⚠️ Green INSIDE, orange OUTSIDE — inverted on 2026-09-16 after looking at a real drawing.
+ * The fill is most of what the eye reads, so an orange body made a part-done building look
+ * like nothing had happened there. Green body with an orange edge reads as what it is: mostly
+ * done, something outstanding.
  *
  * ⚠️ Solid fill, NOT stripes. `google.maps.Polygon` takes a single `fillColor` and cannot
  * render a pattern, so a striped export would not match the live map — and preview/export
@@ -55,7 +65,7 @@ export const MARKUP_STYLES = {
   blue: { stroke: NEIGHBOUR_FILL, fill: NEIGHBOUR_FILL },
   orange: { stroke: SHAPE_COLORS.orange, fill: SHAPE_COLORS.orange },
   green: { stroke: INSPECTED_GREEN, fill: INSPECTED_GREEN },
-  partial: { stroke: INSPECTED_GREEN, fill: SHAPE_COLORS.orange },
+  partial: { stroke: SHAPE_COLORS.orange, fill: INSPECTED_GREEN },
 } as const;
 
 export type MarkupColorKey = keyof typeof MARKUP_STYLES;
@@ -65,10 +75,15 @@ export const MARKUP_COLOR_KEYS = Object.keys(MARKUP_STYLES) as [
   ...MarkupColorKey[],
 ];
 
-/** The one colour that stands for a key — its outline. What a badge, a sheet swatch or a
- *  legend label is drawn in when only one colour is available. */
+/**
+ * The one colour that stands for a key, for a badge or anywhere only one is available.
+ *
+ * The FILL, not the outline: the fill is what the eye reads as "the colour of this thing", and
+ * for `partial` the outline is the orange flag rather than the identity. A teardrop over a
+ * part-inspected property is therefore green, matching the lot under it.
+ */
 export function markupColor(key: MarkupColorKey | undefined): string {
-  return MARKUP_STYLES[key ?? "blue"]?.stroke ?? NEIGHBOUR_FILL;
+  return MARKUP_STYLES[key ?? "blue"]?.fill ?? NEIGHBOUR_FILL;
 }
 
 export const FILL_OPACITY_PERCENT = 50;

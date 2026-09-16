@@ -79,15 +79,19 @@ export function FileToSalesforce({
     }
   }
 
+  // Same label and same accent variant as the markup tabs' control (components/tools/shared/
+  // sync-to-salesforce.tsx). The action is the same one — file the PNG to Box, write its link
+  // onto a Salesforce record — so an operator moving between the tools should not have to
+  // work out that a differently-worded button does the thing they already know.
   if (!open) {
     return (
       <button
         type="button"
         onClick={() => setOpen(true)}
         disabled={disabled}
-        className={cn(buttonVariants({ variant: "outline", size: "md" }))}
+        className={cn(buttonVariants({ variant: "accent", size: "md" }))}
       >
-        File to Salesforce
+        Sync To Salesforce
       </button>
     );
   }
@@ -96,7 +100,7 @@ export function FileToSalesforce({
     <div className="w-full rounded-xl border border-ad-border bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-ad-ink">File to Salesforce</p>
+          <p className="text-sm font-medium text-ad-ink">Sync To Salesforce</p>
           <p className="mt-0.5 text-xs text-ad-muted">
             Into {opportunity.name}&apos;s Box folder, then onto its Closeout Markup field.
           </p>

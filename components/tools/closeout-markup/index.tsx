@@ -27,8 +27,9 @@ import { closeoutCsv, numberRows, rowNumbers, type CloseoutRow } from "@/lib/clo
 import { INSPECTION_LEGEND, type CloseoutOpportunity, type UnmappedWorkOrder } from "@/lib/closeout-markup/types";
 import type { CloseoutProperty } from "@/lib/closeout-markup/types";
 import { buildCloseoutFile, parseCloseoutFile } from "@/lib/closeout-markup/file";
-import { markupColor } from "@/lib/kml/standard-markup/style";
+import { MARKUP_STYLES } from "@/lib/kml/standard-markup/style";
 import type { LatLng } from "@/lib/kml/types";
+import { MapLegend } from "./map-legend";
 import { OpportunityCard } from "./opportunity-card";
 import { StatusTable } from "./status-table";
 import { FileToSalesforce } from "./file-to-salesforce";
@@ -315,6 +316,11 @@ export function CloseoutMarkupTool() {
     }
   }
 
+  const drawnColours = useMemo(
+    () => new Set(rows.filter((r) => r.selected).map((r) => r.property.color)),
+    [rows]
+  );
+
   const counts = useMemo(() => {
     const acc: Record<string, number> = {};
     for (const r of rows) acc[r.property.color] = (acc[r.property.color] ?? 0) + 1;
@@ -332,7 +338,7 @@ export function CloseoutMarkupTool() {
               type="button"
               onClick={() => void generate()}
               disabled={generating || overCap || selectedRows.length === 0}
-              className={cn(buttonVariants({ variant: "accent", size: "md" }))}
+              className={cn(buttonVariants({ variant: "primary", size: "md" }))}
             >
               {generating ? "Looking up boundaries…" : generated ? "Regenerate" : "Generate markup"}
             </button>
@@ -394,16 +400,40 @@ export function CloseoutMarkupTool() {
             {error && <span className="text-sm text-ad-orange">{error}</span>}
           </div>
 
-          {/* The summary the drawing is for, in one line. */}
-          <p className="mt-3 text-sm text-ad-muted">
+          {/* What came out of Salesforce, and what it collapsed to. The collapse is the whole
+              point of the tool — work orders are raised per unit, so 257 of them being 39
+              addresses is the number an operator wants to see confirmed before drawing. */}
+          <p className="mt-4 text-sm text-ad-ink">
+            <span className="font-medium">{workOrderCount}</span> work order
+            {workOrderCount === 1 ? "" : "s"} assessed
+            {" · "}
+            <span className="font-medium">{properties.length}</span> unique address
+            {properties.length === 1 ? "" : "es"}
+            {unmapped.length > 0 && (
+              <>
+                {" · "}
+                <span className="font-medium text-ad-orange">{unmapped.length}</span>
+                {/* Explicit: JSX drops the space between a tag and text across a line break. */}
+                {" couldn't be placed"}
+              </>
+            )}
+          </p>
+
+          {/* The colour breakdown, in the drawing's own colours. */}
+          <p className="mt-1.5 text-sm text-ad-muted">
             {(["green", "red", "orange", "partial"] as const)
               .filter((c) => counts[c])
               .map((c) => (
                 <span key={c} className="mr-4 inline-flex items-center gap-1.5">
+                  {/* Two-tone, like the legend and the sheet: a plain green dot here read the
+                      same as "inspected", which is the one distinction this line exists for. */}
                   <span
                     aria-hidden
-                    className="inline-block size-2.5 rounded-full"
-                    style={{ backgroundColor: `#${markupColor(c)}` }}
+                    className="inline-block size-2.5 rounded-full border-2"
+                    style={{
+                      backgroundColor: `#${MARKUP_STYLES[c].fill}`,
+                      borderColor: `#${MARKUP_STYLES[c].stroke}`,
+                    }}
                   />
                   {counts[c]} {INSPECTION_LEGEND[c].toLowerCase()}
                 </span>
@@ -412,7 +442,8 @@ export function CloseoutMarkupTool() {
 
           {generated && (
             <div className={cn("mt-6 flex flex-col gap-4 xl:flex-row xl:items-start", BREAKOUT_XL)}>
-              <div className="w-full min-w-0 xl:flex-1">
+              <div className="relative w-full min-w-0 xl:flex-1">
+                <MapLegend present={drawnColours} />
                 <MarkupMap
                   ref={mapRef}
                   shapes={shapes}

@@ -8,7 +8,13 @@ import { lightningUrl } from "@/lib/quote-lines/resolve";
 import { soqlQuery, soqlQueryAll } from "@/lib/salesforce";
 import { parseSalesforceRecord, soqlEscape } from "@/lib/salesforce-links";
 import { groupWorkOrders } from "./group";
-import type { CloseoutOpportunity, CloseoutProperty, UnmappedWorkOrder, WorkOrderRow } from "./types";
+import type {
+  CloseoutOpportunity,
+  CloseoutProperty,
+  SkippedWorkOrder,
+  UnmappedWorkOrder,
+  WorkOrderRow,
+} from "./types";
 
 /** The Opportunity field holding the Box folder — shared with the markup sync, which reads the
  *  same env var, so a renamed field is fixed in one place. */
@@ -35,6 +41,7 @@ interface WorkOrderRecord {
   Status?: string | null;
   StatusCategory?: string | null;
   Dilap_Stage__c?: string | null;
+  WorkType?: { Name?: string | null } | null;
   Street?: string | null;
   City?: string | null;
   State?: string | null;
@@ -48,7 +55,8 @@ export interface ResolvedCloseout {
   opportunity: CloseoutOpportunity;
   properties: CloseoutProperty[];
   unmapped: UnmappedWorkOrder[];
-  /** Every work order on the opportunity, before grouping — the denominator the sheet shows. */
+  skipped: SkippedWorkOrder[];
+  /** Work orders that WERE inspections — the denominator the sheet shows. Excludes `skipped`. */
   workOrderCount: number;
 }
 
@@ -89,7 +97,7 @@ export async function resolveCloseout(input: string): Promise<ResolvedCloseout> 
   // a single page stops at 2,000 — a truncated read here would under-report a job's progress
   // with nothing on screen to say so.
   const records = await soqlQueryAll<WorkOrderRecord>(
-    `SELECT Id, WorkOrderNumber, Status, StatusCategory, Dilap_Stage__c, ` +
+    `SELECT Id, WorkOrderNumber, Status, StatusCategory, Dilap_Stage__c, WorkType.Name, ` +
       `Street, City, State, PostalCode, Latitude, Longitude, GeocodeAccuracy ` +
       `FROM WorkOrder WHERE Opportunity__c = '${escaped}'`
   );
@@ -100,6 +108,7 @@ export async function resolveCloseout(input: string): Promise<ResolvedCloseout> 
     status: r.Status ?? null,
     statusCategory: r.StatusCategory ?? null,
     stage: r.Dilap_Stage__c ?? null,
+    workType: r.WorkType?.Name ?? null,
     street: r.Street ?? null,
     city: r.City ?? null,
     state: r.State ?? null,
@@ -109,7 +118,7 @@ export async function resolveCloseout(input: string): Promise<ResolvedCloseout> 
     geocodeAccuracy: r.GeocodeAccuracy ?? null,
   }));
 
-  const { properties, unmapped } = groupWorkOrders(rows);
+  const { properties, unmapped, skipped } = groupWorkOrders(rows);
 
   return {
     opportunity: {
@@ -123,6 +132,9 @@ export async function resolveCloseout(input: string): Promise<ResolvedCloseout> 
     },
     properties,
     unmapped,
-    workOrderCount: rows.length,
+    skipped,
+    // ⚠️ INSPECTIONS, not every row Salesforce returned. A billing line is not something that
+    // was assessed, and counting one made the summary overstate the job.
+    workOrderCount: rows.length - skipped.length,
   };
 }

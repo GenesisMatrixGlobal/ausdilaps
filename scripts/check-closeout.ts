@@ -14,6 +14,7 @@ import {
   colorForProperty,
   colorForWorkOrder,
   groupWorkOrders,
+  isInspection,
   looksLikeAddress,
 } from "../lib/closeout-markup/group";
 import type { WorkOrderRow } from "../lib/closeout-markup/types";
@@ -82,16 +83,36 @@ check("8 done, 19 failed", colorForProperty({ green: 8, red: 19, orange: 0 }), "
 check("mostly done, one pending", colorForProperty({ green: 30, red: 0, orange: 1 }), "partial");
 check("empty", colorForProperty({ green: 0, red: 0, orange: 0 }), "orange");
 
+console.log("\nisInspection — matched on WorkType, never on the address text");
+check("a residential unit", isInspection({ workType: "Res Unit" }), true);
+check("a council asset", isInspection({ workType: "Ext/CA GPS" }), true);
+check("common areas", isInspection({ workType: "Common Areas" }), true);
+check("a billing line", isInspection({ workType: "Billing Item" }), false);
+check("training", isInspection({ workType: "Training (Auto)" }), false);
+check("no work type at all", isInspection({ workType: null }), true);
+
 console.log("\ngroupWorkOrders — the real job, end to end");
-const { properties, unmapped } = groupWorkOrders(fixture.rows);
+const { properties, unmapped, skipped } = groupWorkOrders(fixture.rows);
 check("work orders in", fixture.rows.length, 257);
 // 257 work orders, 254 distinct Street strings, 42 distinct coordinates → 39 real properties.
 // That collapse is the entire tool.
 check("properties out", properties.length, 39);
-check("every work order accounted for", properties.reduce((n, p) => n + p.workOrders, 0) + unmapped.length, 257);
-// Only what genuinely is not a property: four admin bookings. Every real address is placed.
-check("unmapped stays small", unmapped.length, 4);
-check("and is only non-addresses", [...new Set(unmapped.map((u) => u.reason))], ["Not a street address"]);
+check(
+  "every work order accounted for",
+  properties.reduce((n, p) => n + p.workOrders, 0) + unmapped.length + skipped.length,
+  257
+);
+// Every real address is placed once the billing lines are out of the way.
+check("nothing left unplaced", unmapped.length, 0);
+check("billing lines skipped", skipped.length, 5);
+check("  and only billing lines", [...new Set(skipped.map((s) => s.workType))], ["Billing Item"]);
+// ⚠️ The `Access Letters` and `Induction` rows are Billing Item, which is why they go by WORK
+// TYPE and not by their text — and so does this one, which reads as a perfectly good address.
+check(
+  "  including one that looks like an address",
+  skipped.some((s) => s.street === "9 Derwent Street (Basement), Billing Item"),
+  true
+);
 
 const byStreet = (s: string) => properties.find((p) => p.street === s);
 
@@ -115,8 +136,10 @@ const newsagency = byStreet("48-50 Connells Point Road");
 check("unit/address tenancies collapse", newsagency?.workOrders, 3);
 
 const derwent = byStreet("9 Derwent Street");
-check("the biggest building", derwent?.workOrders, 75);
-check("  34 done, 41 failed → partial", derwent?.color, "partial");
+// 74, not 75: the billing line that used to be counted here is not an inspection.
+check("the biggest building", derwent?.workOrders, 74);
+check("  33 done, 41 failed → partial", derwent?.color, "partial");
+check("  counts exclude the billing line", derwent?.counts, { green: 33, red: 41, orange: 0 });
 
 // ⚠️ Two different addresses on one geocode are two properties, not one and not none. An
 // earlier rule kept the majority and discarded the rest; at Barangaroo that took 114 of 125
@@ -132,9 +155,9 @@ check(
 check("  and are never given a parcel from the shared point", shared.every((p) => p.precision !== "precise"), true);
 check("  while keeping their own statuses", shared.every((p) => p.workOrders > 0), true);
 
-check("the induction booking is unmapped", unmapped.some((u) => u.street === "Induction"), true);
+check("the induction booking is skipped, not unmapped", skipped.some((s) => s.street === "Induction"), true);
 check("no property is called Induction", properties.some((p) => p.street === "Induction"), false);
-check("every unmapped row has a reason", unmapped.every((u) => u.reason.length > 0), true);
+check("access letters are skipped", skipped.filter((s) => s.street === "Access Letters").length, 3);
 
 // State and suburb come off the work order, so the cadastre provider is chosen with no Google
 // call — which is what makes this tool free to run.
@@ -153,7 +176,9 @@ const colours = properties.reduce<Record<string, number>>((acc, p) => {
   acc[p.color] = (acc[p.color] ?? 0) + 1;
   return acc;
 }, {});
-console.log(`\n  ${properties.length} properties · ${unmapped.length} unmapped · colours ${JSON.stringify(colours)}`);
+console.log(
+  `\n  ${properties.length} properties · ${unmapped.length} unmapped · ${skipped.length} skipped · colours ${JSON.stringify(colours)}`
+);
 
 if (failures) {
   console.log(`\n${failures} check(s) failed.\n`);

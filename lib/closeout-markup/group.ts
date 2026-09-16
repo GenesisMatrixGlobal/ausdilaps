@@ -10,9 +10,29 @@ import type { AuStateCode } from "@/lib/property-sizing/types";
 import type {
   CloseoutProperty,
   InspectionColor,
+  SkippedWorkOrder,
   UnmappedWorkOrder,
   WorkOrderRow,
 } from "./types";
+
+/**
+ * Work types that are not an inspection of anything.
+ *
+ * ⚠️ Matched on WorkType.Name, not on the address text. `Access Letters` and `Induction` both
+ * arrive as `Billing Item` — 422 of the 422 "Access Letters" work orders in the org are that
+ * type — so the work type is the fact and the address string is a symptom. Text matching would
+ * also have missed `9 Derwent Street (Basement), Billing Item`, which reads as a real address
+ * and was inflating that building's inspection count by one.
+ *
+ * Deliberately short. `Engineer Review`, `Video - Processing`, `Site Recon` and `Resolutions`
+ * are office work too, but each can legitimately hang off a property that WAS inspected, and
+ * dropping a real inspection is a worse error than counting an extra desk job.
+ */
+const NON_INSPECTION_WORK_TYPES = new Set(["Billing Item", "Training", "Training (Auto)"]);
+
+export function isInspection(row: Pick<WorkOrderRow, "workType">): boolean {
+  return !NON_INSPECTION_WORK_TYPES.has(row.workType ?? "");
+}
 
 /**
  * Where a work order sits on the green / red / orange scale.
@@ -256,6 +276,8 @@ function pickState(rows: WorkOrderRow[], postcode: string | null): AuStateCode |
 export interface GroupResult {
   properties: CloseoutProperty[];
   unmapped: UnmappedWorkOrder[];
+  /** Never inspections — billing lines, inductions, training. Not failures. */
+  skipped: SkippedWorkOrder[];
 }
 
 /** Same street, same suburb, close together = the same building. Two work orders on one
@@ -275,9 +297,16 @@ const SAME_BUILDING_METRES = 150;
  */
 export function groupWorkOrders(rows: WorkOrderRow[]): GroupResult {
   const unmapped: UnmappedWorkOrder[] = [];
+  const skipped: SkippedWorkOrder[] = [];
   const groups = new Map<string, WorkOrderRow[]>();
 
   for (const row of rows) {
+    // Before anything else: a billing line or an induction was never an inspection, so it must
+    // not reach a property's counts, its colour, or the "couldn't be placed" list.
+    if (!isInspection(row)) {
+      skipped.push({ id: row.id, number: row.number, street: row.street, workType: row.workType });
+      continue;
+    }
     if (row.latitude == null || row.longitude == null) {
       unmapped.push({ id: row.id, number: row.number, street: row.street, reason: "No location on the work order" });
       continue;
@@ -370,7 +399,7 @@ export function groupWorkOrders(rows: WorkOrderRow[]): GroupResult {
       (a.suburb ?? "").localeCompare(b.suburb ?? "") ||
       a.street.localeCompare(b.street, undefined, { numeric: true, sensitivity: "base" })
   );
-  return { properties: merged, unmapped };
+  return { properties: merged, unmapped, skipped };
 }
 
 /** Fold groups that are plainly the same building back together — see SAME_BUILDING_METRES. */

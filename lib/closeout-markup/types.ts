@@ -35,6 +35,9 @@ export interface WorkOrderRow {
   status: string | null;
   statusCategory: string | null;
   stage: string | null;
+  /** WorkType.Name. What decides whether this is an inspection at all — see
+   *  NON_INSPECTION_WORK_TYPES. */
+  workType: string | null;
   street: string | null;
   city: string | null;
   state: string | null;
@@ -44,9 +47,19 @@ export interface WorkOrderRow {
   geocodeAccuracy: string | null;
 }
 
-/** A work order that cannot go on a map, and why. Shown, never silently dropped: a closeout
- *  drawing that quietly omits properties under-reports the job, which is the one failure this
- *  tool must not have. */
+/** A work order that was never an inspection — see NON_INSPECTION_WORK_TYPES. Counted and
+ *  reported separately from `UnmappedWorkOrder`, because this is not a failure to place
+ *  something: there was nothing at a place to begin with. */
+export interface SkippedWorkOrder {
+  id: string;
+  number: string | null;
+  street: string | null;
+  workType: string | null;
+}
+
+/** A work order that IS an inspection but cannot go on a map, and why. Shown, never silently
+ *  dropped: a closeout drawing that quietly omits properties under-reports the job, which is
+ *  the one failure this tool must not have. */
 export interface UnmappedWorkOrder {
   id: string;
   number: string | null;

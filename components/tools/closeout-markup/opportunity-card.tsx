@@ -7,13 +7,19 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
-import type { CloseoutOpportunity, CloseoutProperty, UnmappedWorkOrder } from "@/lib/closeout-markup/types";
+import type {
+  CloseoutOpportunity,
+  CloseoutProperty,
+  SkippedWorkOrder,
+  UnmappedWorkOrder,
+} from "@/lib/closeout-markup/types";
 
 interface ResolveResponse {
   ok: boolean;
   opportunity?: CloseoutOpportunity;
   properties?: CloseoutProperty[];
   unmapped?: UnmappedWorkOrder[];
+  skipped?: SkippedWorkOrder[];
   workOrderCount?: number;
   error?: string;
 }
@@ -30,6 +36,7 @@ export function OpportunityCard({
     opportunity: CloseoutOpportunity;
     properties: CloseoutProperty[];
     unmapped: UnmappedWorkOrder[];
+    skipped: SkippedWorkOrder[];
     workOrderCount: number;
   }) => void;
   onReset: () => void;
@@ -57,6 +64,7 @@ export function OpportunityCard({
         opportunity: json.opportunity,
         properties: json.properties,
         unmapped: json.unmapped ?? [],
+        skipped: json.skipped ?? [],
         workOrderCount: json.workOrderCount ?? 0,
       });
     } catch (e) {

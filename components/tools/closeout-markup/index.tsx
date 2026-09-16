@@ -24,7 +24,12 @@ import { ShapePanel } from "@/components/tools/site-markups/shape-panel";
 import { MIN_POINTS, useShapes } from "@/components/tools/site-markups/shapes";
 import { MAX_CLOSEOUT_LOTS } from "@/lib/closeout-markup/limits";
 import { closeoutCsv, numberRows, rowNumbers, type CloseoutRow } from "@/lib/closeout-markup/rows";
-import { INSPECTION_LEGEND, type CloseoutOpportunity, type UnmappedWorkOrder } from "@/lib/closeout-markup/types";
+import {
+  INSPECTION_LEGEND,
+  type CloseoutOpportunity,
+  type SkippedWorkOrder,
+  type UnmappedWorkOrder,
+} from "@/lib/closeout-markup/types";
 import type { CloseoutProperty } from "@/lib/closeout-markup/types";
 import { buildCloseoutFile, parseCloseoutFile } from "@/lib/closeout-markup/file";
 import { MARKUP_STYLES } from "@/lib/kml/standard-markup/style";
@@ -58,6 +63,7 @@ export function CloseoutMarkupTool() {
   const [opportunity, setOpportunity] = useState<CloseoutOpportunity | null>(null);
   const [properties, setProperties] = useState<CloseoutProperty[]>([]);
   const [unmapped, setUnmapped] = useState<UnmappedWorkOrder[]>([]);
+  const [skipped, setSkipped] = useState<SkippedWorkOrder[]>([]);
   const [workOrderCount, setWorkOrderCount] = useState(0);
   const [deselected, setDeselected] = useState<Set<string>>(new Set());
   const [parcels, setParcels] = useState<Map<string, ResolvedParcel>>(new Map());
@@ -146,12 +152,14 @@ export function CloseoutMarkupTool() {
       opportunity: CloseoutOpportunity;
       properties: CloseoutProperty[];
       unmapped: UnmappedWorkOrder[];
+      skipped: SkippedWorkOrder[];
       workOrderCount: number;
     }) => {
       reset();
       setOpportunity(data.opportunity);
       setProperties(data.properties);
       setUnmapped(data.unmapped);
+      setSkipped(data.skipped);
       setWorkOrderCount(data.workOrderCount);
       // ⚠️ Over the cap, NOTHING is pre-ticked. Pre-ticking the first 60 of 700 in street order
       // would be a drawing of one suburb presented as a drawing of the job, and the operator
@@ -315,6 +323,9 @@ export function CloseoutMarkupTool() {
     setOpportunity(parsed.file.opportunity);
     setProperties(parsed.file.properties.map((p) => p.property));
     setUnmapped(parsed.file.unmapped);
+    // Not stored: a billing line is not part of a drawing, so a reopened file has nothing to
+    // say about one. `unmapped` IS stored — those are real inspections missing from the picture.
+    setSkipped([]);
     setWorkOrderCount(parsed.file.workOrderCount);
     setDeselected(new Set(parsed.file.properties.filter((p) => !p.selected).map((p) => p.property.key)));
     setParcels(
@@ -425,15 +436,26 @@ export function CloseoutMarkupTool() {
             {" · "}
             <span className="font-medium">{properties.length}</span> unique address
             {properties.length === 1 ? "" : "es"}
-            {unmapped.length > 0 && (
-              <>
-                {" · "}
-                <span className="font-medium text-ad-orange">{unmapped.length}</span>
-                {/* Explicit: JSX drops the space between a tag and text across a line break. */}
-                {" couldn't be placed"}
-              </>
-            )}
           </p>
+
+          {/* The exceptions, muted and only when there are any. Two different things: a skipped
+              row was never an inspection, an unplaced one was. Reading them as one number would
+              make a clean job look like it had problems. */}
+          {(skipped.length > 0 || unmapped.length > 0) && (
+            <p className="mt-1 text-xs text-ad-muted">
+              {skipped.length > 0 && (
+                <>
+                  {skipped.length} billing or admin work order{skipped.length === 1 ? "" : "s"} skipped
+                </>
+              )}
+              {skipped.length > 0 && unmapped.length > 0 && " · "}
+              {unmapped.length > 0 && (
+                <span className="text-ad-orange">
+                  {unmapped.length} couldn&apos;t be placed
+                </span>
+              )}
+            </p>
+          )}
 
           {/* The colour breakdown, in the drawing's own colours. */}
           <p className="mt-1.5 text-sm text-ad-muted">

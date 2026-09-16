@@ -10,17 +10,19 @@
 
 import {
   buildOwnerGrid,
+  contentBounds,
   deriveWalls,
+  doorGeometry,
   labelAnchor,
   labelRect,
-  levelBounds,
   openingsFor,
   outdoorIds,
   placeDoors,
   stairGeometry,
   subtractOpenings,
+  type Bounds,
 } from "./grid";
-import { a4Pixels, type Annotation, type FloorPlan, type Level, type Room, type Stair } from "./types";
+import { a4Pixels, type Annotation, type FloorPlan, type Level, type Line, type Room, type Stair } from "./types";
 
 const INK = "#2f343a";
 /** Marks only. Loud on purpose — a number keying the plan to the report has to be findable. */
@@ -33,6 +35,8 @@ export type RenderOptions = {
   dpi?: number;
   /** Rooms to draw with a selection highlight. Preview only. */
   selected?: string[];
+  /** Which level to draw. Every level is its own page. Defaults to the first. */
+  levelIndex?: number;
 };
 
 function esc(s: string): string {
@@ -83,7 +87,7 @@ function fitLabel(text: string, maxWidth: number, baseFont: number): { lines: st
 type Placed = {
   level: Level;
   owner: ReturnType<typeof buildOwnerGrid>;
-  bounds: ReturnType<typeof levelBounds>;
+  bounds: Bounds;
   /** Page offset of the level's top-left drawn cell. */
   ox: number;
   oy: number;
@@ -97,36 +101,42 @@ export function renderPlan(plan: FloorPlan, opts: RenderOptions): string {
   const contentH = page.h - margin * 2;
 
   const grid = plan.grid;
-  const levels = plan.levels.map((level) => {
+  const index = Math.min(Math.max(0, opts.levelIndex ?? 0), plan.levels.length - 1);
+
+  // Bounds for EVERY level, not just the one being drawn, because the scale is shared across
+  // the whole plan: a smaller upper storey must still draw smaller on its own page rather than
+  // swelling to fill it. That was true when levels stacked on one sheet and stays true now.
+  const all = plan.levels.map((level) => {
     const owner = buildOwnerGrid(level.rooms, grid);
-    return { level, owner, bounds: levelBounds(owner, grid) };
+    return { level, owner, bounds: contentBounds(level, owner, grid) };
   });
+  const current = all[index];
 
   const captionFont = Math.round(page.w * 0.026);
   const addressFont = Math.round(page.w * 0.032);
-  const captionGap = captionFont * 2.2;
-  const levelGap = Math.round(page.h * 0.045);
-  const addressBlockH = addressFont * 3.4;
 
-  // One scale for every level, so a smaller upper storey reads as smaller — which is true,
-  // and is what the reference plans show.
-  const totalBoundsH = levels.reduce((sum, l) => sum + l.bounds.h, 0);
-  const maxBoundsW = Math.max(...levels.map((l) => l.bounds.w));
-  const fixedH = captionGap * levels.length + levelGap * (levels.length - 1) + addressBlockH;
-  const scale = Math.min(contentW / maxBoundsW, Math.max(1, contentH - fixedH) / Math.max(1, totalBoundsH));
+  // Address and suburb on ONE line, with the level under it. Nothing is reserved for a title
+  // block that has nothing to put in it.
+  const addressLine = [plan.address.trim(), plan.suburb.trim()].filter(Boolean).join(", ");
+  const levelName = current.level.name.trim();
+  const titleH =
+    (addressLine ? addressFont * 1.5 : 0) +
+    (levelName ? captionFont * 1.6 : 0) +
+    (addressLine || levelName ? addressFont * 0.9 : 0);
 
-  // Title block sits at the HEAD of the sheet, with the drawing centred in what is left below
-  // it. A reader looking for the address should find it before the drawing, not after.
-  const drawnH = totalBoundsH * scale + captionGap * levels.length + levelGap * (levels.length - 1);
-  const bodyTop = margin + addressBlockH;
-  let cursorY = bodyTop + Math.max(0, (contentH - addressBlockH - drawnH) / 2);
+  const bodyH = Math.max(1, contentH - titleH);
+  const widest = Math.max(1, ...all.map((l) => l.bounds.w));
+  const tallest = Math.max(1, ...all.map((l) => l.bounds.h));
+  const scale = Math.min(contentW / widest, bodyH / tallest);
 
-  const placed: Placed[] = levels.map(({ level, owner, bounds }) => {
-    const ox = margin + (contentW - bounds.w * scale) / 2 - bounds.x * scale;
-    const oy = cursorY - bounds.y * scale;
-    cursorY += bounds.h * scale + captionGap + levelGap;
-    return { level, owner, bounds, ox, oy };
-  });
+  const bounds = current.bounds;
+  const placed: Placed = {
+    level: current.level,
+    owner: current.owner,
+    bounds,
+    ox: margin + (contentW - bounds.w * scale) / 2 - bounds.x * scale,
+    oy: margin + titleH + Math.max(0, (bodyH - bounds.h * scale) / 2) - bounds.y * scale,
+  };
 
   const parts: string[] = [];
   parts.push(
@@ -143,37 +153,25 @@ export function renderPlan(plan: FloorPlan, opts: RenderOptions): string {
       `paint-order:stroke;stroke:#ffffff;stroke-linejoin:round}</style>`
   );
 
-  if (opts.mode === "preview") parts.push(previewGrid(placed, grid, scale));
+  if (opts.mode === "preview") parts.push(previewGrid(placed, scale));
 
-  for (const p of placed) {
-    parts.push(drawLevel(p, grid, scale, opts));
-    const capY = p.oy + (p.bounds.y + p.bounds.h) * scale + captionGap * 0.62;
-    parts.push(
-      `<text class="cap" x="${r2(margin + contentW / 2)}" y="${r2(capY)}" font-size="${captionFont}">${esc(
-        p.level.name
-      )}</text>`
-    );
-  }
-
-  const addrY = margin + addressFont * 1.1;
+  parts.push(drawLevel(placed, grid, scale, opts));
 
   // The arrow sits in the title band beside the address, clear of the drawing. Anchoring it to
   // the drawing's own corner collided with the building whenever the plan filled the content
   // width, which a wide single-storey layout always does.
   parts.push(northArrow(plan.north, margin + contentW, margin, page.w * 0.075));
 
-  if (plan.address.trim()) {
+  let ty = margin + addressFont * 1.1;
+  if (addressLine) {
     parts.push(
-      `<text class="cap" x="${r2(page.w / 2)}" y="${r2(addrY)}" font-size="${addressFont}">${esc(
-        plan.address.trim()
-      )}</text>`
+      `<text class="cap" x="${r2(page.w / 2)}" y="${r2(ty)}" font-size="${addressFont}">${esc(addressLine)}</text>`
     );
+    ty += captionFont * 1.6;
   }
-  if (plan.suburb.trim()) {
+  if (levelName) {
     parts.push(
-      `<text class="cap" x="${r2(page.w / 2)}" y="${r2(addrY + addressFont * 1.3)}" font-size="${addressFont}">~${esc(
-        plan.suburb.trim()
-      )}~</text>`
+      `<text class="cap" x="${r2(page.w / 2)}" y="${r2(ty)}" font-size="${captionFont}">${esc(levelName)}</text>`
     );
   }
 
@@ -181,9 +179,9 @@ export function renderPlan(plan: FloorPlan, opts: RenderOptions): string {
   return parts.join("");
 }
 
-function previewGrid(placed: Placed[], grid: { w: number; h: number }, scale: number): string {
+function previewGrid(p: Placed, scale: number): string {
   const lines: string[] = [];
-  for (const p of placed) {
+  {
     const { x, y, w, h } = p.bounds;
     for (let gx = x; gx <= x + w; gx++)
       lines.push(
@@ -254,43 +252,104 @@ function drawLevel(p: Placed, grid: { w: number; h: number }, scale: number, opt
   );
 
   for (const door of doors) {
-    if (door.kind === "opening") continue;
-    const w = (door.to - door.from) * scale;
-    // Hinging at the far end reverses the along-wall direction, which mirrors the arc.
-    const along = door.hingeAt === "from" ? 1 : -1;
-    const hingeAlong = door.hingeAt === "from" ? door.from : door.to;
-    const hx = door.orient === "v" ? ox + door.pos * scale : ox + hingeAlong * scale;
-    const hy = door.orient === "v" ? oy + hingeAlong * scale : oy + door.pos * scale;
-    const tip =
-      door.orient === "v" ? { x: hx + door.swingDir * w, y: hy } : { x: hx, y: hy + door.swingDir * w };
-    const jamb =
-      door.orient === "v" ? { x: hx, y: hy + along * w } : { x: hx + along * w, y: hy };
-    const turns = door.swingDir * along === 1;
-    const sweep = door.orient === "v" ? (turns ? 1 : 0) : turns ? 0 : 1;
+    const g = doorGeometry(door);
+    const px = (x: number) => r2(ox + x * scale);
+    const py = (y: number) => r2(oy + y * scale);
     const dash = door.confidence === "inferred" ? ` stroke-dasharray="${r2(scale * 0.14)}"` : "";
-    out.push(
-      `<path d="M${r2(hx)} ${r2(hy)}L${r2(tip.x)} ${r2(tip.y)}A${r2(w)} ${r2(w)} 0 0 ${sweep} ${r2(jamb.x)} ${r2(
-        jamb.y
-      )}" stroke="${INK}" stroke-width="${r2(internal * 0.8)}" fill="none"${dash}/>`
-    );
+    const stroke = `stroke="${INK}" stroke-width="${r2(internal * 0.8)}" fill="none"${dash}`;
+
+    for (const leaf of g.leaves) {
+      const rad = r2(leaf.radius * scale);
+      out.push(
+        `<path d="M${px(leaf.hinge.x)} ${py(leaf.hinge.y)}L${px(leaf.tip.x)} ${py(leaf.tip.y)}` +
+          `A${rad} ${rad} 0 0 ${leaf.sweep} ${px(leaf.jamb.x)} ${py(leaf.jamb.y)}" ${stroke}/>`
+      );
+    }
+    for (const [x1, y1, x2, y2] of g.panels) {
+      out.push(`<path d="M${px(x1)} ${py(y1)}L${px(x2)} ${py(y2)}" ${stroke}/>`);
+    }
   }
 
-  // Fences are stored, not derived, so they draw from the level directly. Same dashed grey as
-  // an outdoor area's edge — both say "boundary, not wall".
-  if (level.fences.length > 0) {
-    const runs = level.fences.map((f) =>
-      f.orient === "v"
-        ? `M${r2(ox + f.pos * scale)} ${r2(oy + f.from * scale)}V${r2(oy + f.to * scale)}`
-        : `M${r2(ox + f.from * scale)} ${r2(oy + f.pos * scale)}H${r2(ox + f.to * scale)}`
-    );
-    out.push(
-      `<path d="${runs.join("")}" stroke="${HAIRLINE}" stroke-width="${r2(internal)}" fill="none" ` +
-        `stroke-dasharray="${r2(scale * 0.3)} ${r2(scale * 0.2)}"/>`
-    );
-  }
+  out.push(drawLines(level, ox, oy, scale, internal));
 
   for (const room of level.rooms) out.push(roomLabel(room, ox, oy, scale));
   for (const ann of level.annotations) out.push(annotationChip(ann, level, ox, oy, scale));
+
+  return out.join("");
+}
+
+/** How wide a gate is, in cells. */
+const GATE_CELLS = 1;
+
+/**
+ * Drawn lines: fences, free-standing walls, and counters.
+ *
+ * Stored rather than derived, so they come straight off the level. A fence keeps the dashed
+ * grey an outdoor area's edge uses — both say "boundary, not wall" — while a drawn wall is
+ * indistinguishable from a derived one, because it is one. A counter gets two thin parallel
+ * lines: a bench has depth, and it must not read as a wall you cannot walk past.
+ */
+function drawLines(level: Level, ox: number, oy: number, scale: number, internal: number): string {
+  if (level.lines.length === 0) return "";
+
+  const px = (x: number) => r2(ox + x * scale);
+  const py = (y: number) => r2(oy + y * scale);
+  const runs: Record<Line["kind"], string[]> = { fence: [], wall: [], counter: [] };
+  const gates: string[] = [];
+
+  /** A segment along the line, `off` it perpendicularly. */
+  const seg = (line: Line, from: number, to: number, off = 0) =>
+    line.orient === "v"
+      ? `M${px(line.pos + off)} ${py(from)}V${py(to)}`
+      : `M${px(from)} ${py(line.pos + off)}H${px(to)}`;
+
+  for (const line of level.lines) {
+    const gateFrom = line.gate;
+    const gateTo = gateFrom === undefined ? 0 : Math.min(gateFrom + GATE_CELLS, line.to);
+    const open = gateFrom !== undefined && gateFrom > line.from && gateFrom < line.to;
+
+    const pieces: Array<[number, number]> = open
+      ? [[line.from, gateFrom!], [gateTo, line.to]].filter(([a, b]) => b > a) as Array<[number, number]>
+      : [[line.from, line.to]];
+
+    for (const [from, to] of pieces) {
+      if (line.kind === "counter") {
+        runs.counter.push(seg(line, from, to, -0.07), seg(line, from, to, 0.07));
+      } else {
+        runs[line.kind].push(seg(line, from, to));
+      }
+    }
+
+    // The gate leaf: hinged at the near jamb, swung a quarter turn off the line.
+    if (open) {
+      const w = gateTo - gateFrom!;
+      const hinge = line.orient === "v" ? [line.pos, gateFrom!] : [gateFrom!, line.pos];
+      const tip = line.orient === "v" ? [line.pos + w, gateFrom!] : [gateFrom!, line.pos + w];
+      const jamb = line.orient === "v" ? [line.pos, gateTo] : [gateTo, line.pos];
+      const rad = r2(w * scale);
+      gates.push(
+        `M${px(hinge[0])} ${py(hinge[1])}L${px(tip[0])} ${py(tip[1])}` +
+          `A${rad} ${rad} 0 0 ${line.orient === "v" ? 1 : 0} ${px(jamb[0])} ${py(jamb[1])}`
+      );
+    }
+  }
+
+  const out: string[] = [];
+  if (runs.fence.length > 0)
+    out.push(
+      `<path d="${runs.fence.join("")}" stroke="${HAIRLINE}" stroke-width="${r2(internal)}" fill="none" ` +
+        `stroke-dasharray="${r2(scale * 0.3)} ${r2(scale * 0.2)}"/>`
+    );
+  if (runs.wall.length > 0)
+    out.push(
+      `<path d="${runs.wall.join("")}" stroke="${INK}" stroke-width="${r2(internal)}" fill="none" stroke-linecap="butt"/>`
+    );
+  if (runs.counter.length > 0)
+    out.push(
+      `<path d="${runs.counter.join("")}" stroke="${INK}" stroke-width="${r2(internal * 0.6)}" fill="none"/>`
+    );
+  if (gates.length > 0)
+    out.push(`<path d="${gates.join("")}" stroke="${HAIRLINE}" stroke-width="${r2(internal)}" fill="none"/>`);
 
   return out.join("");
 }

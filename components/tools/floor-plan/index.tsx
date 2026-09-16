@@ -13,11 +13,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { downloadBlob } from "@/components/tools/shared/download";
-import { buildOwnerGrid, outdoorIds, validateLevel, wallNeighbours } from "@/lib/floor-plan/grid";
+import {
+  buildOwnerGrid,
+  doorWalls,
+  outdoorIds,
+  validateLevel,
+  wallNeighbours,
+} from "@/lib/floor-plan/grid";
 import {
   addDoor,
   deleteDoor,
-  deleteFence,
+  deleteLine,
   deleteMark,
   deleteRoom,
   deleteStair,
@@ -27,6 +33,7 @@ import {
   restoreWall,
   splitRoom,
   updateDoor,
+  updateLine,
   updateMark,
   updateStair,
   type EditResult,
@@ -42,7 +49,10 @@ const MAX_UNDO = 40;
 const EXPORT_DPI = 300;
 
 function slugify(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "floor-plan";
+  return (
+    value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 60) ||
+    "floor-plan"
+  );
 }
 
 function readAsBase64(file: Blob): Promise<string> {
@@ -184,8 +194,8 @@ export function FloorPlanTool() {
   const level = plan?.levels[levelIndex];
 
   const svg = useMemo(
-    () => (plan && view === "sheet" ? renderPlan(plan, { mode: "preview", dpi: 150 }) : null),
-    [plan, view]
+    () => (plan && view === "sheet" ? renderPlan(plan, { mode: "preview", dpi: 150, levelIndex }) : null),
+    [plan, view, levelIndex]
   );
 
   const issues = useMemo(() => {
@@ -394,9 +404,9 @@ export function FloorPlanTool() {
    * download become the same rasteriser rather than two that can disagree, and a ~2.4MB round
    * trip disappears.
    */
-  const renderPng = useCallback(async (target: FloorPlan): Promise<Blob> => {
+  const renderPng = useCallback(async (target: FloorPlan, index: number): Promise<Blob> => {
     const page = a4Pixels(EXPORT_DPI, target.orientation);
-    const svg = renderPlan(target, { mode: "export", dpi: EXPORT_DPI });
+    const svg = renderPlan(target, { mode: "export", dpi: EXPORT_DPI, levelIndex: index });
 
     const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
     try {
@@ -426,20 +436,25 @@ export function FloorPlanTool() {
     }
   }, []);
 
+  /**
+   * One PNG per level, named for it.
+   *
+   * Every level is its own page now, so a two-storey plan downloads two files. Sequential
+   * rather than zipped: the reports team drops these straight into a document, and three files
+   * already in Downloads beats one they have to unpack. (fflate is a dependency if that ever
+   * changes.)
+   */
   async function exportPng() {
     if (!plan) return;
     setError(null);
     setBusy("export");
     try {
-      const blob = await renderPng(plan);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${slugify(plan.address || "floor-plan")}-floor-plan.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      const stem = slugify(plan.address || "floor-plan");
+      for (const [i, lvl] of plan.levels.entries()) {
+        const blob = await renderPng(plan, i);
+        const name = plan.levels.length > 1 ? `${stem}-${slugify(lvl.name || `level-${i + 1}`)}` : stem;
+        downloadBlob(blob, `${name}-floor-plan.png`, "image/png");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not render the plan.");
     } finally {
@@ -451,6 +466,21 @@ export function FloorPlanTool() {
     level && selection?.type === "room" ? level.rooms.find((r) => r.id === selection.id) : undefined;
   const selectedDoor =
     level && selection?.type === "door" ? level.doors.find((d) => d.id === selection.id) : undefined;
+
+  /** Every wall the selected door could hang on — more than one where its rooms meet in an L. */
+  const selectedDoorWalls = useMemo(() => {
+    if (!plan || !level || !selectedDoor) return [];
+    return doorWalls(buildOwnerGrid(level.rooms, plan.grid), plan.grid, selectedDoor.a, selectedDoor.b);
+  }, [plan, level, selectedDoor]);
+
+  const selectedDoorWallIndex = selectedDoor?.wall
+    ? Math.max(
+        0,
+        selectedDoorWalls.findIndex(
+          (w) => w.orient === selectedDoor.wall!.orient && w.pos === selectedDoor.wall!.pos
+        )
+      )
+    : 0;
 
   const roomLabel = (id: string) =>
     id === OUTSIDE ? "Outside" : level?.rooms.find((r) => r.id === id)?.label || "Unnamed";
@@ -744,8 +774,10 @@ export function FloorPlanTool() {
                 <div className="mt-3 flex gap-1 rounded-lg border border-ad-border p-1">
                   {(
                     [
-                      { key: "swing", label: "Swing door" },
-                      { key: "opening", label: "Open (no door)" },
+                      { key: "swing", label: "Swing" },
+                      { key: "double", label: "Double" },
+                      { key: "sliding", label: "Sliding" },
+                      { key: "opening", label: "Open" },
                     ] as const
                   ).map((k) => (
                     <button
@@ -753,7 +785,7 @@ export function FloorPlanTool() {
                       type="button"
                       onClick={() => apply(updateDoor(level, selectedDoor.id, { kind: k.key }))}
                       className={cn(
-                        "flex-1 rounded px-2 py-1 text-xs font-medium",
+                        "flex-1 rounded px-1.5 py-1 text-xs font-medium",
                         selectedDoor.kind === k.key
                           ? "bg-ad-steel/10 text-ad-ink"
                           : "text-ad-muted hover:text-ad-ink"
@@ -766,7 +798,7 @@ export function FloorPlanTool() {
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    disabled={selectedDoor.kind === "opening"}
+                    disabled={selectedDoor.kind === "opening" || selectedDoor.kind === "sliding"}
                     onClick={() =>
                       apply(
                         updateDoor(level, selectedDoor.id, {
@@ -792,6 +824,26 @@ export function FloorPlanTool() {
                     Flip hinge
                   </button>
                 </div>
+                {selectedDoorWalls.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const at = selectedDoorWalls.findIndex(
+                        (w) =>
+                          selectedDoor.wall &&
+                          w.orient === selectedDoor.wall.orient &&
+                          w.pos === selectedDoor.wall.pos
+                      );
+                      const next = selectedDoorWalls[(at + 1) % selectedDoorWalls.length];
+                      // Clear `at` too: an offset measured along the old wall means nothing
+                      // on the new one, and keeping it would land the door somewhere arbitrary.
+                      apply(updateDoor(level, selectedDoor.id, { wall: next, at: undefined }));
+                    }}
+                    className="mt-2 w-full rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
+                  >
+                    Next wall — {selectedDoorWallIndex + 1} of {selectedDoorWalls.length}
+                  </button>
+                )}
                 {selectedDoor.at !== undefined && (
                   <button
                     type="button"
@@ -927,39 +979,59 @@ export function FloorPlanTool() {
               </p>
             </Panel>
 
-            <Panel title="Fences" count={level.fences.length}>
-              {level.fences.length === 0 ? (
+            <Panel title="Lines" count={level.lines.length}>
+              {level.lines.length === 0 ? (
                 <p className="mt-2 text-xs text-ad-muted">
                   None. Switch the canvas to <span className="font-medium text-ad-ink">Fence</span>,
                   then drag along a grid line to draw one.
                 </p>
               ) : (
                 <ul className="mt-2 space-y-1">
-                  {level.fences.map((f, i) => {
-                    const isSelected = selection?.type === "fence" && selection.id === f.id;
+                  {level.lines.map((line, i) => {
+                    const isSelected = selection?.type === "line" && selection.id === line.id;
+                    const hasGate = line.gate !== undefined;
                     return (
-                      <li key={f.id} className="flex items-center gap-1">
+                      <li key={line.id} className="flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => setSelection({ type: "fence", id: f.id })}
+                          onClick={() => setSelection({ type: "line", id: line.id })}
                           className={cn(
-                            "flex-1 truncate rounded px-2 py-1 text-left text-xs",
+                            "flex-1 truncate rounded px-2 py-1 text-left text-xs capitalize",
                             isSelected
                               ? "bg-ad-steel/10 font-medium text-ad-ink"
                               : "text-ad-muted hover:bg-ad-surface hover:text-ad-ink"
                           )}
                         >
-                          Fence {i + 1} · {f.orient === "v" ? "vertical" : "horizontal"} ·{" "}
-                          {Math.round(f.to - f.from)} cells
+                          {line.kind} {i + 1} · {line.orient === "v" ? "vertical" : "horizontal"} ·{" "}
+                          {Math.round(line.to - line.from)} cells
                         </button>
                         <button
                           type="button"
-                          aria-label={`Delete fence ${i + 1}`}
+                          onClick={() =>
+                            apply(
+                              updateLine(level, line.id, {
+                                // Centre the gate on the run; drag it later if it wants moving.
+                                gate: hasGate ? undefined : Math.round((line.from + line.to) / 2 - 0.5),
+                              })
+                            )
+                          }
+                          className={cn(
+                            "shrink-0 rounded px-2 py-1 text-xs",
+                            hasGate
+                              ? "bg-ad-steel/10 font-medium text-ad-ink"
+                              : "text-ad-muted hover:bg-ad-surface hover:text-ad-ink"
+                          )}
+                        >
+                          Gate
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Delete ${line.kind} ${i + 1}`}
                           onClick={() => {
-                            apply(deleteFence(level, f.id));
+                            apply(deleteLine(level, line.id));
                             if (isSelected) setSelection(null);
                           }}
-                          className="rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-orange/10 hover:text-ad-ink"
+                          className="shrink-0 rounded px-2 py-1 text-xs text-ad-muted hover:bg-ad-orange/10 hover:text-ad-ink"
                         >
                           ✕
                         </button>
@@ -1230,7 +1302,10 @@ export function FloorPlanTool() {
 
             <div className="rounded-xl border border-ad-border bg-white p-5">
               <h3 className="text-sm font-semibold text-ad-ink">Export</h3>
-              <p className="mt-1 text-xs text-ad-muted">A4 portrait, 300 DPI — 2480 × 3508.</p>
+              <p className="mt-1 text-xs text-ad-muted">
+                A4 portrait, 300 DPI — 2480 × 3508.
+                {plan.levels.length > 1 && ` One file per level — ${plan.levels.length} downloads.`}
+              </p>
               <button
                 type="button"
                 onClick={() => void exportPng()}

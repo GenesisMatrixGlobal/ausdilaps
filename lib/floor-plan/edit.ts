@@ -12,7 +12,7 @@ import {
   OUTSIDE,
   type Annotation,
   type Door,
-  type Fence,
+  type Line,
   type Level,
   type RemovedWall,
   type Room,
@@ -275,16 +275,25 @@ export function splitRoom(level: Level, grid: Grid, roomId: string, axis: "v" | 
   return fromOwnerMap(seeded, grid, map);
 }
 
-let fenceSeq = 0;
+let lineSeq = 0;
 
-export function addFence(level: Level, fence: Omit<Fence, "id">): EditResult {
-  if (fence.to - fence.from <= 0) return { ok: false, error: "That fence has no length." };
-  const next: Fence = { ...fence, id: `fence-${Date.now().toString(36)}-${fenceSeq++}` };
-  return { ok: true, level: { ...level, fences: [...level.fences, next] } };
+/** Add a drawn line — a fence, a free-standing wall, or a counter. */
+export function addLine(level: Level, line: Omit<Line, "id">): EditResult {
+  if (line.to - line.from <= 0) return { ok: false, error: "That line has no length." };
+  const next: Line = { ...line, id: `line-${Date.now().toString(36)}-${lineSeq++}` };
+  return { ok: true, level: { ...level, lines: [...level.lines, next] } };
 }
 
-export function deleteFence(level: Level, fenceId: string): EditResult {
-  return { ok: true, level: { ...level, fences: level.fences.filter((f) => f.id !== fenceId) } };
+export function updateLine(level: Level, lineId: string, patch: Partial<Line>): EditResult {
+  const idx = level.lines.findIndex((l) => l.id === lineId);
+  if (idx === -1) return { ok: false, error: "Line not found." };
+  const lines = [...level.lines];
+  lines[idx] = { ...lines[idx], ...patch };
+  return { ok: true, level: { ...level, lines } };
+}
+
+export function deleteLine(level: Level, lineId: string): EditResult {
+  return { ok: true, level: { ...level, lines: level.lines.filter((l) => l.id !== lineId) } };
 }
 
 let wallSeq = 0;

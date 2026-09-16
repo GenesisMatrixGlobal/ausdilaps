@@ -17,6 +17,7 @@ import {
   boundariesBetween,
   buildOwnerGrid,
   deriveWalls,
+  doorGeometry,
   labelAnchor,
   openingsFor,
   outdoorIds,
@@ -25,7 +26,7 @@ import {
   subtractOpenings,
 } from "@/lib/floor-plan/grid";
 import {
-  addFence,
+  addLine,
   addMark,
   addStair,
   moveRoom,
@@ -40,7 +41,7 @@ import type { FloorPlan, Level } from "@/lib/floor-plan/types";
 export type Selection =
   | { type: "room"; id: string }
   | { type: "door"; id: string }
-  | { type: "fence"; id: string }
+  | { type: "line"; id: string }
   | { type: "mark"; id: string }
   | { type: "stair"; id: string }
   | null;
@@ -220,11 +221,12 @@ export function FloorPlanEditor({
       const from = Math.min(drag.from, drag.to);
       const to = Math.max(drag.from, drag.to);
       if (to > from) {
-        const result = addFence(plan.levels[levelIndex], {
+        const result = addLine(plan.levels[levelIndex], {
           orient: drag.orient,
           pos: drag.pos,
           from,
           to,
+          kind: "fence",
         });
         if (result.ok) onChange(result.level);
         else onError(result.error);
@@ -462,30 +464,52 @@ export function FloorPlanEditor({
         </g>
       )}
 
-      {/* Committed fences, plus the run being drawn. Same dashed grey the A4 renderer uses. */}
+      {/* Drawn lines, plus the run being drawn. Must match drawLines() in render.ts. */}
       <g fill="none" pointerEvents={drawing ? "none" : "auto"}>
-        {level.fences.map((f) => {
-          const isSelected = selection?.type === "fence" && selection.id === f.id;
-          const p1 = f.orient === "v" ? { x: f.pos, y: f.from } : { x: f.from, y: f.pos };
-          const p2 = f.orient === "v" ? { x: f.pos, y: f.to } : { x: f.to, y: f.pos };
+        {level.lines.map((line) => {
+          const isSelected = selection?.type === "line" && selection.id === line.id;
+          const gateTo = line.gate === undefined ? 0 : Math.min(line.gate + 1, line.to);
+          const open = line.gate !== undefined && line.gate > line.from && line.gate < line.to;
+          const pieces: Array<[number, number]> = open
+            ? ([[line.from, line.gate!], [gateTo, line.to]].filter(([a, b]) => b > a) as Array<[number, number]>)
+            : [[line.from, line.to]];
+          const fence = line.kind === "fence";
+          const offsets = line.kind === "counter" ? [-0.07, 0.07] : [0];
+          const stroke = isSelected ? STEEL : fence ? "#9aa4ae" : INK;
+
+          const at = (along: number, off: number) =>
+            line.orient === "v" ? { x: line.pos + off, y: along } : { x: along, y: line.pos + off };
+
           return (
-            <g key={f.id}>
+            <g key={line.id}>
+              {pieces.flatMap(([from, to], i) =>
+                offsets.map((off, j) => {
+                  const p1 = at(from, off);
+                  const p2 = at(to, off);
+                  return (
+                    <line
+                      key={`${i}-${j}`}
+                      x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+                      stroke={stroke}
+                      strokeWidth={line.kind === "counter" ? 0.055 : isSelected ? 0.12 : 0.09}
+                      strokeDasharray={fence ? "0.3 0.2" : undefined}
+                      pointerEvents="none"
+                    />
+                  );
+                })
+              )}
+              {/* One grab line over the whole run, gate included — the gap is not a hole you
+                  should have to aim around to select the thing. */}
               <line
-                x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-                stroke={isSelected ? STEEL : "#9aa4ae"}
-                strokeWidth={isSelected ? 0.12 : 0.09}
-                strokeDasharray="0.3 0.2"
-                pointerEvents="none"
-              />
-              <line
-                x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+                x1={at(line.from, 0).x} y1={at(line.from, 0).y}
+                x2={at(line.to, 0).x} y2={at(line.to, 0).y}
                 stroke="transparent"
                 strokeWidth={0.5}
                 pointerEvents="all"
                 style={{ cursor: "pointer" }}
                 onPointerDown={(e) => {
                   e.stopPropagation();
-                  onSelect({ type: "fence", id: f.id });
+                  onSelect({ type: "line", id: line.id });
                 }}
               />
             </g>
@@ -506,41 +530,138 @@ export function FloorPlanEditor({
       </g>
 
       <g pointerEvents={drawing ? "none" : "auto"}>
+        {level.stairs.map((stair) => {
+          const g = stairGeometry(stair);
+          const isSelected = selection?.type === "stair" && selection.id === stair.id;
+          const ink = isSelected ? STEEL : INK;
+          return (
+            <g
+              key={stair.id}
+              style={{ cursor: "move" }}
+              onPointerDown={(e) => {
+                onSelect({ type: "stair", id: stair.id });
+                begin(e, {
+                  mode: "stair",
+                  stairId: stair.id,
+                  from: toGrid(e),
+                  base: plan.levels[levelIndex],
+                  baseAt: { x: stair.x, y: stair.y },
+                });
+              }}
+            >
+              <rect
+                x={g.outline.x}
+                y={g.outline.y}
+                width={g.outline.w}
+                height={g.outline.h}
+                fill="#ffffff"
+                stroke={ink}
+                strokeWidth={isSelected ? 0.09 : 0.06}
+              />
+              <g fill="none" stroke={ink} strokeWidth={0.05} pointerEvents="none">
+                {g.treads.map(([x1, y1, x2, y2], i) => (
+                  <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} />
+                ))}
+                <line x1={g.arrow.x1} y1={g.arrow.y1} x2={g.arrow.x2} y2={g.arrow.y2} />
+              </g>
+              <polygon
+                points={g.arrow.head.map(([x, y]) => `${x},${y}`).join(" ")}
+                fill={ink}
+                pointerEvents="none"
+              />
+            </g>
+          );
+        })}
+        {drag?.mode === "stair-draw" && (
+          <rect
+            x={Math.min(drag.x0, drag.x1)}
+            y={Math.min(drag.y0, drag.y1)}
+            width={Math.abs(drag.x1 - drag.x0)}
+            height={Math.abs(drag.y1 - drag.y0)}
+            fill={STEEL}
+            fillOpacity={0.12}
+            stroke={STEEL}
+            strokeWidth={0.08}
+            pointerEvents="none"
+          />
+        )}
+      </g>
+
+      {/* Must match the wall styling in lib/floor-plan/render.ts — this is the one thing the
+          editor draws itself rather than sharing, so the two have to be kept in step. */}
+      <g fill="none" strokeLinecap="butt" pointerEvents="none">
+        {walls.flatMap((seg, i) =>
+          subtractOpenings(seg, openings).map((piece, j) => {
+            const isArea = seg.kind === "area";
+            const props = {
+              stroke: isArea ? "#9aa4ae" : INK,
+              strokeWidth: seg.kind === "external" ? 0.16 : 0.09,
+              strokeDasharray: isArea ? "0.3 0.2" : undefined,
+            };
+            return seg.orient === "v" ? (
+              <line key={`${i}-${j}`} x1={seg.pos} y1={piece.from} x2={seg.pos} y2={piece.to} {...props} />
+            ) : (
+              <line key={`${i}-${j}`} x1={piece.from} y1={seg.pos} x2={piece.to} y2={seg.pos} {...props} />
+            );
+          })
+        )}
+      </g>
+
+      {highlightWall && (
+        <g pointerEvents="none">
+          {boundariesBetween(owner, grid, highlightWall.a, highlightWall.b).map((b, i) => (
+            <line
+              key={i}
+              x1={b.orient === "v" ? b.pos : b.index}
+              y1={b.orient === "v" ? b.index : b.pos}
+              x2={b.orient === "v" ? b.pos : b.index + 1}
+              y2={b.orient === "v" ? b.index + 1 : b.pos}
+              stroke={STEEL}
+              strokeWidth={0.3}
+              strokeOpacity={0.45}
+              strokeLinecap="butt"
+            />
+          ))}
+        </g>
+      )}
+
+
+      <g pointerEvents={drawing ? "none" : "auto"}>
       {doors.map((door) => {
         const isSelected = selection?.type === "door" && selection.id === door.id;
-        const w = door.to - door.from;
-        const along = door.hingeAt === "from" ? 1 : -1;
-        const hingeAlong = door.hingeAt === "from" ? door.from : door.to;
-        const hx = door.orient === "v" ? door.pos : hingeAlong;
-        const hy = door.orient === "v" ? hingeAlong : door.pos;
-        const tip =
-          door.orient === "v"
-            ? { x: hx + door.swingDir * w, y: hy }
-            : { x: hx, y: hy + door.swingDir * w };
-        const jamb =
-          door.orient === "v" ? { x: hx, y: hy + along * w } : { x: hx + along * w, y: hy };
-        const turns = door.swingDir * along === 1;
-        const sweep = door.orient === "v" ? (turns ? 1 : 0) : turns ? 0 : 1;
-
-        const midAlong = (door.from + door.to) / 2;
-        const midX = door.orient === "v" ? door.pos : midAlong;
-        const midY = door.orient === "v" ? midAlong : door.pos;
+        // Same geometry the A4 renderer draws from, so the canvas cannot disagree with the
+        // sheet about what a door looks like.
+        const g = doorGeometry(door);
+        const stroke = isSelected ? STEEL : INK;
+        const width = isSelected ? 0.1 : 0.07;
 
         return (
           <g key={door.id}>
-            <path
-              d={`M${hx} ${hy}L${tip.x} ${tip.y}A${w} ${w} 0 0 ${sweep} ${jamb.x} ${jamb.y}`}
-              stroke={isSelected ? STEEL : INK}
-              strokeWidth={isSelected ? 0.1 : 0.07}
-              fill="none"
-              strokeDasharray={door.confidence === "inferred" ? 0.14 : undefined}
-              pointerEvents="none"
-            />
+            {g.leaves.map((leaf, i) => (
+              <path
+                key={i}
+                d={`M${leaf.hinge.x} ${leaf.hinge.y}L${leaf.tip.x} ${leaf.tip.y}A${leaf.radius} ${leaf.radius} 0 0 ${leaf.sweep} ${leaf.jamb.x} ${leaf.jamb.y}`}
+                stroke={stroke}
+                strokeWidth={width}
+                fill="none"
+                strokeDasharray={door.confidence === "inferred" ? 0.14 : undefined}
+                pointerEvents="none"
+              />
+            ))}
+            {g.panels.map(([x1, y1, x2, y2], i) => (
+              <line
+                key={`p${i}`}
+                x1={x1} y1={y1} x2={x2} y2={y2}
+                stroke={stroke}
+                strokeWidth={width}
+                pointerEvents="none"
+              />
+            ))}
             {/* A visible dot on the opening — without it there is nothing on screen telling
                 you a door is a thing you can take hold of. */}
             <circle
-              cx={midX}
-              cy={midY}
+              cx={g.mid.x}
+              cy={g.mid.y}
               r={isSelected ? 0.24 : 0.16}
               fill="#ffffff"
               stroke={isSelected ? STEEL : "#9aa4ae"}

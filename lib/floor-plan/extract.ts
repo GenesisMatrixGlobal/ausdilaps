@@ -254,7 +254,7 @@ function toFloorPlan(raw: RawPlan): FloorPlan {
       name: level.name.trim() || `Level ${li + 1}`,
       rooms,
       doors,
-      fences: [],
+      lines: [],
       removedWalls: [],
       stairs: [],
       annotations: [],

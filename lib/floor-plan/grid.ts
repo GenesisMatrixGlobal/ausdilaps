@@ -66,9 +66,18 @@ export function outdoorIds(rooms: Room[]): Set<string> {
 }
 
 function wallKind(a: Owner, b: Owner, outdoor: Set<string>): WallSeg["kind"] {
-  // An outdoor area on either side wins: a carport's edge is not a wall, whether it abuts
-  // the building or open ground.
-  if ((a && outdoor.has(a)) || (b && outdoor.has(b))) return "area";
+  const aOut = !!a && outdoor.has(a);
+  const bOut = !!b && outdoor.has(b);
+
+  // An outdoor area against an ENCLOSED room is the building envelope — the wall a terrace or
+  // balcony is bolted to — and draws solid. Only its open sides are not walls: facing open
+  // ground, or facing another outdoor area.
+  if (aOut !== bOut) {
+    const other = aOut ? b : a;
+    if (other !== null) return "external";
+    return "area";
+  }
+  if (aOut && bOut) return "area";
   return a === null || b === null ? "external" : "internal";
 }
 
@@ -161,11 +170,31 @@ export type DoorPlacement = {
   hingeAt: "from" | "to";
   /** -1 opens toward decreasing x (vertical wall) or y (horizontal); +1 the other way. */
   swingDir: -1 | 1;
-  kind: "swing" | "opening";
+  kind: Door["kind"];
   confidence: "visible" | "inferred";
 };
 
-const MAX_DOOR_CELLS = 1;
+/** Opening width in cells, by kind. A double or sliding door is twice a single leaf. */
+const DOOR_CELLS: Record<Door["kind"], number> = {
+  swing: 1,
+  opening: 1,
+  double: 2,
+  sliding: 2,
+};
+
+/** The distinct wall lines two rooms share, in a stable order — what "Next wall" cycles. */
+export function doorWalls(
+  owner: Owner[][],
+  grid: Grid,
+  a: string,
+  b: string
+): Array<{ orient: "h" | "v"; pos: number }> {
+  const seen = new Map<string, { orient: "h" | "v"; pos: number }>();
+  for (const bound of boundariesBetween(owner, grid, a, b)) {
+    seen.set(`${bound.orient}:${bound.pos}`, { orient: bound.orient, pos: bound.pos });
+  }
+  return [...seen.values()].sort((p, q) => p.orient.localeCompare(q.orient) || p.pos - q.pos);
+}
 
 /**
  * Resolve stored doors (a pair of rooms) into openings on the wall they share.
@@ -216,19 +245,26 @@ export function placeDoors(
       continue;
     }
 
-    const longest = runs.reduce((best, r) => (r.length > best.length ? r : best), runs[0]);
+    // A door may name the wall it hangs on, for rooms that meet along more than one line.
+    // Fall back to every run if that wall has since stopped being shared.
+    const onWall = door.wall
+      ? runs.filter((r) => r[0].orient === door.wall!.orient && r[0].pos === door.wall!.pos)
+      : runs;
+    const usable = onWall.length > 0 ? onWall : runs;
+
+    const longest = usable.reduce((best, r) => (r.length > best.length ? r : best), usable[0]);
     // A dragged door names where it sits; honour the run under it. If the rooms have since
     // moved so nothing shares wall there any more, fall back to centring on the longest run
     // rather than dropping the door on the floor.
     const chosen =
       door.at === undefined
         ? longest
-        : runs.find((r) => door.at! >= r[0].index && door.at! <= r[r.length - 1].index + 1) ?? longest;
+        : usable.find((r) => door.at! >= r[0].index && door.at! <= r[r.length - 1].index + 1) ?? longest;
 
     const runStart = chosen[0].index;
     const runLen = chosen.length;
     // Leave wall either side of the opening; a door flush to a corner reads as a mistake.
-    const width = Math.min(MAX_DOOR_CELLS, Math.max(0.5, runLen * 0.5));
+    const width = Math.min(DOOR_CELLS[door.kind], Math.max(0.5, runLen * 0.5));
     const centred = runStart + (runLen - width) / 2;
     const from =
       door.at === undefined
@@ -337,6 +373,89 @@ export function wallNeighbours(owner: Owner[][], grid: Grid, outdoor: Set<string
     for (let x = 0; x < grid.w; x++) add(at(owner, grid, x, y - 1), at(owner, grid, x, y));
 
   return [...pairs.values()];
+}
+
+/** One swinging leaf and the arc it sweeps, in grid units. */
+export type DoorLeaf = {
+  hinge: { x: number; y: number };
+  tip: { x: number; y: number };
+  jamb: { x: number; y: number };
+  radius: number;
+  sweep: 0 | 1;
+};
+
+export type DoorGeometry = {
+  /** Swinging leaves. Empty for an opening or a sliding door — neither swings. */
+  leaves: DoorLeaf[];
+  /** Sliding panels as [x1, y1, x2, y2], offset to opposite sides of the wall line. */
+  panels: Array<[number, number, number, number]>;
+  /** Centre of the opening: the grab target, and where the editor draws its dot. */
+  mid: { x: number; y: number };
+};
+
+/** How far a sliding panel sits off the wall line, so the two read as passing each other. */
+const SLIDE_OFFSET = 0.07;
+
+/**
+ * A door as plain coordinates in GRID units.
+ *
+ * Returned as data rather than drawn, for the same reason stairGeometry is: the symbol has to
+ * appear on the editor canvas (grid units) and on the A4 sheet (page pixels). The swing arc
+ * used to be implemented once in each file, with a comment in both admitting it; adding
+ * double and sliding would have made that four copies of the same trigonometry.
+ */
+export function doorGeometry(door: DoorPlacement): DoorGeometry {
+  const vertical = door.orient === "v";
+  const span = door.to - door.from;
+  const midAlong = (door.from + door.to) / 2;
+  const mid = vertical ? { x: door.pos, y: midAlong } : { x: midAlong, y: door.pos };
+
+  /** A point `along` the wall line, `off` it perpendicularly. */
+  const point = (along: number, off = 0) =>
+    vertical ? { x: door.pos + off, y: along } : { x: along + off, y: door.pos };
+
+  // One leaf, hinged at `hingeAlong`, reaching `width` along the wall in direction `along`
+  // and swinging swingDir off it.
+  const leaf = (hingeAlong: number, along: 1 | -1, width: number): DoorLeaf => {
+    const hinge = point(hingeAlong);
+    const tip = vertical
+      ? { x: hinge.x + door.swingDir * width, y: hinge.y }
+      : { x: hinge.x, y: hinge.y + door.swingDir * width };
+    const jamb = vertical
+      ? { x: hinge.x, y: hinge.y + along * width }
+      : { x: hinge.x + along * width, y: hinge.y };
+    // Hinging at the far end reverses the along-wall direction, which mirrors the arc.
+    const turns = door.swingDir * along === 1;
+    return { hinge, tip, jamb, radius: width, sweep: vertical ? (turns ? 1 : 0) : turns ? 0 : 1 };
+  };
+
+  if (door.kind === "opening") return { leaves: [], panels: [], mid };
+
+  if (door.kind === "sliding") {
+    // Each panel runs most of the opening, so they overlap in the middle the way real ones do.
+    const reach = span * 0.6;
+    const a0 = point(door.from, -SLIDE_OFFSET);
+    const a1 = point(door.from + reach, -SLIDE_OFFSET);
+    const b0 = point(door.to - reach, SLIDE_OFFSET);
+    const b1 = point(door.to, SLIDE_OFFSET);
+    return {
+      leaves: [],
+      panels: [
+        [a0.x, a0.y, a1.x, a1.y],
+        [b0.x, b0.y, b1.x, b1.y],
+      ],
+      mid,
+    };
+  }
+
+  if (door.kind === "double") {
+    const half = span / 2;
+    return { leaves: [leaf(door.from, 1, half), leaf(door.to, -1, half)], panels: [], mid };
+  }
+
+  const along: 1 | -1 = door.hingeAt === "from" ? 1 : -1;
+  const hingeAlong = door.hingeAt === "from" ? door.from : door.to;
+  return { leaves: [leaf(hingeAlong, along, span)], panels: [], mid };
 }
 
 /** Treads per grid cell along the flight. Two reads as stairs without turning into hatching. */
@@ -602,6 +721,55 @@ export function validateLevel(level: Level, grid: Grid): PlanIssue[] {
   }
 
   return issues;
+}
+
+export type Bounds = { x: number; y: number; w: number; h: number };
+
+/** Room for a number either side of its anchor, so one near the edge is not clipped. */
+const MARK_PAD = 0.5;
+
+/**
+ * Everything on the level, not just the building — what the PAGE has to fit.
+ *
+ * levelBounds sees only room cells, so a fence, a staircase or a number outside the footprint
+ * got neither scaled to fit nor centred with the drawing, and spilled off the sheet or across
+ * the title block. A boundary fence is outside the footprint by definition, which is why that
+ * one showed up first.
+ */
+export function contentBounds(level: Level, owner: Owner[][], grid: Grid): Bounds {
+  const b = levelBounds(owner, grid);
+  let minX = b.x;
+  let minY = b.y;
+  let maxX = b.x + b.w;
+  let maxY = b.y + b.h;
+
+  const include = (x: number, y: number) => {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  };
+
+  for (const line of level.lines) {
+    if (line.orient === "v") {
+      include(line.pos, line.from);
+      include(line.pos, line.to);
+    } else {
+      include(line.from, line.pos);
+      include(line.to, line.pos);
+    }
+  }
+  for (const stair of level.stairs) {
+    include(stair.x, stair.y);
+    include(stair.x + stair.w, stair.y + stair.h);
+  }
+  for (const ann of level.annotations) {
+    if (ann.anchor.type !== "free") continue;
+    include(ann.anchor.x - MARK_PAD, ann.anchor.y - MARK_PAD);
+    include(ann.anchor.x + MARK_PAD, ann.anchor.y + MARK_PAD);
+  }
+
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
 /** Tight bounds of the drawn building, in grid units. */

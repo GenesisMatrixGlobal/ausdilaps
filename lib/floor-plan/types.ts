@@ -50,9 +50,24 @@ export const doorSchema = z.object({
   id: z.string().min(1),
   a: z.string().min(1),
   b: z.string().min(1),
-  kind: z.enum(["swing", "opening"]),
+  /**
+   * "swing"   — one leaf on an arc.
+   * "opening" — a gap in the wall, no leaf.
+   * "double"  — two leaves hung from opposite jambs, opening twice as wide.
+   * "sliding" — two offset panels that pass each other. No arc: it does not swing.
+   */
+  kind: z.enum(["swing", "opening", "double", "sliding"]),
   /** Which room the arc opens into. */
   swingInto: z.enum(["a", "b"]).default("b"),
+  /**
+   * Which shared wall to hang on, where the two rooms meet along more than one line — an
+   * L-shaped adjacency.
+   *
+   * Not expressible through `at`, which is an index ALONG a line: two runs on different lines
+   * can carry the same index, so picking by `at` alone resolves to whichever comes first.
+   * Unset means the longest shared run, which is right until someone says otherwise.
+   */
+  wall: z.object({ orient: z.enum(["h", "v"]), pos: z.number() }).optional(),
   /**
    * Where along the shared wall the opening starts, in grid units.
    *
@@ -99,21 +114,27 @@ export const annotationSchema = z.object({
 export type Annotation = z.infer<typeof annotationSchema>;
 
 /**
- * A run of fence along a grid line.
+ * A drawn line along a grid line — a fence, a free-standing wall, or a bar/counter.
  *
- * Unlike a wall, this is STORED rather than derived. Walls exist wherever two rooms meet, so
- * they fall out of cell ownership for free — but a fence bounds open ground and answers to
- * nothing, so there is nothing to derive it from. Same vocabulary as WallSeg so the renderers
- * can treat it the same way.
+ * STORED rather than derived, unlike a wall between two rooms. Those exist wherever two rooms
+ * meet, so they fall out of cell ownership for free; these answer to nothing — a boundary
+ * fence bounds open ground, and a kitchen counter divides a room without dividing it. Same
+ * vocabulary as WallSeg so the renderers can treat them the same way.
+ *
+ * One schema for all three because they differ only in stroke: the geometry, the drag, the
+ * gate and the hit target are identical.
  */
-export const fenceSchema = z.object({
+export const lineSchema = z.object({
   id: z.string().min(1),
   orient: z.enum(["h", "v"]),
   pos: z.number(),
   from: z.number(),
   to: z.number(),
+  kind: z.enum(["fence", "wall", "counter"]).default("fence"),
+  /** Start of a gap in the run — a gate, or a doorway through a drawn wall. */
+  gate: z.number().optional(),
 });
-export type Fence = z.infer<typeof fenceSchema>;
+export type Line = z.infer<typeof lineSchema>;
 
 /**
  * A wall the user has rubbed out — an open-plan edge where two rooms meet with nothing
@@ -151,18 +172,35 @@ export const stairSchema = z.object({
 });
 export type Stair = z.infer<typeof stairSchema>;
 
-export const levelSchema = z.object({
+const levelObject = z.object({
   id: z.string().min(1),
   name: z.string(),
   rooms: z.array(roomSchema),
   doors: z.array(doorSchema).default([]),
-  // All four defaulted, so every plan saved before each of them existed still parses.
-  fences: z.array(fenceSchema).default([]),
+  // All defaulted, so every plan saved before each of them existed still parses.
+  lines: z.array(lineSchema).default([]),
   removedWalls: z.array(removedWallSchema).default([]),
   stairs: z.array(stairSchema).default([]),
   annotations: z.array(annotationSchema).default([]),
 });
-export type Level = z.infer<typeof levelSchema>;
+
+/**
+ * `lines` was called `fences` until it grew to cover walls and counters too. Saved plans are
+ * reopened months later for the POST survey, so the old key is read as the new one rather
+ * than being allowed to fail.
+ */
+export const levelSchema = z.preprocess((value) => {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const level = value as Record<string, unknown>;
+    if ("fences" in level && !("lines" in level)) {
+      const { fences, ...rest } = level;
+      return { ...rest, lines: fences };
+    }
+  }
+  return value;
+}, levelObject);
+
+export type Level = z.infer<typeof levelObject>;
 
 export const floorPlanSchema = z.object({
   address: z.string(),

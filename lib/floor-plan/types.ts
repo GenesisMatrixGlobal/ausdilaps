@@ -164,8 +164,17 @@ export type RemovedWall = z.infer<typeof removedWallSchema>;
  */
 export const stairSchema = z.object({
   id: z.string().min(1),
-  x: z.number().int().min(0),
-  y: z.number().int().min(0),
+  /**
+   * Position is in HALF cells, size in whole ones.
+   *
+   * A staircase owns no cells — it is drawn over whatever room it sits in — so nothing forces
+   * it onto the grid the way a room is forced. Whole-cell positioning made it feel sticky to
+   * drag: half a cell is ~13px on screen, so the pointer moved that far before anything
+   * happened and then it jumped a whole cell. Half steps halve that, and let a flight centre
+   * itself in an odd-width space. Doors already do the same.
+   */
+  x: z.number().min(0),
+  y: z.number().min(0),
   w: z.number().int().min(1),
   h: z.number().int().min(1),
   dir: z.enum(["up", "down"]).default("up"),

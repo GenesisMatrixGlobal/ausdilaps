@@ -163,9 +163,10 @@ export function FloorPlanEditor({
     if (drag.mode === "stair") {
       const base = drag.base.stairs.find((s) => s.id === drag.stairId);
       if (!base) return;
-      // Whole cells, and kept on the grid rather than refused at the edge.
-      const x = Math.min(Math.max(0, drag.baseAt.x + Math.round(now.x - drag.from.x)), grid.w - base.w);
-      const y = Math.min(Math.max(0, drag.baseAt.y + Math.round(now.y - drag.from.y)), grid.h - base.h);
+      // Half cells — see stairSchema. Kept on the grid rather than refused at the edge.
+      const step = (d: number) => Math.round(d * 2) / 2;
+      const x = Math.min(Math.max(0, drag.baseAt.x + step(now.x - drag.from.x)), grid.w - base.w);
+      const y = Math.min(Math.max(0, drag.baseAt.y + step(now.y - drag.from.y)), grid.h - base.h);
       const result = updateStair(drag.base, drag.stairId, { x, y });
       if (result.ok) setPreview(result.level);
       return;
@@ -528,103 +529,6 @@ export function FloorPlanEditor({
           />
         )}
       </g>
-
-      <g pointerEvents={drawing ? "none" : "auto"}>
-        {level.stairs.map((stair) => {
-          const g = stairGeometry(stair);
-          const isSelected = selection?.type === "stair" && selection.id === stair.id;
-          const ink = isSelected ? STEEL : INK;
-          return (
-            <g
-              key={stair.id}
-              style={{ cursor: "move" }}
-              onPointerDown={(e) => {
-                onSelect({ type: "stair", id: stair.id });
-                begin(e, {
-                  mode: "stair",
-                  stairId: stair.id,
-                  from: toGrid(e),
-                  base: plan.levels[levelIndex],
-                  baseAt: { x: stair.x, y: stair.y },
-                });
-              }}
-            >
-              <rect
-                x={g.outline.x}
-                y={g.outline.y}
-                width={g.outline.w}
-                height={g.outline.h}
-                fill="#ffffff"
-                stroke={ink}
-                strokeWidth={isSelected ? 0.09 : 0.06}
-              />
-              <g fill="none" stroke={ink} strokeWidth={0.05} pointerEvents="none">
-                {g.treads.map(([x1, y1, x2, y2], i) => (
-                  <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} />
-                ))}
-                <line x1={g.arrow.x1} y1={g.arrow.y1} x2={g.arrow.x2} y2={g.arrow.y2} />
-              </g>
-              <polygon
-                points={g.arrow.head.map(([x, y]) => `${x},${y}`).join(" ")}
-                fill={ink}
-                pointerEvents="none"
-              />
-            </g>
-          );
-        })}
-        {drag?.mode === "stair-draw" && (
-          <rect
-            x={Math.min(drag.x0, drag.x1)}
-            y={Math.min(drag.y0, drag.y1)}
-            width={Math.abs(drag.x1 - drag.x0)}
-            height={Math.abs(drag.y1 - drag.y0)}
-            fill={STEEL}
-            fillOpacity={0.12}
-            stroke={STEEL}
-            strokeWidth={0.08}
-            pointerEvents="none"
-          />
-        )}
-      </g>
-
-      {/* Must match the wall styling in lib/floor-plan/render.ts — this is the one thing the
-          editor draws itself rather than sharing, so the two have to be kept in step. */}
-      <g fill="none" strokeLinecap="butt" pointerEvents="none">
-        {walls.flatMap((seg, i) =>
-          subtractOpenings(seg, openings).map((piece, j) => {
-            const isArea = seg.kind === "area";
-            const props = {
-              stroke: isArea ? "#9aa4ae" : INK,
-              strokeWidth: seg.kind === "external" ? 0.16 : 0.09,
-              strokeDasharray: isArea ? "0.3 0.2" : undefined,
-            };
-            return seg.orient === "v" ? (
-              <line key={`${i}-${j}`} x1={seg.pos} y1={piece.from} x2={seg.pos} y2={piece.to} {...props} />
-            ) : (
-              <line key={`${i}-${j}`} x1={piece.from} y1={seg.pos} x2={piece.to} y2={seg.pos} {...props} />
-            );
-          })
-        )}
-      </g>
-
-      {highlightWall && (
-        <g pointerEvents="none">
-          {boundariesBetween(owner, grid, highlightWall.a, highlightWall.b).map((b, i) => (
-            <line
-              key={i}
-              x1={b.orient === "v" ? b.pos : b.index}
-              y1={b.orient === "v" ? b.index : b.pos}
-              x2={b.orient === "v" ? b.pos : b.index + 1}
-              y2={b.orient === "v" ? b.index + 1 : b.pos}
-              stroke={STEEL}
-              strokeWidth={0.3}
-              strokeOpacity={0.45}
-              strokeLinecap="butt"
-            />
-          ))}
-        </g>
-      )}
-
 
       <g pointerEvents={drawing ? "none" : "auto"}>
       {doors.map((door) => {

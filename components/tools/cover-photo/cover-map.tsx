@@ -14,6 +14,7 @@ import { createVertexHandles, type VertexHandles } from "@/components/tools/shar
 import { MAX_DRAWN_POINTS } from "@/lib/cover-photo/schema";
 import {
   COVER_ASPECT,
+  COVER_DIM_OUTSIDE_PERCENT,
   COVER_FILL_OPACITY_PERCENT,
   COVER_GREEN,
   COVER_OUTLINE_WEIGHT,
@@ -44,6 +45,29 @@ const STROKE_OPACITY = COVER_STROKE_OPACITY_PERCENT / 100;
 const HEX = `#${COVER_GREEN}`;
 /** A polygon needs three points to be an area at all. */
 const MIN_POINTS = 3;
+
+/**
+ * Half-width of the dim layer's outer ring, in degrees.
+ *
+ * ⚠️ NOT the whole world. A polygon spanning -180..180 renders DEGENERATELY in Maps JS — it
+ * reports the right paths, the right fill and visible:true, and paints nothing at all, which
+ * is a thoroughly confusing way to fail. Verified by swapping the same polygon to a local box
+ * with everything else unchanged and watching it appear. 2 degrees is ~220 km, so it covers
+ * any viewport this tool is ever framed at, and the map's maxZoom keeps you nowhere near the
+ * edge.
+ */
+const DIM_SPAN_DEGREES = 2;
+
+/** The outer ring of the dim layer, around the shape being punched out of it. */
+function dimOuterRing(around: LatLng): LatLng[] {
+  const d = DIM_SPAN_DEGREES;
+  return [
+    { lat: around.lat - d, lng: around.lng - d },
+    { lat: around.lat - d, lng: around.lng + d },
+    { lat: around.lat + d, lng: around.lng + d },
+    { lat: around.lat + d, lng: around.lng - d },
+  ];
+}
 
 export interface CoverMapCommands {
   /** The live viewport, for the export — the server re-renders this exact frame through the
@@ -92,8 +116,16 @@ function mapOptions(maps: typeof google.maps): google.maps.MapOptions {
     disableDoubleClickZoom: true,
     keyboardShortcuts: false,
 
-    // Past 21 Australian aerial imagery is upsampled.
-    maxZoom: 21,
+    // ⚠️ 20, not 21. Past 20 Australian aerial imagery is upsampled, and past ~20.5 Google
+    // intermittently serves NOTHING for a tile — which shows as a grey map that only fills in
+    // once you zoom and it re-requests. Hit for real at 68 Mason St, Newport, where the 78 m
+    // default frame fits at zoom 20.5 (Rhys: "it doesn't actually load the image properly
+    // until I zoom"). markup-map.tsx has the same guard as a post-fit clamp; here it is the
+    // cap itself, so fitBounds can never ask for the broken zone in the first place.
+    //
+    // The EXPORT is unaffected: it renders from the bounds through Static Maps, which picks
+    // its own zoom up to 21 and downsamples, so the PNG keeps its detail.
+    maxZoom: 20,
     // Smooth zoom. A raster map defaults this FALSE, which makes every wheel notch a whole
     // level — one frame too far out, the next too far in, nothing usable between. Framing a
     // cover photo is exactly the job that needs the in-between. The export is unaffected
@@ -184,6 +216,11 @@ export function CoverMap({
   );
 
   const polygonRef = useRef<google.maps.Polygon | null>(null);
+  /** The dark scrim. A second polygon rather than anything clever: the world as its outer ring
+   *  and the property as a HOLE, which is the live-map equivalent of the export's evenodd
+   *  path. Without it the preview would show a bright surround and the PNG a dimmed one —
+   *  exactly the preview/export drift CLAUDE.md calls the standing hazard on these tools. */
+  const dimRef = useRef<google.maps.Polygon | null>(null);
   const handlesRef = useRef<VertexHandles | null>(null);
   const listenersRef = useRef<google.maps.MapsEventListener[]>([]);
   /** The last path read out of the overlay, so samePath() has something to compare against. */
@@ -198,6 +235,22 @@ export function CoverMap({
     latest.current = { ring, drawing, onRingChange, fitRequest };
   });
 
+  /** Repoints the scrim's hole at the current outline. Below MIN_POINTS there is no area to
+   *  punch out, and dimming the whole map while someone is still placing points would just be
+   *  in the way — so the layer hides itself until the shape exists. */
+  const refreshDim = useCallback((points: LatLng[]) => {
+    const dim = dimRef.current;
+    if (!dim) return;
+    if (points.length < MIN_POINTS) {
+      dim.setVisible(false);
+      return;
+    }
+    // Reversed: Google renders an inner path as a hole only when it is wound opposite to the
+    // outer one.
+    dim.setPaths([dimOuterRing(points[0]), [...points].reverse()]);
+    dim.setVisible(true);
+  }, []);
+
   /** The single overlay -> React mirror. */
   const syncFromOverlay = useCallback(() => {
     const polygon = polygonRef.current;
@@ -206,10 +259,13 @@ export function CoverMap({
     if (samePath(points, lastRef.current)) return;
     lastRef.current = points;
     handlesRef.current?.refresh();
+    refreshDim(points);
     latest.current.onRingChange(points);
-  }, []);
+  }, [refreshDim]);
 
   const destroyOverlay = useCallback(() => {
+    dimRef.current?.setMap(null);
+    dimRef.current = null;
     handlesRef.current?.destroy();
     handlesRef.current = null;
     for (const l of listenersRef.current) l.remove();
@@ -277,6 +333,25 @@ export function CoverMap({
     const initial = latest.current.ring;
     lastRef.current = initial;
 
+    if (COVER_DIM_OUTSIDE_PERCENT > 0) {
+      dimRef.current = new google.maps.Polygon({
+        map,
+        // Never clickable: it covers the entire map, so a clickable scrim would swallow every
+        // click meant to place a point.
+        clickable: false,
+        editable: false,
+        draggable: false,
+        zIndex: 20,
+        strokeWeight: 0,
+        fillColor: "#000000",
+        fillOpacity: COVER_DIM_OUTSIDE_PERCENT / 100,
+        // Real paths arrive from refreshDim below; this is only a valid starting shape.
+        paths: [dimOuterRing(initial[0] ?? { lat: -27.4698, lng: 153.0251 })],
+        visible: false,
+      });
+      refreshDim(initial);
+    }
+
     const polygon = new google.maps.Polygon({
       map,
       clickable: true,
@@ -336,7 +411,7 @@ export function CoverMap({
       minPoints: MIN_POINTS,
       maxPoints: MAX_DRAWN_POINTS,
     });
-  }, [map, ringKey, destroyOverlay, syncFromOverlay]);
+  }, [map, ringKey, destroyOverlay, syncFromOverlay, refreshDim]);
 
   // Click on empty map: place a point.
   useEffect(() => {
@@ -420,8 +495,17 @@ export function CoverMap({
     // what-you-see-is-what-you-get: the operator frames a 600x442 rectangle and the export
     // renders that rectangle. A differently-shaped map would mean the PNG never quite matches
     // what was on screen.
+    // Shown at the OUTPUT's size, not just its aspect — which makes this tool
+    // what-you-see-is-what-you-get twice over: the operator frames the cover photo at 1:1, and
+    // the default frame fits inside the imagery ceiling.
+    //
+    // ⚠️ The width cap is load-bearing, not styling. maxZoom is 20 because Australian aerial
+    // imagery stops being real past it, and a 78 m frame across a 1176 px map needs zoom ~20.8
+    // — so on a wide container the fit gets clamped and the frame silently comes back 130 m
+    // wide, undoing the tightening entirely. At the template's own width, 78 m lands at about
+    // zoom 19.9 anywhere in Australia. Widen this and the default frame widens with it.
     <div
-      className="relative w-full overflow-hidden rounded-xl border border-ad-border bg-ad-surface"
+      className="relative w-full max-w-[600px] overflow-hidden rounded-xl border border-ad-border bg-ad-surface"
       style={{ aspectRatio: String(COVER_ASPECT) }}
     >
       <div ref={containerRef} className="h-full w-full" />

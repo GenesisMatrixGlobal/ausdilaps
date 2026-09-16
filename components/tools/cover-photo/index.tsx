@@ -309,7 +309,7 @@ export function CoverPhotoTool() {
         />
       ) : (
         <div
-          className="flex w-full items-center justify-center rounded-xl border border-dashed border-ad-border bg-ad-surface"
+          className="flex w-full max-w-[600px] items-center justify-center rounded-xl border border-dashed border-ad-border bg-ad-surface"
           style={{ aspectRatio: String(COVER_ASPECT) }}
         >
           <p className="text-sm text-ad-muted">Find an address to start.</p>

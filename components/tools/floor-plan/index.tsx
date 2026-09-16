@@ -687,7 +687,13 @@ export function FloorPlanTool() {
               )}
             </div>
 
-            {view === "edit" && tool !== "select" && (
+            {/*
+              Always on screen, even in Select mode. It used to appear only while drawing, which
+              moved the canvas down by its own height every time you picked up a tool and back up
+              again the moment you finished — so whatever you had just drawn jumped under the
+              cursor. Dimmed rather than hidden; clicking a chip from Select picks that tool up.
+            */}
+            {view === "edit" && (
               <div className="mb-3 flex flex-wrap items-center gap-1 rounded-lg border border-ad-border bg-ad-surface p-1.5">
                 {DRAW_KINDS.map((k) => (
                   <button
@@ -696,12 +702,15 @@ export function FloorPlanTool() {
                     onClick={() => {
                       setTool(k);
                       setLastKind(k);
+                      setSelection(null);
                     }}
                     className={cn(
-                      "rounded px-2.5 py-1 text-xs font-medium capitalize",
+                      "flex h-6 items-center rounded px-2.5 text-xs font-medium capitalize",
                       tool === k
                         ? "bg-white text-ad-ink shadow-sm"
-                        : "text-ad-muted hover:text-ad-ink"
+                        : tool === "select"
+                          ? "text-ad-muted/60 hover:text-ad-ink"
+                          : "text-ad-muted hover:text-ad-ink"
                     )}
                   >
                     {k === "number" ? "№" : k}
@@ -713,11 +722,11 @@ export function FloorPlanTool() {
                     onChange={(e) => setMarkText(e.target.value.replace(/\D/g, "").slice(0, 3))}
                     inputMode="numeric"
                     aria-label="Number to place"
-                    className="ml-1 w-12 rounded border border-ad-border px-1 py-1 text-center text-xs font-semibold text-ad-ink outline-none focus:border-ad-steel"
+                    className="ml-1 h-6 w-12 rounded border border-ad-border px-1 text-center text-xs font-semibold text-ad-ink outline-none focus:border-ad-steel"
                   />
                 )}
                 {(tool === "room" || tool === "outdoor") && selection?.type === "room" && (
-                  <label className="ml-2 flex items-center gap-1.5 text-xs text-ad-muted">
+                  <label className="ml-2 flex h-6 items-center gap-1.5 text-xs text-ad-muted">
                     <input
                       type="checkbox"
                       checked={extendSelected}
@@ -746,6 +755,9 @@ export function FloorPlanTool() {
                   onMarkPlaced={() =>
                     setMarkText((n) => String(Math.min(999, (Number(n) || 0) + 1)))
                   }
+                  // Back to Select once something is drawn, so the next click adjusts it
+                  // rather than doing nothing — a drawing tool makes everything unhittable.
+                  onDrew={() => setTool('select')}
                 />
               ) : (
                 <div

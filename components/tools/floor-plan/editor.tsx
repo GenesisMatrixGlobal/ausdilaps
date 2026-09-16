@@ -35,6 +35,7 @@ import {
   resizeRoom,
   resizeStair,
   setLabelPlacement,
+  renameRoom,
   updateDoor,
   updateMark,
   updateStair,
@@ -82,6 +83,8 @@ interface EditorProps {
   onError: (message: string | null) => void;
   /** Placed one, so the caller can step the number on. */
   onMarkPlaced: () => void;
+  /** Finished drawing something. The caller drops back to Select so it can be adjusted. */
+  onDrew: () => void;
 }
 
 type Point = { x: number; y: number };
@@ -97,6 +100,9 @@ type Drag =
   // Drawn, not dragged from something that exists, so these carry their own geometry until
   // pointer-up commits them.
   | { mode: "line"; kind: Line["kind"]; orient: "h" | "v"; pos: number; from: number; to: number }
+  // x0,y0 and x1,y1 are CELLS, inclusive at both ends — so a single click is a 1x1 and a drag
+  // across two cells is a 1x2. Measuring the grid LINES either side instead meant a click drew
+  // nothing at all and you had to cross a cell boundary before anything appeared.
   | { mode: "rect"; kind: "room" | "outdoor" | "stairs"; x0: number; y0: number; x1: number; y1: number }
   | { mode: "pan"; from: Point; base: Box }
   | null;
@@ -106,6 +112,19 @@ type Box = { x: number; y: number; w: number; h: number };
 
 const MIN_SPAN = 4;
 const ZOOM_STEP = 1.25;
+
+/** Which cell a grid coordinate falls in, kept on the board. */
+const cellAt = (v: number, span: number) => Math.max(0, Math.min(Math.floor(v), span - 1));
+
+/** The rectangle a cell-to-cell drag covers, inclusive of both ends — never smaller than 1x1. */
+function rectOf(d: { x0: number; y0: number; x1: number; y1: number }) {
+  return {
+    x: Math.min(d.x0, d.x1),
+    y: Math.min(d.y0, d.y1),
+    w: Math.abs(d.x1 - d.x0) + 1,
+    h: Math.abs(d.y1 - d.y0) + 1,
+  };
+}
 
 const STEEL = "#46688a";
 const INK = "#2f343a";
@@ -124,8 +143,11 @@ export function FloorPlanEditor({
   onChange,
   onError,
   onMarkPlaced,
+  onDrew,
 }: EditorProps) {
   const svgRef = useRef<SVGSVGElement>(null);
+  /** Editing a name or a number where it sits, rather than in a panel across the page. */
+  const [editing, setEditing] = useState<{ kind: "mark" | "room"; id: string; value: string } | null>(null);
   const [drag, setDrag] = useState<Drag>(null);
   const [preview, setPreview] = useState<Level | null>(null);
   const [view, setView] = useState<{ box: Box; key: string } | null>(null);
@@ -158,6 +180,18 @@ export function FloorPlanEditor({
 
   function toGrid(e: React.PointerEvent): Point {
     return clientToGrid(e.clientX, e.clientY);
+  }
+
+  function commitEdit() {
+    if (!editing) return;
+    const target = plan.levels[levelIndex];
+    const result =
+      editing.kind === "mark"
+        ? updateMark(target, editing.id, { text: editing.value })
+        : renameRoom(target, editing.id, editing.value);
+    if (result.ok) onChange(result.level);
+    else onError(result.error);
+    setEditing(null);
   }
 
   const gw = grid.w + 1;
@@ -273,7 +307,7 @@ export function FloorPlanEditor({
     }
 
     if (drag.mode === "rect") {
-      setDrag({ ...drag, x1: Math.round(now.x), y1: Math.round(now.y) });
+      setDrag({ ...drag, x1: cellAt(now.x, grid.w), y1: cellAt(now.y, grid.h) });
       return;
     }
 
@@ -387,18 +421,18 @@ export function FloorPlanEditor({
           to,
           kind: drag.kind,
         });
-        if (result.ok) onChange(result.level);
-        else onError(result.error);
+        if (result.ok) {
+          onChange(result.level);
+          onSelect({ type: "line", id: result.level.lines[result.level.lines.length - 1].id });
+          onDrew();
+        } else onError(result.error);
       }
       setDrag(null);
       return;
     }
 
     if (drag.mode === "rect") {
-      const x = Math.min(drag.x0, drag.x1);
-      const y = Math.min(drag.y0, drag.y1);
-      const w = Math.abs(drag.x1 - drag.x0);
-      const h = Math.abs(drag.y1 - drag.y0);
+      const { x, y, w, h } = rectOf(drag);
       const target = plan.levels[levelIndex];
 
       let result;
@@ -415,8 +449,15 @@ export function FloorPlanEditor({
         });
       }
 
-      if (result.ok) onChange(result.level);
-      else onError(result.error);
+      if (result.ok) {
+        onChange(result.level);
+        if (drag.kind === "stairs") {
+          onSelect({ type: "stair", id: result.level.stairs[result.level.stairs.length - 1].id });
+        } else if (!extendSelected || selection?.type !== "room") {
+          onSelect({ type: "room", id: result.level.rooms[result.level.rooms.length - 1].id });
+        }
+        onDrew();
+      } else onError(result.error);
       setDrag(null);
       return;
     }
@@ -469,6 +510,17 @@ export function FloorPlanEditor({
   const centre: Point = { x: viewBox.x + viewBox.w / 2, y: viewBox.y + viewBox.h / 2 };
   const zoomed = viewBox.w < fitBox.w - 0.001;
 
+  const editTarget = !editing
+    ? null
+    : editing.kind === "mark"
+      ? (() => {
+          const m = level.annotations.find((a) => a.id === editing.id);
+          return m && m.anchor.type === "free" ? { x: m.anchor.x, y: m.anchor.y } : null;
+        })()
+      : (() => {
+          const r = level.rooms.find((x) => x.id === editing.id);
+          return r ? labelAnchor(r) : null;
+        })();
   return (
     <div className="relative">
       {/* On-screen controls as well as the gestures. A pinch nobody knows about is not a
@@ -523,7 +575,14 @@ export function FloorPlanEditor({
           const result = addMark(plan.levels[levelIndex], at.x, at.y, markText);
           if (result.ok) {
             onChange(result.level);
+            onSelect({
+              type: "mark",
+              id: result.level.annotations[result.level.annotations.length - 1].id,
+            });
             onMarkPlaced();
+            // Back to Select like every other tool. Costs a click per number in a run, and buys
+            // the one thing that was missing: you can touch what you just put down.
+            onDrew();
           } else onError(result.error);
           return;
         }
@@ -551,6 +610,7 @@ export function FloorPlanEditor({
           if (put.ok) {
             onChange(put.level);
             onSelect({ type: "door", id: placed.id });
+            onDrew();
           } else onError(put.error);
           return;
         }
@@ -560,8 +620,8 @@ export function FloorPlanEditor({
         if (!RECT_KINDS.has(tool) && !LINE_KINDS.has(tool)) return;
 
         if (RECT_KINDS.has(tool)) {
-          const x = Math.round(at.x);
-          const y = Math.round(at.y);
+          const x = cellAt(at.x, grid.w);
+          const y = cellAt(at.y, grid.h);
           setDrag({ mode: "rect", kind: tool as "room" | "outdoor" | "stairs", x0: x, y0: y, x1: x, y1: y });
           return;
         }
@@ -667,10 +727,10 @@ export function FloorPlanEditor({
         })}
         {drag?.mode === "rect" && (
           <rect
-            x={Math.min(drag.x0, drag.x1)}
-            y={Math.min(drag.y0, drag.y1)}
-            width={Math.abs(drag.x1 - drag.x0)}
-            height={Math.abs(drag.y1 - drag.y0)}
+            x={rectOf(drag).x}
+            y={rectOf(drag).y}
+            width={rectOf(drag).w}
+            height={rectOf(drag).h}
             fill={STEEL}
             fillOpacity={0.12}
             stroke={STEEL}
@@ -904,6 +964,10 @@ export function FloorPlanEditor({
                 height={0.6}
                 fill="transparent"
                 pointerEvents={grabbable ? "all" : "none"}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setEditing({ kind: "room", id: room.id, value: room.label });
+                }}
               />
               {nudged && (
                 <line
@@ -957,6 +1021,10 @@ export function FloorPlanEditor({
                 fill="transparent"
                 pointerEvents="all"
                 style={{ cursor: "move" }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setEditing({ kind: "mark", id: mark.id, value: mark.text });
+                }}
                 onPointerDown={(e) => {
                   onSelect({ type: "mark", id: mark.id });
                   begin(e, {
@@ -1050,6 +1118,67 @@ export function FloorPlanEditor({
           ))}
         </g>
       )}
+      {/* Edit a name or a number where it sits. Inside the SVG and measured in grid units, so
+          it lands on the thing itself and follows zoom and pan without measuring the DOM —
+          reading layout during render is what the overlay version got wrong. */}
+      {editing && editTarget && (() => {
+        // Inside a foreignObject a CSS pixel IS a grid unit, so styling the input directly
+        // gives it a sub-pixel font: the glyphs vanish and the selection highlight fills the
+        // box. Lay it out at a normal CSS size instead and scale the whole thing into grid
+        // space, which is the usual way round this.
+        const boxW = editing.kind === "mark" ? 1.9 : 4.6;
+        const boxH = 0.8;
+        const innerH = 40;
+        const scale = boxH / innerH;
+        const innerW = boxW / scale;
+        return (
+          <foreignObject
+            x={editTarget.x - boxW / 2}
+            y={editTarget.y - boxH / 2}
+            width={boxW}
+            height={boxH}
+          >
+            <div style={{ width: innerW, height: innerH, transform: `scale(${scale})`, transformOrigin: "0 0" }}>
+              <input
+                autoFocus
+                value={editing.value}
+                inputMode={editing.kind === "mark" ? "numeric" : undefined}
+                aria-label={editing.kind === "mark" ? "Number" : "Room name"}
+                onChange={(e) =>
+                  setEditing({
+                    ...editing,
+                    value:
+                      editing.kind === "mark"
+                        ? e.target.value.replace(/\D/g, "").slice(0, 3)
+                        : e.target.value,
+                  })
+                }
+                onBlur={commitEdit}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitEdit();
+                  if (e.key === "Escape") setEditing(null);
+                }}
+                onFocus={(e) => e.currentTarget.select()}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  boxSizing: "border-box",
+                  border: `2px solid ${STEEL}`,
+                  borderRadius: 6,
+                  background: "#ffffff",
+                  textAlign: "center",
+                  outline: "none",
+                  padding: "0 4px",
+                  fontFamily: "Arial, Helvetica, sans-serif",
+                  fontSize: 24,
+                  fontWeight: editing.kind === "mark" ? 700 : 400,
+                  color: editing.kind === "mark" ? MARK_RED : INK,
+                }}
+              />
+            </div>
+          </foreignObject>
+        );
+      })()}
     </svg>
     </div>
   );

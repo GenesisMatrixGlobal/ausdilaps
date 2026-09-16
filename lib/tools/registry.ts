@@ -9,6 +9,13 @@
 // to its `departments` array. That's the whole change — no new route, no second
 // copy of the component.
 //
+// ARCHIVED tools are retired, not deleted. `archived: true` takes a tool off every
+// department's Tools list and out of the "N tools" counts, while leaving it in this registry,
+// still openable by its URL, and listed under its own heading on /admin/tools. A retired tool
+// that is deleted outright takes its code, its route and any chance of reviewing it with it —
+// and tool_usage keeps its rows either way, so the history would point at nothing. Keep the
+// `departments` on an archived tool: /admin/tools builds its link from departments[0].
+//
 // GAMES are the one exception. `kind: "game"` means a thing is available to EVERY
 // department and renders under its own "Games & Activities" heading beneath the tools,
 // so it carries no `departments` field at all — the type below makes writing one
@@ -59,8 +66,12 @@ export type ToolProps = {
 /** A department tool: appears only under the departments listed. */
 type DepartmentTool = Common & {
   kind?: "tool";
-  /** Every department this tool appears under. */
+  /** Every department this tool appears under. Kept on an archived tool too — /admin/tools
+   *  builds its "open it anyway" link from departments[0]. */
   departments: DepartmentSlug[];
+  /** Retired. Off every department's Tools list and out of the tool counts, but still in the
+   *  registry, still reachable by URL, and still shown (separately) on /admin/tools. */
+  archived?: true;
 };
 
 /**
@@ -83,7 +94,8 @@ export const TOOLS: ToolDefinition[] = [
     title: "Markup and Measure",
     description:
       "Snapshot a road segment, or one address with its surrounding lots highlighted and a whole list of them, or measure lengths and areas straight off a live aerial map.",
-    departments: ["estimators", "projects"],
+    // Unassigned from projects 2026-09-16 (Rhys) — Closeout Markup is what that department uses.
+    departments: ["estimators"],
     Component: dynamic(() =>
       import("@/components/tools/site-markups").then((m) => m.SiteMarkupsTool)
     ),
@@ -94,7 +106,11 @@ export const TOOLS: ToolDefinition[] = [
     title: "Bulk Property Sizing",
     description:
       "Paste addresses or upload a screenshot to get land and lot sizes from government cadastre data, ready for a quoting sheet.",
+    // RETIRED 2026-09-16 (Rhys): Markup and Measure's multi-address mode does this and draws
+    // it. Archived rather than deleted so it can still be opened and reviewed — its cadastre
+    // pipeline (lib/property-sizing/*) is what every markup lookup runs on and is NOT retired.
     departments: ["estimators"],
+    archived: true,
     Component: dynamic(() =>
       import("@/components/tools/property-sizing").then((m) => m.PropertySizingTool)
     ),
@@ -118,7 +134,7 @@ export const TOOLS: ToolDefinition[] = [
     title: "KMZ Analyser",
     description:
       "Turn a client's road-network .kmz into a per-segment quoting sheet, and turn their edited sheet back into a map for Google Earth.",
-    departments: ["estimators"],
+    departments: ["estimators", "inspectors"],
     Component: dynamic(() =>
       import("@/components/tools/road-survey-estimator").then((m) => m.RoadSurveyEstimatorTool)
     ),
@@ -193,6 +209,16 @@ export function isGame(tool: ToolDefinition): tool is GameTool {
   return tool.kind === "game";
 }
 
+/** Retired. Still in the registry and still openable — just not offered anywhere. */
+export function isArchived(tool: ToolDefinition): boolean {
+  return !isGame(tool) && tool.archived === true;
+}
+
+/** Every retired tool, for the archive section on /admin/tools. */
+export function archivedTools(): ToolDefinition[] {
+  return TOOLS.filter(isArchived);
+}
+
 /** Every department a thing shows under. Games are everywhere, by definition. */
 export function departmentsFor(tool: ToolDefinition): DepartmentSlug[] {
   return isGame(tool) ? [...DEPARTMENT_SLUGS] : tool.departments;
@@ -205,7 +231,7 @@ export function departmentsFor(tool: ToolDefinition): DepartmentSlug[] {
  * picker quietly inflating by the number of games in the registry.
  */
 export function toolsForDepartment(slug: DepartmentSlug): ToolDefinition[] {
-  return TOOLS.filter((t) => !isGame(t) && t.departments.includes(slug));
+  return TOOLS.filter((t) => !isGame(t) && !isArchived(t) && t.departments.includes(slug));
 }
 
 /** Every game. The same list for every department, which is the whole point. */
@@ -221,6 +247,9 @@ export const GAME_SLUGS: ReadonlySet<string> = new Set(TOOLS.filter(isGame).map(
  *
  * An assignment check, not an auth check — app/staff/[department]/layout.tsx has already
  * proved via requireDepartment() that the caller may be in this department at all.
+ *
+ * ARCHIVED tools deliberately still pass. Being retired means "not offered", not "walled off":
+ * an old bookmark keeps working and /admin/tools can link straight to it for a review.
  */
 export function canOpenInDepartment(tool: ToolDefinition, slug: DepartmentSlug): boolean {
   return isGame(tool) || tool.departments.includes(slug);

@@ -19,7 +19,7 @@ import {
   onMapsAuthFailure,
 } from "@/lib/maps/loader";
 import { createMapBadge, type MapBadge } from "./map-badge";
-import { createVertexHandles, type VertexHandles } from "./vertex-handles";
+import { createVertexHandles, type VertexHandles } from "@/components/tools/shared/vertex-handles";
 import { MAX_SHAPE_POINTS, MIN_POINTS, type ShapeDraft, type ShapesState } from "./shapes";
 import { badgeAnchor, ringAnchor } from "@/lib/kml/standard-markup/measure";
 import { lotKey, shapeKey } from "@/lib/markup-layers/plan";

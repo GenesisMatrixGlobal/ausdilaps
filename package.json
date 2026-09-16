@@ -24,6 +24,7 @@
     "check:parse": "tsx scripts/check-property-parse.ts",
     "check:lines": "tsx scripts/check-quote-lines.ts",
     "check:address": "tsx scripts/check-address-match.ts",
+    "check:cover": "tsx scripts/check-cover-photo.ts",
     "check:storeys": "tsx scripts/check-storeys-tally.ts"
   },
   "dependencies": {

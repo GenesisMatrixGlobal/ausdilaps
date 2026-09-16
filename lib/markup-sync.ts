@@ -12,7 +12,9 @@
 // Named markup-sync rather than site-markup to avoid reading as part of
 // lib/kml/site-markup/, which is the Road Markup renderer.
 
-import { BoxConfigError, BoxNameConflictError, ensureSharedLink, findChildFolder, getAccessToken as getBoxToken, listFolderItems, parseBoxFolderId, sanitiseBoxFilename, uploadFile } from "@/lib/box";
+// splitExtension and uploadFileAutoRenamed moved to lib/box.ts when the Cover Photo
+// Generator needed the same rename-on-409 loop — one copy, not two.
+import { BoxConfigError, ensureSharedLink, findChildFolder, getAccessToken as getBoxToken, listFolderItems, parseBoxFolderId, sanitiseBoxFilename, splitExtension, uploadFileAutoRenamed } from "@/lib/box";
 import { SalesforceConfigError, soqlQuery, updateRecord } from "@/lib/salesforce";
 
 /** Folder naming convention inside an Opportunity's Box folder. Constants rather than
@@ -54,11 +56,6 @@ const LINE_ITEM_MARKUP_FIELD = "Line_Item_Mark_Up__c";
 
 /** Salesforce key prefixes. Fixed per object, so they identify a bare pasted Id. */
 const QUOTE_LINE_ITEM_PREFIX = "0QL";
-
-/** Attempts at " (2)", " (3)", ... before giving up on finding a free filename. A Site
- *  Markup folder with twenty same-named drawings in it is a naming problem, not a retry
- *  problem. */
-const MAX_RENAME_ATTEMPTS = 20;
 
 interface QuoteSlots { Id: string; [field: string]: unknown }
 
@@ -362,47 +359,6 @@ export interface UploadResult {
  * and retry. The caller surfaces `linkError` so the partial success is explicit. The same
  * applies to the companion — see uploadSidecar.
  */
-function splitExtension(filename: string): { stem: string; ext: string } {
-  const dot = filename.lastIndexOf(".");
-  return dot > 0
-    ? { stem: filename.slice(0, dot), ext: filename.slice(dot) }
-    : { stem: filename, ext: "" };
-}
-
-/**
- * Uploads, stepping the filename to " (2)", " (3)"... until Box accepts it.
- *
- * The operator shouldn't have to think about a name collision: two markups of the same job
- * is completely normal, and the old behaviour was a 409 that stopped the sync and made them
- * retype a filename.
- *
- * Deliberately retries the UPLOAD rather than listing the folder to pick a free name first.
- * listFolderItems() carries `next: { revalidate: 1800 }` for the marketing samples page, so
- * it can be half an hour stale — it would happily hand back a name that a colleague filled
- * ten minutes ago. Box's own 409 is the only current answer. In practice this is one extra
- * call, occasionally two.
- */
-async function uploadFileAutoRenamed(opts: {
-  folderId: string;
-  filename: string;
-  bytes: Uint8Array;
-  contentType?: string;
-  token: string;
-}): Promise<{ id: string; name: string }> {
-  const { stem, ext } = splitExtension(opts.filename);
-  for (let attempt = 1; attempt <= MAX_RENAME_ATTEMPTS; attempt++) {
-    const filename = attempt === 1 ? opts.filename : `${stem} (${attempt})${ext}`;
-    try {
-      return await uploadFile({ ...opts, filename });
-    } catch (e) {
-      if (!(e instanceof BoxNameConflictError)) throw e;
-    }
-  }
-  throw new MarkupSyncError(
-    `Couldn't find a free filename in that folder after ${MAX_RENAME_ATTEMPTS} tries — rename the file and try again.`
-  );
-}
-
 export async function uploadMarkup(opts: {
   quoteId: string;
   folderId: string;

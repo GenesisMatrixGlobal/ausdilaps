@@ -296,3 +296,48 @@ export async function uploadFile(opts: {
   if (!entry) throw new Error("Box accepted the upload but returned no file details.");
   return entry;
 }
+
+/** Attempts at " (2)", " (3)", ... before giving up on finding a free filename. A folder with
+ *  twenty same-named files in it is a naming problem, not a retry problem. */
+const MAX_RENAME_ATTEMPTS = 20;
+
+export function splitExtension(filename: string): { stem: string; ext: string } {
+  const dot = filename.lastIndexOf(".");
+  return dot > 0
+    ? { stem: filename.slice(0, dot), ext: filename.slice(dot) }
+    : { stem: filename, ext: "" };
+}
+
+/**
+ * Uploads, stepping the filename to " (2)", " (3)"... until Box accepts it.
+ *
+ * The operator shouldn't have to think about a name collision: two markups — or two cover
+ * photos — of the same job is completely normal, and a bare 409 stops the sync and makes them
+ * retype a filename.
+ *
+ * Deliberately retries the UPLOAD rather than listing the folder to pick a free name first.
+ * listFolderItems() carries `next: { revalidate: 1800 }` for the marketing samples page, so it
+ * can be half an hour stale — it would happily hand back a name a colleague filled ten minutes
+ * ago. Box's own 409 is the only trustworthy answer. In practice this is one extra call,
+ * occasionally two.
+ */
+export async function uploadFileAutoRenamed(opts: {
+  folderId: string;
+  filename: string;
+  bytes: Uint8Array;
+  contentType?: string;
+  token: string;
+}): Promise<BoxUploadResult> {
+  const { stem, ext } = splitExtension(opts.filename);
+  for (let attempt = 1; attempt <= MAX_RENAME_ATTEMPTS; attempt++) {
+    const filename = attempt === 1 ? opts.filename : `${stem} (${attempt})${ext}`;
+    try {
+      return await uploadFile({ ...opts, filename });
+    } catch (e) {
+      if (!(e instanceof BoxNameConflictError)) throw e;
+    }
+  }
+  throw new BoxNameConflictError(
+    `Couldn't find a free filename in that folder after ${MAX_RENAME_ATTEMPTS} tries — rename the file and try again.`
+  );
+}

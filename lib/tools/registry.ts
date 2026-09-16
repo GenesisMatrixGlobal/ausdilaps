@@ -135,6 +135,17 @@ export const TOOLS: ToolDefinition[] = [
     ),
   },
   {
+    slug: "cover-photo",
+    code: "CVR",
+    title: "Cover Photo Generator",
+    description:
+      "Aerial of the property with its boundary in green, sized for the front of a report and filed straight onto the Survey.",
+    departments: ["reports"],
+    Component: dynamic(() =>
+      import("@/components/tools/cover-photo").then((m) => m.CoverPhotoTool)
+    ),
+  },
+  {
     slug: "kml-builder",
     code: "KML",
     title: "KML Builder",

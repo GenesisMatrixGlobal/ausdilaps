@@ -11,7 +11,7 @@ import {
   parseBuildingMarkupFile,
   type BuildingMarkupFile,
 } from "@/lib/maps/building-markup-file";
-import { AddressSearch, type PlaceSelection } from "./address-search";
+import { AddressSearch, type PlaceSelection } from "@/components/tools/shared/address-search";
 import { parseGoogleMapsUrl, type GoogleMapsTarget } from "@/lib/maps/parse-google-maps-url";
 import { mapPool } from "@/lib/util/map-pool";
 import { ShapePanel } from "./shape-panel";

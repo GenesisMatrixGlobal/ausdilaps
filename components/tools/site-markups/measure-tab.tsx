@@ -15,7 +15,7 @@ import {
 } from "./measure-shapes";
 import { parseGoogleMapsUrl } from "@/lib/maps/parse-google-maps-url";
 import type { GoogleMapsTarget } from "@/lib/maps/parse-google-maps-url";
-import { AddressSearch, type PlaceSelection } from "./address-search";
+import { AddressSearch, type PlaceSelection } from "@/components/tools/shared/address-search";
 import { MeasureMap, type MapCommands } from "./measure-map";
 import { MeasurePanel } from "./measure-panel";
 import { useMeasurements } from "./measure-shapes";

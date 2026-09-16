@@ -116,16 +116,19 @@ function mapOptions(maps: typeof google.maps): google.maps.MapOptions {
     disableDoubleClickZoom: true,
     keyboardShortcuts: false,
 
-    // ⚠️ 20, not 21. Past 20 Australian aerial imagery is upsampled, and past ~20.5 Google
-    // intermittently serves NOTHING for a tile — which shows as a grey map that only fills in
-    // once you zoom and it re-requests. Hit for real at 68 Mason St, Newport, where the 78 m
-    // default frame fits at zoom 20.5 (Rhys: "it doesn't actually load the image properly
-    // until I zoom"). markup-map.tsx has the same guard as a post-fit clamp; here it is the
-    // cap itself, so fitBounds can never ask for the broken zone in the first place.
+    // Past 21 Australian aerial imagery is upsampled.
     //
-    // The EXPORT is unaffected: it renders from the bounds through Static Maps, which picks
-    // its own zoom up to 21 and downsamples, so the PNG keeps its detail.
-    maxZoom: 20,
+    // ⚠️ The REAL ceiling is 20.5, and it is the map's WIDTH that keeps us under it — see the
+    // container's max-width. At 20.5 Maps JS stops scaling zoom-20 tiles and starts asking for
+    // zoom-21 ones, which often do not exist here: the map goes grey and only fills in once
+    // you zoom and it re-requests. That is what "it doesn't actually load the image properly
+    // until I zoom" was at 68 Mason St, Newport, on a full-width map fitting at ~20.8.
+    //
+    // Left at 21 rather than capped at 20 so the toolbar's Zoom control keeps working; the
+    // default frame simply never asks for more. The EXPORT is unaffected either way — it
+    // re-renders from the bounds through Static Maps and downsamples, so the PNG keeps its
+    // detail whatever the preview is showing.
+    maxZoom: 21,
     // Smooth zoom. A raster map defaults this FALSE, which makes every wheel notch a whole
     // level — one frame too far out, the next too far in, nothing usable between. Framing a
     // cover photo is exactly the job that needs the in-between. The export is unaffected
@@ -499,13 +502,14 @@ export function CoverMap({
     // what-you-see-is-what-you-get twice over: the operator frames the cover photo at 1:1, and
     // the default frame fits inside the imagery ceiling.
     //
-    // ⚠️ The width cap is load-bearing, not styling. maxZoom is 20 because Australian aerial
-    // imagery stops being real past it, and a 78 m frame across a 1176 px map needs zoom ~20.8
-    // — so on a wide container the fit gets clamped and the frame silently comes back 130 m
-    // wide, undoing the tightening entirely. At the template's own width, 78 m lands at about
-    // zoom 19.9 anywhere in Australia. Widen this and the default frame widens with it.
+    // ⚠️ The width cap is load-bearing, not styling. The map's width decides the zoom the
+    // default frame fits at: wider map, same 78 m of ground, deeper zoom. Past 20.5 Maps JS
+    // starts requesting zoom-21 tiles, which often do not exist over Australia — the grey map
+    // that only fills in when you zoom. 760px is the widest that keeps a 78 m frame under 20.5
+    // at EVERY Australian latitude; Cairns is the binding case at 772px, Hobart would allow
+    // 1008px. Widen this past 772 and northern QLD jobs start coming up grey.
     <div
-      className="relative w-full max-w-[600px] overflow-hidden rounded-xl border border-ad-border bg-ad-surface"
+      className="relative w-full max-w-[760px] overflow-hidden rounded-xl border border-ad-border bg-ad-surface"
       style={{ aspectRatio: String(COVER_ASPECT) }}
     >
       <div ref={containerRef} className="h-full w-full" />

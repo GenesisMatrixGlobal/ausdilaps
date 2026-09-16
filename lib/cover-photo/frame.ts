@@ -27,7 +27,7 @@ const MARGIN_FACTOR = 0.25;
  * neighbour and no label in shot, which is the opposite of what a report cover is for. This
  * floor puts the property, both neighbours and the road in frame.
  */
-export const MIN_FRAME_METRES = 90;
+export const MIN_FRAME_METRES = 78;
 
 function worldPxPerMetre(lat: number): number {
   return WORLD_PX / (EARTH_CIRCUMFERENCE_M * Math.cos((lat * Math.PI) / 180));

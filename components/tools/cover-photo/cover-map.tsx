@@ -112,7 +112,14 @@ function mapOptions(maps: typeof google.maps): google.maps.MapOptions {
     },
     scaleControl: true,
     fullscreenControl: true,
-    zoomControl: true,
+    // ⚠️ Google's own zoom buttons are OFF, deliberately. They step to the next WHOLE zoom
+    // level, which with isFractionalZoomEnabled is a variable jump of up to 2x the ground —
+    // and they sit in the map's bottom-right, right where you reach for a zoom. Two controls
+    // on one screen stepping by different amounts is why "+" felt like it went in way too far
+    // (Rhys, 2026-09-16): he was hitting Google's, not the toolbar's. The toolbar's Zoom is
+    // now the only one, and it moves one measured step at a time. Cmd/Ctrl + scroll still
+    // gives free-form zoom for anyone who wants it.
+    zoomControl: false,
     streetViewControl: false,
 
     // ⚠️ NO `styles`, and do not add one back. Legacy JSON styling silently breaks tile

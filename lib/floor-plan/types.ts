@@ -180,7 +180,7 @@ export type RemovedWall = z.infer<typeof removedWallSchema>;
  * sits in, so it stays entirely outside the ownership system and cannot perturb a wall.
  * `dir` is the direction of travel the arrow points, not the direction of the treads.
  */
-export const stairSchema = z.object({
+const stairObject = z.object({
   id: z.string().min(1),
   /**
    * Position is in HALF cells, size in whole ones.
@@ -195,9 +195,30 @@ export const stairSchema = z.object({
   y: z.number().min(0),
   w: z.number().int().min(1),
   h: z.number().int().min(1),
-  dir: z.enum(["up", "down"]).default("up"),
+  /**
+   * Which way the arrow points ON THE PAGE. The flight runs that way and the treads cross it.
+   *
+   * This was "up" | "down", meaning forward or backward along whichever side happened to be
+   * longer — so "up" pointed DOWN the page on a tall staircase and RIGHT on a wide one, and
+   * the flight's axis could not be chosen at all. Naming the direction itself is both honest
+   * and the only thing anyone actually wants to set.
+   */
+  dir: z.enum(["up", "down", "left", "right"]).default("up"),
 });
-export type Stair = z.infer<typeof stairSchema>;
+export type Stair = z.infer<typeof stairObject>;
+
+/**
+ * Translate the old two-value dir, which meant "along the longer side", into the direction it
+ * actually drew — so a staircase on a saved plan keeps pointing the way it always did.
+ */
+export const stairSchema = z.preprocess((value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const stair = value as Record<string, unknown>;
+  if (stair.dir !== "up" && stair.dir !== "down") return value;
+  const wide = Number(stair.w ?? 0) >= Number(stair.h ?? 0);
+  const forward = stair.dir === "up";
+  return { ...stair, dir: wide ? (forward ? "right" : "left") : forward ? "down" : "up" };
+}, stairObject);
 
 const levelObject = z.object({
   id: z.string().min(1),
@@ -229,9 +250,8 @@ export const levelSchema = z.preprocess((value) => {
 
 export type Level = z.infer<typeof levelObject>;
 
-export const floorPlanSchema = z.object({
+const floorPlanObject = z.object({
   address: z.string(),
-  suburb: z.string(),
   /** Cells across and down. Chosen to roughly match the building's proportions. */
   grid: z.object({ w: z.number().int().min(2).max(80), h: z.number().int().min(2).max(80) }),
   /** Which way north points ON THE PAGE. 0 = up, 90 = right, 180 = down, 270 = left. */
@@ -241,7 +261,21 @@ export const floorPlanSchema = z.object({
   orientation: z.enum(["portrait", "landscape"]).default("portrait"),
   levels: z.array(levelSchema).min(1),
 });
-export type FloorPlan = z.infer<typeof floorPlanSchema>;
+export type FloorPlan = z.infer<typeof floorPlanObject>;
+
+/**
+ * `suburb` was a field of its own and is now just part of the address, which is how everyone
+ * writes it anyway. Fold an old one in rather than dropping it on the floor.
+ */
+export const floorPlanSchema = z.preprocess((value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const plan = value as Record<string, unknown>;
+  if (!("suburb" in plan)) return value;
+  const { suburb, ...rest } = plan;
+  const address = String(plan.address ?? "").trim();
+  const extra = typeof suburb === "string" ? suburb.trim() : "";
+  return { ...rest, address: [address, extra].filter(Boolean).join(", ") };
+}, floorPlanObject);
 
 export const A4_MM = { w: 210, h: 297 } as const;
 

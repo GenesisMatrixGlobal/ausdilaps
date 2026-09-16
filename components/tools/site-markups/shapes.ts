@@ -6,6 +6,7 @@ import type { Measurable, ShapeMode } from "@/lib/kml/standard-markup/measure";
 // Imported as well as re-exported: `export ... from` re-exports without binding the name
 // locally, and payload() below reads MIN_POINTS.
 import { MIN_POINTS } from "@/lib/kml/standard-markup/measure";
+import type { MarkupColorKey } from "@/lib/kml/standard-markup/style";
 
 // The measurement maths moved to lib/kml/standard-markup/measure.ts so the Measure tab can
 // share it — two tools must never quote different square metres for the same outline.
@@ -39,7 +40,9 @@ export const SHAPE_WIDTH_STEP_M = 1;
  *  existing rows: orange = Council / External Assets, blue = Neighbouring Assets, red =
  *  Project Site. That keeps the legend at three fixed rows however many shapes are drawn,
  *  and red is what you redraw the project site with after unticking the detected one. */
-export type ShapeColor = "orange" | "blue" | "red";
+/** Any markup colour. What a given tool OFFERS is decided by ShapePanel's `palette` — the
+ *  markup tabs offer the legend's three, the Closeout Markup offers its inspection statuses. */
+export type ShapeColor = MarkupColorKey;
 
 /** The wire shape — what /api/kml/standard-markup/render expects. */
 export interface MarkupShape extends Measurable {

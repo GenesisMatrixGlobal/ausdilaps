@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { StepperRow } from "@/components/ui/stepper-row";
 import type { MarkupMapCommands } from "./markup-map";
+import { MARKUP_STYLES } from "@/lib/kml/standard-markup/style";
 import {
   SHAPE_WIDTH_STEP_M,
   MAX_SHAPES,
@@ -25,15 +26,32 @@ const MODES: { key: ShapeMode; label: string; hint: string }[] = [
   { key: "area", label: "Area", hint: "The points are the boundary itself; whatever they enclose is infilled — a nature strip, reserve or building footprint." },
 ];
 
-/** Two options, not a colour picker: each maps the shape onto one of the exported
- *  legend's existing rows, so the legend stays three fixed lines. */
-const COLORS: { key: ShapeColor; label: string; swatch: string; hint: string }[] = [
-  { key: "orange", label: "Orange", swatch: "#e8642a", hint: "Legend: Council / External Assets" },
-  { key: "blue", label: "Blue", swatch: "#1d4ed8", hint: "Legend: Neighbouring Assets" },
-  { key: "red", label: "Red", swatch: "#ff0000", hint: "Legend: Project Site — use this to redraw the site boundary" },
+export interface ShapeSwatch {
+  key: ShapeColor;
+  label: string;
+  hint: string;
+}
+
+/**
+ * Not a free colour picker: each option maps the shape onto a row the drawing's legend actually
+ * has, so the legend stays a fixed set of lines however many shapes get drawn.
+ *
+ * Which rows those are is per TOOL, which is why this is overridable — a hand-drawn council
+ * asset on a Closeout Markup has to be colourable by whether it was inspected, and "orange"
+ * there means Pending, not Council / External Assets.
+ */
+const DEFAULT_PALETTE: ShapeSwatch[] = [
+  { key: "orange", label: "Orange", hint: "Legend: Council / External Assets" },
+  { key: "blue", label: "Blue", hint: "Legend: Neighbouring Assets" },
+  { key: "red", label: "Red", hint: "Legend: Project Site — use this to redraw the site boundary" },
 ];
 
-const SWATCH: Record<ShapeColor, string> = { orange: "#e8642a", blue: "#1d4ed8", red: "#ff0000" };
+/** The swatch is the stroke/fill pair, so a two-tone option looks in the picker like it will
+ *  look on the map. */
+function swatchStyle(key: ShapeColor) {
+  const style = MARKUP_STYLES[key] ?? MARKUP_STYLES.orange;
+  return { backgroundColor: `#${style.fill}`, borderColor: `#${style.stroke}` };
+}
 
 /**
  * What the shape IS — colour and line-vs-area — drawn rather than spelled out.
@@ -44,7 +62,8 @@ const SWATCH: Record<ShapeColor, string> = { orange: "#e8642a", blue: "#1d4ed8",
  * carry only what a 20px icon can't — width, point count, and the measurement.
  */
 function ShapeGlyph({ shape }: { shape: ShapeDraft }) {
-  const color = SWATCH[shape.color];
+  // The stroke, so the glyph reads as the shape's identity — matching markupColor().
+  const color = `#${MARKUP_STYLES[shape.color]?.stroke ?? MARKUP_STYLES.orange.stroke}`;
   const label = `${shape.color} ${shape.mode}`;
   return (
     <span className="shrink-0" title={label} aria-label={label} role="img">
@@ -103,12 +122,15 @@ function Measurement({ shape }: { shape: ShapeDraft }) {
 export function ShapePanel({
   shapes,
   commands,
+  palette = DEFAULT_PALETTE,
 }: {
   shapes: ShapesState;
   /** The map's imperative handle. Undo and Clear go through it, NOT through `shapes`: the
    *  overlay owns the geometry, so a React-state write would update the panel's point count
    *  and leave the outline on the map untouched. */
   commands: React.RefObject<MarkupMapCommands | null>;
+  /** The colours this tool's legend can explain. Defaults to the markup tabs' three. */
+  palette?: ShapeSwatch[];
 }) {
   const { shapes: list, activeShapeId, atMax } = shapes;
 
@@ -215,7 +237,7 @@ export function ShapePanel({
                     </div>
 
                     <div className="mt-2 flex gap-2">
-                      {COLORS.map((c) => (
+                      {palette.map((c) => (
                         <button
                           key={c.key}
                           type="button"
@@ -229,10 +251,7 @@ export function ShapePanel({
                               : "border-ad-border text-ad-muted hover:text-ad-ink"
                           )}
                         >
-                          <span
-                            className="h-3 w-3 rounded-full border border-black/10"
-                            style={{ backgroundColor: c.swatch }}
-                          />
+                          <span className="h-3 w-3 rounded-full border-2" style={swatchStyle(c.key)} />
                           {c.label}
                         </button>
                       ))}

@@ -26,7 +26,7 @@ const markupShapeSchema = z.object({
   /** Ignored in "area" mode — kept required so the field never needs a null branch. */
   widthMetres: z.number().min(5).max(30),
   mode: z.enum(["line", "area"]).default("line"),
-  color: z.enum(MARKUP_SHAPE_COLORS).default("orange"),
+  color: z.enum(MARKUP_COLOR_KEYS).default("orange"),
   /** The quote item number, or "" for a shape that is drawn but is not a line item. Assigned
    *  client-side from the sheet's tick state, so the PNG and the screen can never disagree. */
   label: z.string().max(4).default(""),

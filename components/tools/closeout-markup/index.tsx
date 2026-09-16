@@ -27,6 +27,7 @@ import { closeoutCsv, numberRows, rowNumbers, type CloseoutRow } from "@/lib/clo
 import {
   INSPECTION_LEGEND,
   type CloseoutOpportunity,
+  type CouncilAsset,
   type SkippedWorkOrder,
   type UnmappedWorkOrder,
 } from "@/lib/closeout-markup/types";
@@ -34,6 +35,7 @@ import type { CloseoutProperty } from "@/lib/closeout-markup/types";
 import { buildCloseoutFile, parseCloseoutFile } from "@/lib/closeout-markup/file";
 import { MARKUP_STYLES } from "@/lib/kml/standard-markup/style";
 import type { LatLng } from "@/lib/kml/types";
+import { CLOSEOUT_SHAPE_PALETTE, CouncilAssets } from "./council-assets";
 import { MapLegend } from "./map-legend";
 import { OpportunityCard } from "./opportunity-card";
 import { StatusTable } from "./status-table";
@@ -64,6 +66,7 @@ export function CloseoutMarkupTool() {
   const [properties, setProperties] = useState<CloseoutProperty[]>([]);
   const [unmapped, setUnmapped] = useState<UnmappedWorkOrder[]>([]);
   const [skipped, setSkipped] = useState<SkippedWorkOrder[]>([]);
+  const [councilAssets, setCouncilAssets] = useState<CouncilAsset[]>([]);
   const [workOrderCount, setWorkOrderCount] = useState(0);
   const [deselected, setDeselected] = useState<Set<string>>(new Set());
   const [parcels, setParcels] = useState<Map<string, ResolvedParcel>>(new Map());
@@ -153,6 +156,7 @@ export function CloseoutMarkupTool() {
       properties: CloseoutProperty[];
       unmapped: UnmappedWorkOrder[];
       skipped: SkippedWorkOrder[];
+      councilAssets: CouncilAsset[];
       workOrderCount: number;
     }) => {
       reset();
@@ -160,6 +164,7 @@ export function CloseoutMarkupTool() {
       setProperties(data.properties);
       setUnmapped(data.unmapped);
       setSkipped(data.skipped);
+      setCouncilAssets(data.councilAssets);
       setWorkOrderCount(data.workOrderCount);
       // ⚠️ Over the cap, NOTHING is pre-ticked. Pre-ticking the first 60 of 700 in street order
       // would be a drawing of one suburb presented as a drawing of the job, and the operator
@@ -276,6 +281,7 @@ export function CloseoutMarkupTool() {
     return JSON.stringify(
       buildCloseoutFile({
         opportunity,
+        councilAssets,
         properties: rows.map((r) => ({
           property: r.property,
           selected: r.selected,
@@ -326,6 +332,7 @@ export function CloseoutMarkupTool() {
     // Not stored: a billing line is not part of a drawing, so a reopened file has nothing to
     // say about one. `unmapped` IS stored — those are real inspections missing from the picture.
     setSkipped([]);
+    setCouncilAssets(parsed.file.councilAssets);
     setWorkOrderCount(parsed.file.workOrderCount);
     setDeselected(new Set(parsed.file.properties.filter((p) => !p.selected).map((p) => p.property.key)));
     setParcels(
@@ -343,10 +350,13 @@ export function CloseoutMarkupTool() {
     }
   }
 
-  const drawnColours = useMemo(
-    () => new Set(rows.filter((r) => r.selected).map((r) => r.property.color)),
-    [rows]
-  );
+  const drawnColours = useMemo(() => {
+    const present = new Set(rows.filter((r) => r.selected).map((r) => r.property.color));
+    // A hand-drawn council asset is on the drawing too, so its colour needs a legend row —
+    // otherwise the one shape the operator drew themselves is the one nothing explains.
+    for (const sh of shapes.shapes) present.add(sh.color as (typeof rows)[number]["property"]["color"]);
+    return present;
+  }, [rows, shapes.shapes]);
 
   const counts = useMemo(() => {
     const acc: Record<string, number> = {};
@@ -436,6 +446,13 @@ export function CloseoutMarkupTool() {
             {" · "}
             <span className="font-medium">{properties.length}</span> unique address
             {properties.length === 1 ? "" : "es"}
+            {councilAssets.length > 0 && (
+              <>
+                {" · "}
+                <span className="font-medium">{councilAssets.length}</span> council asset
+                {councilAssets.length === 1 ? "" : "s"}
+              </>
+            )}
           </p>
 
           {/* The exceptions, muted and only when there are any. Two different things: a skipped
@@ -507,7 +524,10 @@ export function CloseoutMarkupTool() {
                 />
               </div>
               <div className="w-full space-y-4 xl:w-80 xl:shrink-0">
-                <ShapePanel shapes={shapes} commands={mapRef} />
+                {/* Above the shape tools, because that is the order of the job: open the
+                    reference, then draw it. */}
+                <CouncilAssets assets={councilAssets} />
+                <ShapePanel shapes={shapes} commands={mapRef} palette={CLOSEOUT_SHAPE_PALETTE} />
               </div>
             </div>
           )}

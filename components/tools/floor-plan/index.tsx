@@ -31,14 +31,13 @@ import {
   removeWall,
   renameRoom,
   restoreWall,
-  rotateStair,
+  setStairDirection,
   setLabelPlacement,
   setRoomKind,
   splitRoom,
   updateDoor,
   updateLine,
   updateMark,
-  updateStair,
   type EditResult,
 } from "@/lib/floor-plan/edit";
 import { renderPlan } from "@/lib/floor-plan/render";
@@ -308,7 +307,6 @@ export function FloorPlanTool() {
     setError(null);
     setPlan({
       address: "",
-      suburb: "",
       grid: { w: 24, h: 18 },
       north: 0,
       northNote: "",
@@ -1107,29 +1105,35 @@ export function FloorPlanTool() {
               {selectedStair && (
                 <>
                   <p className="mt-1 text-xs text-ad-muted">
-                    {selectedStair.w} × {selectedStair.h} cells · going {selectedStair.dir}
+                    {selectedStair.w} × {selectedStair.h} cells
                   </p>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => apply(rotateStair(level, plan.grid, selectedStair.id))}
-                      className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
-                    >
-                      Turn 90°
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        apply(
-                          updateStair(level, selectedStair.id, {
-                            dir: selectedStair.dir === "up" ? "down" : "up",
-                          })
-                        )
-                      }
-                      className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-xs font-medium text-ad-ink hover:border-ad-steel"
-                    >
-                      Flip the arrow
-                    </button>
+                  {/* One control, not a rotate and a flip: the flight runs the way the arrow
+                      points, so naming the direction says everything. Picking one that crosses
+                      the current one turns the footprint with it. */}
+                  <p className="mt-3 text-xs font-medium text-ad-ink">Going</p>
+                  <div className="mt-1 grid grid-cols-4 gap-1">
+                    {([
+                      { key: "up", glyph: "↑", label: "Up the page" },
+                      { key: "down", glyph: "↓", label: "Down the page" },
+                      { key: "left", glyph: "←", label: "Left" },
+                      { key: "right", glyph: "→", label: "Right" },
+                    ] as const).map((d) => (
+                      <button
+                        key={d.key}
+                        type="button"
+                        title={d.label}
+                        aria-label={d.label}
+                        onClick={() => apply(setStairDirection(level, plan.grid, selectedStair.id, d.key))}
+                        className={cn(
+                          "rounded-lg border px-2 py-1.5 text-sm font-medium",
+                          selectedStair.dir === d.key
+                            ? "border-ad-steel bg-ad-steel/10 text-ad-ink"
+                            : "border-ad-border bg-white text-ad-muted hover:border-ad-steel hover:text-ad-ink"
+                        )}
+                      >
+                        {d.glyph}
+                      </button>
+                    ))}
                   </div>
                   <p className="mt-2 text-xs text-ad-muted">Drag a handle to resize it.</p>
                 </>
@@ -1175,16 +1179,7 @@ export function FloorPlanTool() {
                 />
               </label>
               <label className="mt-3 block text-sm font-medium text-ad-ink">
-                Suburb
-                <input
-                  value={plan.suburb}
-                  placeholder="Not on the sketch — type it"
-                  onChange={(e) => update({ suburb: e.target.value }, "suburb")}
-                  className="mt-1 w-full rounded-lg border border-ad-border p-2 text-sm outline-none focus:border-ad-steel"
-                />
-              </label>
-              <label className="mt-3 block text-sm font-medium text-ad-ink">
-                Level name
+                Subheading
                 <input
                   value={level.name}
                   onChange={(e) => setLevel({ ...level, name: e.target.value }, `level:${level.id}`)}

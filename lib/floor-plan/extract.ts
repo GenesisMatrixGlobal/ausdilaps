@@ -268,8 +268,8 @@ function toFloorPlan(raw: RawPlan): FloorPlan {
   const north = ((Math.round(raw.northDegrees) % 360) + 360) % 360;
 
   return {
-    address: raw.address.trim(),
-    suburb: raw.suburb.trim(),
+    // Read separately off the page, stored as one line — which is how a title block writes it.
+    address: [raw.address.trim(), raw.suburb.trim()].filter(Boolean).join(", "),
     grid: { w: raw.grid.w + PAD * 2, h: raw.grid.h + PAD * 2 },
     north,
     northNote: raw.northNote.trim(),

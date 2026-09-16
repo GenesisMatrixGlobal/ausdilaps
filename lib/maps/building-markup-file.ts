@@ -18,7 +18,7 @@ export const BUILDING_MARKUP_FILE_VERSION = 2;
 export type MarkupMapType = "satellite" | "hybrid" | "roadmap";
 type ShapeMode = "line" | "area";
 /** Hand-drawn shapes stay at the legend's three original rows — see SHAPE_COLORS. */
-type ShapeColor = "orange" | "blue" | "red";
+type ShapeColor = MarkupColorKey;
 /** A LOT may carry any markup colour. The Closeout Markup colours a lot by how its work orders
  *  went, so green and purple reach the save file even though no shape can be drawn in them. */
 type LotColor = MarkupColorKey;
@@ -123,7 +123,7 @@ const LINE_ITEM_FIELDS = new Set([
 ]);
 
 const MODES: ShapeMode[] = ["line", "area"];
-const COLORS: ShapeColor[] = ["orange", "blue", "red"];
+const COLORS: ShapeColor[] = [...MARKUP_COLOR_KEYS];
 const LOT_COLORS: LotColor[] = [...MARKUP_COLOR_KEYS];
 
 function str(v: unknown): string {

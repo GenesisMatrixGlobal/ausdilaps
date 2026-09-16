@@ -7,10 +7,11 @@ import { MarkupSyncError } from "@/lib/markup-sync";
 import { lightningUrl } from "@/lib/quote-lines/resolve";
 import { soqlQuery, soqlQueryAll } from "@/lib/salesforce";
 import { parseSalesforceRecord, soqlEscape } from "@/lib/salesforce-links";
-import { groupWorkOrders } from "./group";
+import { groupWorkOrders, isCouncilAsset } from "./group";
 import type {
   CloseoutOpportunity,
   CloseoutProperty,
+  CouncilAsset,
   SkippedWorkOrder,
   UnmappedWorkOrder,
   WorkOrderRow,
@@ -49,6 +50,7 @@ interface WorkOrderRecord {
   Latitude?: number | null;
   Longitude?: number | null;
   GeocodeAccuracy?: string | null;
+  Site_Mark_Ups__c?: string | null;
 }
 
 export interface ResolvedCloseout {
@@ -56,6 +58,7 @@ export interface ResolvedCloseout {
   properties: CloseoutProperty[];
   unmapped: UnmappedWorkOrder[];
   skipped: SkippedWorkOrder[];
+  councilAssets: CouncilAsset[];
   /** Work orders that WERE inspections — the denominator the sheet shows. Excludes `skipped`. */
   workOrderCount: number;
 }
@@ -82,6 +85,36 @@ export function parseOpportunityInput(input: string): string {
   return ref.id;
 }
 
+/**
+ * Cover photos, by work order id.
+ *
+ * `Survey__c.Work_Order__c` is the link, and `Cover_Photo_URL__c` is a Box shared link to a
+ * .png/.jpg — the report cover, with the council asset drawn on it. 11,736 surveys carry one.
+ *
+ * Chunked because a SOQL statement has a length limit and a big job could name hundreds of
+ * work orders. Never throws: a reference image is a convenience, and losing it should cost the
+ * operator a link, not the whole closeout.
+ */
+async function coverPhotosFor(workOrderIds: string[]): Promise<Map<string, string>> {
+  const found = new Map<string, string>();
+  const CHUNK = 200;
+  for (let i = 0; i < workOrderIds.length; i += CHUNK) {
+    const ids = workOrderIds.slice(i, i + CHUNK).map((id) => `'${soqlEscape(id)}'`).join(",");
+    if (!ids) continue;
+    try {
+      const rows = await soqlQueryAll<{ Work_Order__c: string; Cover_Photo_URL__c: string }>(
+        `SELECT Work_Order__c, Cover_Photo_URL__c FROM Survey__c ` +
+          `WHERE Work_Order__c IN (${ids}) AND Cover_Photo_URL__c != null`
+      );
+      // A work order can have several surveys; the first with a cover photo is enough to look at.
+      for (const r of rows) if (!found.has(r.Work_Order__c)) found.set(r.Work_Order__c, r.Cover_Photo_URL__c);
+    } catch {
+      // Leave the links off rather than failing the resolve.
+    }
+  }
+  return found;
+}
+
 export async function resolveCloseout(input: string): Promise<ResolvedCloseout> {
   const id = parseOpportunityInput(input);
   const escaped = soqlEscape(id);
@@ -98,7 +131,7 @@ export async function resolveCloseout(input: string): Promise<ResolvedCloseout> 
   // with nothing on screen to say so.
   const records = await soqlQueryAll<WorkOrderRecord>(
     `SELECT Id, WorkOrderNumber, Status, StatusCategory, Dilap_Stage__c, WorkType.Name, ` +
-      `Street, City, State, PostalCode, Latitude, Longitude, GeocodeAccuracy ` +
+      `Street, City, State, PostalCode, Latitude, Longitude, GeocodeAccuracy, Site_Mark_Ups__c ` +
       `FROM WorkOrder WHERE Opportunity__c = '${escaped}'`
   );
 
@@ -116,9 +149,19 @@ export async function resolveCloseout(input: string): Promise<ResolvedCloseout> 
     latitude: r.Latitude ?? null,
     longitude: r.Longitude ?? null,
     geocodeAccuracy: r.GeocodeAccuracy ?? null,
+    siteMarkupUrl: r.Site_Mark_Ups__c ?? null,
   }));
 
-  const { properties, unmapped, skipped } = groupWorkOrders(rows);
+  // Reference images for the council assets ONLY — a second query, and only for the handful of
+  // work orders that need one. Asking for every survey on a 1,900-work-order job would be a
+  // large read for something no other row uses.
+  const coverPhotos = await coverPhotosFor(rows.filter(isCouncilAsset).map((r) => r.id));
+  for (const row of rows) {
+    const url = coverPhotos.get(row.id);
+    if (url) row.coverPhotoUrl = url;
+  }
+
+  const { properties, unmapped, skipped, councilAssets } = groupWorkOrders(rows);
 
   return {
     opportunity: {
@@ -133,6 +176,7 @@ export async function resolveCloseout(input: string): Promise<ResolvedCloseout> 
     properties,
     unmapped,
     skipped,
+    councilAssets,
     // ⚠️ INSPECTIONS, not every row Salesforce returned. A billing line is not something that
     // was assessed, and counting one made the summary overstate the job.
     workOrderCount: rows.length - skipped.length,

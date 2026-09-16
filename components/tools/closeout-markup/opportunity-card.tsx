@@ -10,6 +10,7 @@ import { buttonVariants } from "@/components/ui/button";
 import type {
   CloseoutOpportunity,
   CloseoutProperty,
+  CouncilAsset,
   SkippedWorkOrder,
   UnmappedWorkOrder,
 } from "@/lib/closeout-markup/types";
@@ -20,6 +21,7 @@ interface ResolveResponse {
   properties?: CloseoutProperty[];
   unmapped?: UnmappedWorkOrder[];
   skipped?: SkippedWorkOrder[];
+  councilAssets?: CouncilAsset[];
   workOrderCount?: number;
   error?: string;
 }
@@ -37,6 +39,7 @@ export function OpportunityCard({
     properties: CloseoutProperty[];
     unmapped: UnmappedWorkOrder[];
     skipped: SkippedWorkOrder[];
+    councilAssets: CouncilAsset[];
     workOrderCount: number;
   }) => void;
   onReset: () => void;
@@ -65,6 +68,7 @@ export function OpportunityCard({
         properties: json.properties,
         unmapped: json.unmapped ?? [],
         skipped: json.skipped ?? [],
+        councilAssets: json.councilAssets ?? [],
         workOrderCount: json.workOrderCount ?? 0,
       });
     } catch (e) {

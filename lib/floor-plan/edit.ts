@@ -351,23 +351,37 @@ export function resizeStair(level: Level, grid: Grid, stairId: string, edge: Edg
   return updateStair(level, stairId, { x, y, w, h });
 }
 
+/** Which way the flight runs for a given arrow direction. */
+const dirAxis = (dir: Stair["dir"]) => (dir === "left" || dir === "right" ? "h" : "v");
+
 /**
- * Turn a staircase a quarter turn about its own centre.
+ * Point the staircase a different way.
  *
- * Resizing a 4x1 into a 1x4 turns it too, because the flight runs along the longer side — but
- * that moves the footprint as well. This keeps it where it is, which is what you want once it
- * is already in the right place.
+ * Turns the footprint with it when the new direction crosses the old one, because a flight
+ * runs along the staircase's length — asking for "→" on a tall narrow staircase means you
+ * want a wide one, not a squashed one. That makes this the only direction control needed: it
+ * subsumes the separate rotate and flip buttons it replaces.
  */
-export function rotateStair(level: Level, grid: Grid, stairId: string): EditResult {
+export function setStairDirection(level: Level, grid: Grid, stairId: string, dir: Stair["dir"]): EditResult {
   const stair = level.stairs.find((s) => s.id === stairId);
   if (!stair) return { ok: false, error: "Staircase not found." };
+
+  const wantsWide = dirAxis(dir) === "h";
+  const isWide = stair.w >= stair.h;
+  if (wantsWide === isWide) return updateStair(level, stairId, { dir });
+
+  // Swap the sides about the centre, so it turns where it stands.
   const cx = stair.x + stair.w / 2;
   const cy = stair.y + stair.h / 2;
   const w = stair.h;
   const h = stair.w;
-  const x = Math.max(0, Math.min(cx - w / 2, grid.w - w));
-  const y = Math.max(0, Math.min(cy - h / 2, grid.h - h));
-  return updateStair(level, stairId, { x, y, w, h });
+  return updateStair(level, stairId, {
+    dir,
+    w,
+    h,
+    x: Math.max(0, Math.min(cx - w / 2, grid.w - w)),
+    y: Math.max(0, Math.min(cy - h / 2, grid.h - h)),
+  });
 }
 
 /** Nudge a room's label off its anchor, or turn it to read up the page. */

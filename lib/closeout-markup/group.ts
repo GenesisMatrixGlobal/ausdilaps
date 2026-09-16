@@ -9,6 +9,7 @@ import { normalizeState, stateFromPostcode, STREET_TYPES } from "@/lib/property-
 import type { AuStateCode } from "@/lib/property-sizing/types";
 import type {
   CloseoutProperty,
+  CouncilAsset,
   InspectionColor,
   SkippedWorkOrder,
   UnmappedWorkOrder,
@@ -32,6 +33,24 @@ const NON_INSPECTION_WORK_TYPES = new Set(["Billing Item", "Training", "Training
 
 export function isInspection(row: Pick<WorkOrderRow, "workType">): boolean {
   return !NON_INSPECTION_WORK_TYPES.has(row.workType ?? "");
+}
+
+/**
+ * A council / external asset: `Ext/CA GPS`, `Ext/CA Non GPS`, and their SE variants.
+ *
+ * ⚠️ These are NOT properties and must not be grouped as one. A council asset is a stretch of
+ * kerb, verge, footpath or roadway, and its address is only ever the nearest one — `Christensen
+ * Road & Eastern Service Road`, `Medlow Bath Train Station`, or a house number it merely runs
+ * past. Looking up the parcel there returns a private lot, and colouring that lot as an
+ * inspected asset puts someone's house on the drawing as council infrastructure.
+ *
+ * There is no boundary to look up either: the shapes are hand-drawn ribbons that exist only as
+ * pixels in a report image, with no coordinate stored anywhere in Salesforce or Box (checked —
+ * no EXIF, no sidecar, no KML field). So they are listed with their reference images and the
+ * operator draws the extent, which is exact rather than inferred.
+ */
+export function isCouncilAsset(row: Pick<WorkOrderRow, "workType">): boolean {
+  return (row.workType ?? "").startsWith("Ext/CA");
 }
 
 /**
@@ -278,6 +297,8 @@ export interface GroupResult {
   unmapped: UnmappedWorkOrder[];
   /** Never inspections — billing lines, inductions, training. Not failures. */
   skipped: SkippedWorkOrder[];
+  /** Inspected, but not a property — drawn by hand from their reference images. */
+  councilAssets: CouncilAsset[];
 }
 
 /** Same street, same suburb, close together = the same building. Two work orders on one
@@ -298,6 +319,7 @@ const SAME_BUILDING_METRES = 150;
 export function groupWorkOrders(rows: WorkOrderRow[]): GroupResult {
   const unmapped: UnmappedWorkOrder[] = [];
   const skipped: SkippedWorkOrder[] = [];
+  const councilAssets: CouncilAsset[] = [];
   const groups = new Map<string, WorkOrderRow[]>();
 
   for (const row of rows) {
@@ -305,6 +327,21 @@ export function groupWorkOrders(rows: WorkOrderRow[]): GroupResult {
     // not reach a property's counts, its colour, or the "couldn't be placed" list.
     if (!isInspection(row)) {
       skipped.push({ id: row.id, number: row.number, street: row.street, workType: row.workType });
+      continue;
+    }
+    // A council asset is a real inspection but not a place this tool can outline — see
+    // isCouncilAsset. It goes on its own list with its reference images.
+    if (isCouncilAsset(row)) {
+      councilAssets.push({
+        workOrderId: row.id,
+        number: row.number,
+        street: cleanStreet(row.street) || (row.street ?? "").trim() || "(no address)",
+        suburb: row.city,
+        workType: row.workType,
+        color: colorForWorkOrder(row),
+        coverPhotoUrl: row.coverPhotoUrl ?? null,
+        siteMarkupUrl: row.siteMarkupUrl ?? null,
+      });
       continue;
     }
     if (row.latitude == null || row.longitude == null) {
@@ -399,7 +436,12 @@ export function groupWorkOrders(rows: WorkOrderRow[]): GroupResult {
       (a.suburb ?? "").localeCompare(b.suburb ?? "") ||
       a.street.localeCompare(b.street, undefined, { numeric: true, sensitivity: "base" })
   );
-  return { properties: merged, unmapped, skipped };
+  councilAssets.sort(
+    (a, b) =>
+      (a.suburb ?? "").localeCompare(b.suburb ?? "") ||
+      a.street.localeCompare(b.street, undefined, { numeric: true, sensitivity: "base" })
+  );
+  return { properties: merged, unmapped, skipped, councilAssets };
 }
 
 /** Fold groups that are plainly the same building back together — see SAME_BUILDING_METRES. */

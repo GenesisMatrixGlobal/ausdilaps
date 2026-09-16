@@ -117,7 +117,7 @@ export function renderPlan(plan: FloorPlan, opts: RenderOptions): string {
 
   // Address and suburb on ONE line, with the level under it. Nothing is reserved for a title
   // block that has nothing to put in it.
-  const addressLine = [plan.address.trim(), plan.suburb.trim()].filter(Boolean).join(", ");
+  const addressLine = plan.address.trim();
   const levelName = current.level.name.trim();
   const titleH =
     (addressLine ? addressFont * 1.5 : 0) +

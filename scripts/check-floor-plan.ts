@@ -35,7 +35,7 @@ const MEDIA: Record<string, string> = {
 
 function summarise(plan: FloorPlan): string[] {
   const out: string[] = [];
-  out.push(`  address  ${JSON.stringify(plan.address)}   suburb ${JSON.stringify(plan.suburb)}`);
+  out.push(`  address  ${JSON.stringify(plan.address)}`);
   out.push(`  grid     ${plan.grid.w}x${plan.grid.h}   north ${plan.north}deg`);
   if (plan.northNote) out.push(`  north?   ${plan.northNote}`);
 

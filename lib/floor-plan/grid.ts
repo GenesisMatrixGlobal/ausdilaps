@@ -488,8 +488,8 @@ export type StairGeometry = {
 };
 
 export function stairGeometry(stair: Stair): StairGeometry {
-  // The flight runs along the longer side; the treads cross it.
-  const alongX = stair.w >= stair.h;
+  // The flight runs the way the arrow points; the treads cross it.
+  const alongX = stair.dir === "left" || stair.dir === "right";
   const length = alongX ? stair.w : stair.h;
   const width = alongX ? stair.h : stair.w;
 
@@ -510,7 +510,8 @@ export function stairGeometry(stair: Stair): StairGeometry {
   const inset = Math.min(0.3, length * 0.15);
   const lo = (alongX ? stair.x : stair.y) + inset;
   const hi = (alongX ? stair.x + stair.w : stair.y + stair.h) - inset;
-  const forward = stair.dir === "up";
+  // "Forward" is toward increasing x or y — which on the page is right, and DOWN.
+  const forward = stair.dir === "right" || stair.dir === "down";
   const tail = forward ? lo : hi;
   const tip = forward ? hi : lo;
 

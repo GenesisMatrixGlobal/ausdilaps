@@ -39,7 +39,7 @@ export interface MarkupShapeInput {
    *  reserve, a building footprint). Both end up as ordinary entries in the same Static
    *  Maps polygon list. */
   mode: "line" | "area";
-  color: keyof typeof SHAPE_COLORS;
+  color: MarkupColorKey;
   /** Badge number, assigned client-side over the ticked sheet rows. */
   label?: string;
   /** What the operator called it on the sheet, for the legend. */
@@ -182,7 +182,7 @@ function markupPolygons(
             ? closeRing(sh.points)
             : []
           : bufferLineToPolygon(sh.points, sh.widthMetres),
-      color: SHAPE_COLORS[sh.color] ?? SHAPE_COLORS.orange,
+      color: MARKUP_STYLES[sh.color]?.fill ?? SHAPE_COLORS.orange,
     }))
     .filter((p) => p.ring.length >= 3);
 
@@ -536,7 +536,7 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
         // Guaranteed to be ON the shape — see badgeAnchor. A bent ribbon's centroid is not.
         at: badgeAnchor(x.shape) ?? centroidOf(x.ring),
         label: x.shape.label!,
-        color: SHAPE_COLORS[x.shape.color] ?? SHAPE_COLORS.orange,
+        color: markupColor(x.shape.color),
         shape: "teardrop" as const,
       })),
   ];

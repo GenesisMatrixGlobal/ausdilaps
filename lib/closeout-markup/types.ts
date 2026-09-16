@@ -45,6 +45,10 @@ export interface WorkOrderRow {
   latitude: number | null;
   longitude: number | null;
   geocodeAccuracy: string | null;
+  /** Site_Mark_Ups__c — a Box link to the markup drawn for this work order, when there is one. */
+  siteMarkupUrl?: string | null;
+  /** Cover_Photo_URL__c off the work order's Survey, when there is one. */
+  coverPhotoUrl?: string | null;
 }
 
 /** A work order that was never an inspection — see NON_INSPECTION_WORK_TYPES. Counted and
@@ -55,6 +59,29 @@ export interface SkippedWorkOrder {
   number: string | null;
   street: string | null;
   workType: string | null;
+}
+
+/**
+ * A council / external asset — a stretch of kerb, footpath, verge or roadway.
+ *
+ * Kept OUT of the properties and listed on its own, because it is not a property and has no
+ * boundary this tool can look up. Its address geocodes to whatever private lot happens to be
+ * beside it, so drawing that lot would colour someone's house as a council asset.
+ *
+ * Instead the operator draws the extent by hand from the reference images below — which is what
+ * they are for. See docs in group.ts.
+ */
+export interface CouncilAsset {
+  workOrderId: string;
+  number: string | null;
+  street: string;
+  suburb: string | null;
+  workType: string | null;
+  color: InspectionColor;
+  /** The report cover for this work order's survey, and the site markup filed against the work
+   *  order itself. Either may be absent; both are Box links the operator opens in a new tab. */
+  coverPhotoUrl: string | null;
+  siteMarkupUrl: string | null;
 }
 
 /** A work order that IS an inspection but cannot go on a map, and why. Shown, never silently

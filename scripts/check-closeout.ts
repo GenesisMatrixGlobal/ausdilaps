@@ -14,6 +14,7 @@ import {
   colorForProperty,
   colorForWorkOrder,
   groupWorkOrders,
+  isCouncilAsset,
   isInspection,
   looksLikeAddress,
 } from "../lib/closeout-markup/group";
@@ -91,15 +92,27 @@ check("a billing line", isInspection({ workType: "Billing Item" }), false);
 check("training", isInspection({ workType: "Training (Auto)" }), false);
 check("no work type at all", isInspection({ workType: null }), true);
 
+console.log("\nisCouncilAsset — a stretch of kerb is not a property");
+check("Ext/CA GPS", isCouncilAsset({ workType: "Ext/CA GPS" }), true);
+check("Ext/CA Non GPS", isCouncilAsset({ workType: "Ext/CA Non GPS" }), true);
+check("Ext/CA SE Non GPS", isCouncilAsset({ workType: "Ext/CA SE Non GPS" }), true);
+check("a residential unit", isCouncilAsset({ workType: "Res Unit" }), false);
+check("common areas", isCouncilAsset({ workType: "Common Areas" }), false);
+
 console.log("\ngroupWorkOrders — the real job, end to end");
-const { properties, unmapped, skipped } = groupWorkOrders(fixture.rows);
+const { properties, unmapped, skipped, councilAssets } = groupWorkOrders(fixture.rows);
 check("work orders in", fixture.rows.length, 257);
-// 257 work orders, 254 distinct Street strings, 42 distinct coordinates → 39 real properties.
+// 257 work orders, 254 distinct Street strings, 42 distinct coordinates → 38 real properties.
 // That collapse is the entire tool.
-check("properties out", properties.length, 39);
+check("properties out", properties.length, 38);
+// ⚠️ The one Ext/CA work order is NOT one of them — its address geocodes to a private lot it
+// merely runs past, so drawing that lot would put someone's house on the closeout as council
+// infrastructure.
+check("council assets listed separately", councilAssets.length, 1);
+check("  and are not properties", properties.some((p) => p.street === "36 Culwulla Street"), false);
 check(
   "every work order accounted for",
-  properties.reduce((n, p) => n + p.workOrders, 0) + unmapped.length + skipped.length,
+  properties.reduce((n, p) => n + p.workOrders, 0) + unmapped.length + skipped.length + councilAssets.length,
   257
 );
 // Every real address is placed once the billing lines are out of the way.
@@ -177,7 +190,7 @@ const colours = properties.reduce<Record<string, number>>((acc, p) => {
   return acc;
 }, {});
 console.log(
-  `\n  ${properties.length} properties · ${unmapped.length} unmapped · ${skipped.length} skipped · colours ${JSON.stringify(colours)}`
+  `\n  ${properties.length} properties · ${councilAssets.length} council assets · ${unmapped.length} unmapped · ${skipped.length} skipped · colours ${JSON.stringify(colours)}`
 );
 
 if (failures) {

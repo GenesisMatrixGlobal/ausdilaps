@@ -12,7 +12,13 @@
 import type { LatLng } from "@/lib/kml/types";
 import { isFiniteNumber, parseLatLng, parseLatLngList } from "@/lib/maps/latlng-parse";
 import type { MarkupMapType } from "@/lib/maps/building-markup-file";
-import type { CloseoutOpportunity, CloseoutProperty, InspectionColor, UnmappedWorkOrder } from "./types";
+import type {
+  CloseoutOpportunity,
+  CloseoutProperty,
+  CouncilAsset,
+  InspectionColor,
+  UnmappedWorkOrder,
+} from "./types";
 
 export const CLOSEOUT_FILE_KIND = "ausdilaps.closeout-markup";
 export const CLOSEOUT_FILE_VERSION = 1;
@@ -34,6 +40,8 @@ export interface CloseoutMarkupFile {
   opportunity: CloseoutOpportunity;
   properties: SavedCloseoutProperty[];
   unmapped: UnmappedWorkOrder[];
+  /** Stored: reopening a drawing to adjust a hand-drawn asset needs the reference links again. */
+  councilAssets: CouncilAsset[];
   workOrderCount: number;
   mapType: MarkupMapType;
   shapes: unknown[];
@@ -155,6 +163,20 @@ export function parseCloseoutFile(text: string, maxRingPoints = 2000): ParseClos
               number: str(u.number) || null,
               street: str(u.street) || null,
               reason: str(u.reason),
+            }))
+        : [],
+      councilAssets: Array.isArray(doc.councilAssets)
+        ? (doc.councilAssets as Record<string, unknown>[])
+            .filter((c) => c && typeof c === "object" && str(c.street))
+            .map((c) => ({
+              workOrderId: str(c.workOrderId),
+              number: str(c.number) || null,
+              street: str(c.street),
+              suburb: str(c.suburb) || null,
+              workType: str(c.workType) || null,
+              color: COLORS.includes(c.color as InspectionColor) ? (c.color as InspectionColor) : "orange",
+              coverPhotoUrl: str(c.coverPhotoUrl) || null,
+              siteMarkupUrl: str(c.siteMarkupUrl) || null,
             }))
         : [],
       workOrderCount: isFiniteNumber(doc.workOrderCount) ? doc.workOrderCount : properties.length,

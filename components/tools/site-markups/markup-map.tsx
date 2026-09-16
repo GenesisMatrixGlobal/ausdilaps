@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { LatLng } from "@/lib/kml/types";
 import { bufferLineToPolygon, closeRing } from "@/lib/kml/standard-markup/geometry";
-import { FILL_OPACITY_PERCENT, MARKUP_STYLES, OUTLINE_WEIGHT, SHAPE_COLORS, SITE_RED, STROKE_OPACITY_PERCENT, markupColor, type MarkupColorKey } from "@/lib/kml/standard-markup/style";
+import { FILL_OPACITY_PERCENT, MARKUP_STYLES, OUTLINE_WEIGHT, SITE_RED, STROKE_OPACITY_PERCENT, markupColor, type MarkupColorKey } from "@/lib/kml/standard-markup/style";
 import {
   MAPS_AUTH_FAILURE_MESSAGE,
   MapsKeyMissingError,
@@ -81,7 +81,7 @@ function ringFor(shape: { points: LatLng[]; mode: "line" | "area"; widthMetres: 
 interface ShapeHandles {
   mode: "line" | "area";
   widthMetres: number;
-  color: keyof typeof SHAPE_COLORS;
+  color: MarkupColorKey;
   /** The editable overlay: the boundary in area mode, the centreline in line mode. */
   editor: google.maps.Polygon | google.maps.Polyline;
   /** Line mode only — the buffered ribbon, derived and non-interactive. */
@@ -319,7 +319,11 @@ export function MarkupMap({
   const createShape = useCallback(
     (target: google.maps.Map, shape: ShapeDraft): ShapeHandles => {
       const path = shape.points.map((p) => new google.maps.LatLng(p.lat, p.lng));
-      const hex = `#${SHAPE_COLORS[shape.color]}`;
+      // Same stroke/fill pair a lot gets — a shape drawn in a two-tone colour has to read the
+      // same way as the outlines around it.
+      const style = MARKUP_STYLES[shape.color] ?? MARKUP_STYLES.orange;
+      const hex = `#${style.stroke}`;
+      const fillHex = `#${style.fill}`;
 
       // draggable deliberately OFF on every overlay. On a pannable map, "drag the shape's
       // fill" and "pan the map" are the same gesture on adjacent pixels — and translating a
@@ -346,7 +350,7 @@ export function MarkupMap({
               strokeColor: hex,
               strokeWeight: OUTLINE_WEIGHT,
               strokeOpacity: STROKE_OPACITY,
-              fillColor: hex,
+              fillColor: fillHex,
               fillOpacity: FILL_OPACITY,
             })
           : new google.maps.Polyline({
@@ -375,7 +379,7 @@ export function MarkupMap({
               strokeColor: hex,
               strokeWeight: OUTLINE_WEIGHT,
               strokeOpacity: STROKE_OPACITY,
-              fillColor: hex,
+              fillColor: fillHex,
               fillOpacity: FILL_OPACITY,
             })
           : null;
@@ -449,7 +453,7 @@ export function MarkupMap({
     });
     if (isActive && !h.handles) {
       h.handles = createVertexHandles(map, h.editor, {
-        color: `#${SHAPE_COLORS[h.color]}`,
+        color: `#${markupColor(h.color)}`,
         // An area's outline is a ring, so it has a segment between its last and first points;
         // a line's does not.
         closed: h.mode === "area",

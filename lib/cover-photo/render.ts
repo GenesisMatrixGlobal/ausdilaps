@@ -13,9 +13,10 @@ import sharp from "sharp";
 import type { LatLng } from "@/lib/kml/types";
 import { latLngToPixel, type LatLngBox } from "@/lib/kml/standard-markup/projection";
 import { SCALE } from "@/lib/kml/site-markup/static-map";
-import { renderTiledStaticMap } from "@/lib/maps/static-map-tiles";
+import { ATTRIBUTION_PAD_PX, renderTiledStaticMap } from "@/lib/maps/static-map-tiles";
 import { coverFrameBounds } from "./frame";
 import {
+  COVER_DIM_OUTSIDE_PERCENT,
   COVER_FILL_OPACITY_PERCENT,
   COVER_GREEN,
   COVER_HEIGHT_PX,
@@ -41,19 +42,62 @@ export interface CoverPhotoResult {
  *  plan's logical size and each result multiplied by SCALE afterwards. Handing it the scaled
  *  size instead puts every vertex at half the right offset — the outline lands in the
  *  top-left quadrant and looks like a framing bug. */
-function ringSvg(ring: LatLng[], center: LatLng, zoom: number, width: number, height: number): string {
-  if (ring.length < 3) return "";
+function projectRing(
+  ring: LatLng[],
+  center: LatLng,
+  zoom: number,
+  width: number,
+  height: number
+): string {
   const projection = { center, zoom, imageSizePx: width, imageHeightPx: height };
-  const points = ring
+  return ring
     .map((pt) => {
       const logical = latLngToPixel(projection, pt);
       return `${(logical.x * SCALE).toFixed(1)},${(logical.y * SCALE).toFixed(1)}`;
     })
     .join(" ");
+}
+
+function ringSvg(points: string): string {
   return (
     `<polygon points="${points}" fill="#${COVER_GREEN}" fill-opacity="${COVER_FILL_OPACITY_PERCENT / 100}" ` +
     `stroke="#${COVER_GREEN}" stroke-opacity="${COVER_STROKE_OPACITY_PERCENT / 100}" ` +
     `stroke-width="${COVER_OUTLINE_WEIGHT * SCALE}" stroke-linejoin="round" />`
+  );
+}
+
+/**
+ * A dark scrim over everything OUTSIDE the boundary, so the property reads first.
+ *
+ * One path, two subpaths, `fill-rule: evenodd` — the outer rectangle minus the boundary ring.
+ * Dimming the surroundings rather than the whole image is what makes the shape pop: a uniform
+ * scrim knocks the green back by exactly as much as everything else.
+ *
+ * ⚠️ The scrim FADES OUT over Google's attribution band along the bottom. The Maps Platform
+ * terms forbid obscuring that attribution, and a translucent layer over it is still obscuring
+ * it — but simply stopping the rectangle short of the band leaves a hard horizontal step
+ * across the full width, which is plainly visible on the finished image. A gradient does both
+ * jobs: the bar ends up un-dimmed and there is no edge to see.
+ *
+ * Returns "" when COVER_DIM_OUTSIDE_PERCENT is 0 — the single switch that turns this off.
+ */
+function dimOutsideSvg(points: string, pxWidth: number, pxHeight: number): string {
+  if (COVER_DIM_OUTSIDE_PERCENT <= 0) return "";
+  const opacity = COVER_DIM_OUTSIDE_PERCENT / 100;
+  const band = ATTRIBUTION_PAD_PX * SCALE;
+  // Full strength until a band's height above the bar, clear by halfway into it.
+  const holdAt = (pxHeight - 2 * band) / pxHeight;
+  const clearAt = (pxHeight - band / 2) / pxHeight;
+  const outer = `M0,0 H${pxWidth} V${pxHeight} H0 Z`;
+  const inner = `M${points.split(" ").join(" L").replace(/^ L/, "")} Z`;
+  return (
+    `<defs><linearGradient id="coverDim" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0" stop-color="#000000" stop-opacity="${opacity}" />` +
+    `<stop offset="${holdAt.toFixed(4)}" stop-color="#000000" stop-opacity="${opacity}" />` +
+    `<stop offset="${clearAt.toFixed(4)}" stop-color="#000000" stop-opacity="0" />` +
+    `<stop offset="1" stop-color="#000000" stop-opacity="0" />` +
+    `</linearGradient></defs>` +
+    `<path d="${outer} ${inner}" fill-rule="evenodd" fill="url(#coverDim)" />`
   );
 }
 
@@ -83,9 +127,11 @@ export async function renderCoverPhoto(input: {
     styles: ["feature:poi|visibility:off"],
   });
 
+  const points = projectRing(input.ring, plan.center, plan.zoom, plan.width, plan.height);
   const overlay = Buffer.from(
     `<svg width="${pxWidth}" height="${pxHeight}" xmlns="http://www.w3.org/2000/svg">
-    ${ringSvg(input.ring, plan.center, plan.zoom, plan.width, plan.height)}
+    ${dimOutsideSvg(points, pxWidth, pxHeight)}
+    ${ringSvg(points)}
   </svg>`
   );
 

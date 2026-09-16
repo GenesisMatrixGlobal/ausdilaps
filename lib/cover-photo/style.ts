@@ -10,14 +10,23 @@
 //
 // Dependency-free: the client imports it too.
 
-/** The report template's image box. Change these two numbers and everything downstream —
- *  the map's on-screen aspect, the export framing and the final resize — follows. */
-export const COVER_WIDTH_PX = 600;
-export const COVER_HEIGHT_PX = 442;
+/** The report template's image BOX, in template points. Not the output size — see
+ *  COVER_OUTPUT_SCALE. Change these two and everything downstream (the map's on-screen
+ *  aspect, the export framing, the final resize) follows. */
+export const COVER_BOX_WIDTH = 600;
+export const COVER_BOX_HEIGHT = 442;
+
+/** Rendered at 2x the box so the image is still sharp when the report is printed rather than
+ *  read on screen. It costs nothing extra at Google's end — the frame is already fetched at
+ *  ~2400px and downscaled, so this just throws away less of it. */
+export const COVER_OUTPUT_SCALE = 2;
+
+export const COVER_WIDTH_PX = COVER_BOX_WIDTH * COVER_OUTPUT_SCALE;
+export const COVER_HEIGHT_PX = COVER_BOX_HEIGHT * COVER_OUTPUT_SCALE;
 
 /** Width / height. The frame is planned to this ratio so the final resize is 1:1 rather
- *  than a hidden stretch. */
-export const COVER_ASPECT = COVER_WIDTH_PX / COVER_HEIGHT_PX;
+ *  than a hidden stretch. Scale-independent, so doubling the output cannot change framing. */
+export const COVER_ASPECT = COVER_BOX_WIDTH / COVER_BOX_HEIGHT;
 
 /** 6-digit hex, no leading '#': the form buildStaticMapUrl wants. Maps JS wants a '#', and
  *  the map component prefixes it — one constant, two consumers, no second copy to drift. */
@@ -34,3 +43,18 @@ export const COVER_OUTLINE_WEIGHT = 3;
  *  looking at real exports: the lighter fill washed out over pale roofs and concrete. */
 export const COVER_FILL_OPACITY_PERCENT = 38;
 export const COVER_STROKE_OPACITY_PERCENT = 100;
+
+/**
+ * A dark scrim over everything OUTSIDE the boundary, so the property reads first.
+ *
+ * Dimming the surroundings rather than the whole image is what actually makes the shape pop —
+ * a uniform scrim knocks the green back by exactly as much as everything else. The property
+ * itself is left at full brightness.
+ *
+ * ⚠️ Google's attribution band along the bottom is EXCLUDED from the scrim: the Maps Platform
+ * terms forbid obscuring it, and a translucent layer over it is still obscuring it.
+ *
+ * SET THIS TO 0 TO TURN THE WHOLE EFFECT OFF — the renderer skips the layer entirely and
+ * nothing else changes. That is the whole undo.
+ */
+export const COVER_DIM_OUTSIDE_PERCENT = 22;

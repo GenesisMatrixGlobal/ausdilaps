@@ -18,7 +18,7 @@ import type { LatLngBox } from "@/lib/kml/standard-markup/projection";
 import { AddressSearch, type PlaceSelection } from "@/components/tools/shared/address-search";
 import { downloadBlob } from "@/components/tools/shared/download";
 import { coverViewFor } from "@/lib/cover-photo/frame";
-import { COVER_HEIGHT_PX, COVER_WIDTH_PX } from "@/lib/cover-photo/style";
+import { COVER_ASPECT, COVER_HEIGHT_PX, COVER_WIDTH_PX } from "@/lib/cover-photo/style";
 import { CoverMap, type CoverMapCommands } from "./cover-map";
 import { SyncCoverPhoto } from "./sync-cover-photo";
 
@@ -63,6 +63,14 @@ export function CoverPhotoTool() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [generated, setGenerated] = useState(false);
+  /** The toolbar's Zoom control: positive is tighter, negative is wider. Re-frames around the
+   *  boundary rather than the current centre, so it can't walk off the property.
+   *
+   *  A REF, not state, and for a reason: nothing on screen displays the step, but two quick
+   *  clicks land in the same React batch — so reading it from state meant both handlers saw
+   *  the same stale value and the second click did nothing. Verified: -, - used to move one
+   *  step, not two. */
+  const zoomStepRef = useRef(0);
 
   const frame = useCallback((box: LatLngBox | null) => {
     if (box) setFitRequest({ key: `${Date.now()}`, box });
@@ -110,11 +118,12 @@ export function CoverPhotoTool() {
 
       loadRing(resolved);
       setGenerated(true);
+      zoomStepRef.current = 0;
       // A resolved parcel frames itself with its own margin; without one, fall back to the
       // geocoded point so the operator at least lands on the property.
       frame(
         resolved.length >= 3
-          ? coverViewFor(resolved)
+          ? coverViewFor(resolved, 0)
           : place.location
             ? boxAround(place.location)
             : null
@@ -166,6 +175,15 @@ export function CoverPhotoTool() {
   }
 
   const hasBoundary = ring.length >= 3;
+
+  /** Re-frames one step in or out. Bounded so a held-down button can't leave the operator
+   *  looking at a continent or at four roof tiles. */
+  function stepZoom(by: number) {
+    const next = Math.max(-4, Math.min(6, zoomStepRef.current + by));
+    if (next === zoomStepRef.current) return;
+    zoomStepRef.current = next;
+    frame(coverViewFor(ring, next));
+  }
 
   return (
     <div className="space-y-4">
@@ -232,6 +250,30 @@ export function CoverPhotoTool() {
             </button>
           </>
         )}
+        {/* Re-frames around the BOUNDARY, which is what the operator means by "zoom" here —
+            Google's own +/- zoom the current centre, so after a pan they stop being about the
+            property at all. Scroll and drag still work as normal on top of this. */}
+        <div className="inline-flex items-center gap-1 rounded-full border border-ad-border bg-white p-1">
+          <button
+            type="button"
+            aria-label="Zoom out"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-ad-ink hover:bg-ad-surface disabled:opacity-40 disabled:hover:bg-transparent"
+            onClick={() => stepZoom(-1)}
+            disabled={!hasBoundary}
+          >
+            &minus;
+          </button>
+          <span className="px-1 text-sm text-ad-muted">Zoom</span>
+          <button
+            type="button"
+            aria-label="Zoom in"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-ad-ink hover:bg-ad-surface disabled:opacity-40 disabled:hover:bg-transparent"
+            onClick={() => stepZoom(1)}
+            disabled={!hasBoundary}
+          >
+            +
+          </button>
+        </div>
         <button
           className={cn(buttonVariants({ variant: "outline", size: "md" }))}
           onClick={download}
@@ -242,14 +284,27 @@ export function CoverPhotoTool() {
         <SyncCoverPhoto getImageBase64={renderImage} disabled={!hasBoundary} />
       </div>
 
-      <CoverMap
-        ref={mapRef}
-        ring={ring}
-        ringKey={ringKey}
-        drawing={drawing}
-        onRingChange={setRing}
-        fitRequest={fitRequest}
-      />
+      {/* No map until there is an address. Mounting one is a billed Dynamic Maps load, and an
+          empty map of Brisbane tells the operator nothing — it mounts on the address PICK
+          rather than on Generate, so Google Maps is already loaded by the time the cadastre
+          answers and the first frame lands without a wait. */}
+      {place ? (
+        <CoverMap
+          ref={mapRef}
+          ring={ring}
+          ringKey={ringKey}
+          drawing={drawing}
+          onRingChange={setRing}
+          fitRequest={fitRequest}
+        />
+      ) : (
+        <div
+          className="flex w-full items-center justify-center rounded-xl border border-dashed border-ad-border bg-ad-surface"
+          style={{ aspectRatio: String(COVER_ASPECT) }}
+        >
+          <p className="text-sm text-ad-muted">Find an address to start.</p>
+        </div>
+      )}
 
       <p className="text-xs text-ad-muted">
         The photo is exactly what the map shows, at {COVER_WIDTH_PX}&times;{COVER_HEIGHT_PX}. Pan

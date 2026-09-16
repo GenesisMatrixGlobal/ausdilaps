@@ -17,7 +17,7 @@ const WORLD_PX = 256; // tile size at zoom 0 — the unit mercatorSpan works in
 const EARTH_CIRCUMFERENCE_M = 40075016.686;
 
 /** Ground added around the parcel, as a fraction of its own span on each side. */
-const MARGIN_FACTOR = 0.35;
+const MARGIN_FACTOR = 0.25;
 
 /**
  * Narrowest the frame is ever allowed to get, east-west.
@@ -27,7 +27,7 @@ const MARGIN_FACTOR = 0.35;
  * neighbour and no label in shot, which is the opposite of what a report cover is for. This
  * floor puts the property, both neighbours and the road in frame.
  */
-const MIN_FRAME_METRES = 115;
+export const MIN_FRAME_METRES = 90;
 
 function worldPxPerMetre(lat: number): number {
   return WORLD_PX / (EARTH_CIRCUMFERENCE_M * Math.cos((lat * Math.PI) / 180));
@@ -65,17 +65,29 @@ function toAspect(center: LatLng, spanX: number, spanY: number): { spanX: number
     : { spanX, spanY: spanX / COVER_ASPECT };
 }
 
-/** The frame Generate lands on: the parcel, its margin, the metre floor, at the report's
- *  aspect. */
-export function coverViewFor(ring: LatLng[]): LatLngBox | null {
+/** How much ground one click of the toolbar's Zoom control adds or removes. 1.3 is a
+ *  noticeable step without being a whole Google zoom level (which doubles the ground and
+ *  overshoots every time). */
+const ZOOM_STEP = 1.3;
+
+/**
+ * The frame Generate lands on: the parcel, its margin, the metre floor, at the report's
+ * aspect.
+ *
+ * `step` is the toolbar's Zoom control — positive is tighter, negative is wider. It scales
+ * the finished frame rather than the margin, so it works the same on a suburban block held
+ * at the metre floor as on a rural parcel where the margin dominates.
+ */
+export function coverViewFor(ring: LatLng[], step = 0): LatLngBox | null {
   if (ring.length < 3) return null;
   const { spanX, spanY, center } = mercatorSpan(bboxOf(ring));
   const grow = 1 + 2 * MARGIN_FACTOR;
   const floorX = MIN_FRAME_METRES * worldPxPerMetre(center.lat);
+  const zoom = ZOOM_STEP ** -step;
   const fitted = toAspect(
     center,
-    Math.max(spanX * grow, floorX),
-    Math.max(spanY * grow, floorX / COVER_ASPECT)
+    Math.max(spanX * grow, floorX) * zoom,
+    Math.max(spanY * grow, floorX / COVER_ASPECT) * zoom
   );
   return boxFrom(center, fitted.spanX, fitted.spanY);
 }

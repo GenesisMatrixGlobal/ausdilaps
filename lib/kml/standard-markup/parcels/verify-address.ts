@@ -27,8 +27,22 @@ const SEARCH_HALF_WIDTH_M = 200;
 export type VerifyOutcome =
   /** The address layer agrees: its point for this address is inside the geocoded parcel. */
   | { outcome: "verified" }
-  /** The address is a different parcel. Everything a caller needs to swap it in. */
-  | { outcome: "corrected"; parcel: ParcelFeature; areaSqm: number; point: LatLng; note: string }
+  /** The address is a different parcel. Everything a caller needs to swap it in.
+   *
+   *  `property` is the address layer's own polygon for this address, when it publishes one (NSW
+   *  does; QLD and VIC hand over points). ⚠️ An NSW PROPERTY can span several LOTS — 7-9 Manson
+   *  Street, Telopea is 3,742 m² over 1//DP612384 (2,075) and 1//DP512074 (1,667) — so a caller
+   *  that wants the whole address rather than one title can compare the two areas and use this
+   *  instead. Surfaced, never substituted: Bulk Property Sizing wants the LOT, because a lot
+   *  size is what it reports. */
+  | {
+      outcome: "corrected";
+      parcel: ParcelFeature;
+      areaSqm: number;
+      point: LatLng;
+      note: string;
+      property?: { ring: LatLng[]; areaSqm: number };
+    }
   /** Couldn't tell. The geocoded parcel stands; `note` says why. */
   | { outcome: "unverified"; note: string };
 
@@ -75,5 +89,8 @@ export async function verifyParcelForAddress(input: {
     areaSqm: parcel.areaSqm ?? Math.round(ringAreaSqm(parcel.ring)),
     point: match.point,
     note: `geocoder had put this on ${input.parcelLabel ?? "another lot"} — corrected from the ${input.state} address layer (${match.full})`,
+    ...(match.ring && match.ring.length >= 3
+      ? { property: { ring: match.ring, areaSqm: Math.round(ringAreaSqm(match.ring)) } }
+      : {}),
   };
 }

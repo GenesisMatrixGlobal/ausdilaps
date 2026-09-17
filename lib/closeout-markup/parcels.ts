@@ -77,13 +77,29 @@ export async function resolveCloseoutParcels(properties: CloseoutProperty[]): Pr
           parcelLabel: null,
         });
         if (verdict.outcome === "corrected") {
+          // ⚠️ An address can span more than one LOT, and the lot under the address layer's
+          // anchor is then only part of it. 7-9 Manson Street, Telopea is a 3,742 m² property
+          // over 1//DP612384 (2,075 m²) and 1//DP512074 (1,667 m²) — drawing the anchor's lot
+          // put 55% of the address on the drawing and left the rest white.
+          //
+          // So where the layer publishes the whole PROPERTY polygon (NSW does) and it is
+          // materially bigger than that lot, the property is the outline: it is the extent of
+          // the address, which is what a closeout is reporting on. The 1.2 threshold is well
+          // clear of the few percent a polygon and its single lot differ by, and well under the
+          // 1.8 this case showed.
+          const property = verdict.property;
+          const spansSeveralLots = Boolean(property && property.areaSqm > verdict.areaSqm * 1.2);
           return {
             key: p.key,
-            ring: verdict.parcel.ring,
-            areaSqm: verdict.areaSqm,
+            ring: spansSeveralLots ? property!.ring : verdict.parcel.ring,
+            areaSqm: spansSeveralLots ? property!.areaSqm : verdict.areaSqm,
             lotPlan: verdict.parcel.idKey ?? null,
             point: verdict.point,
-            note: null,
+            // Said out loud, because the area and the lot/plan no longer describe the same
+            // thing: the outline is the property, the lot/plan is its principal title.
+            note: spansSeveralLots
+              ? `Address spans more than one lot — outline is the whole property (${property!.areaSqm} m²), principal lot ${verdict.parcel.idKey ?? "unknown"}`
+              : null,
           };
         }
       } catch {

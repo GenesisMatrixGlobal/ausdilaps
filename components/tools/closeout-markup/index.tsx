@@ -461,15 +461,14 @@ export function CloseoutMarkupTool() {
           {(skipped.length > 0 || unmapped.length > 0) && (
             <p className="mt-1 text-xs text-ad-muted">
               {skipped.length > 0 && (
-                <>
-                  {skipped.length} billing or admin work order{skipped.length === 1 ? "" : "s"} skipped
-                </>
+                <>{`${skipped.length} billing or admin work order${skipped.length === 1 ? "" : "s"} skipped`}</>
               )}
               {skipped.length > 0 && unmapped.length > 0 && " · "}
+              {/* Template literals, not JSX text: JSX drops the space between an expression and
+                  text that follows it across a line break, which is how "1couldn't be placed"
+                  shipped once already. */}
               {unmapped.length > 0 && (
-                <span className="text-ad-orange">
-                  {unmapped.length} couldn&apos;t be placed
-                </span>
+                <span className="text-ad-orange">{`${unmapped.length} couldn't be placed`}</span>
               )}
             </p>
           )}

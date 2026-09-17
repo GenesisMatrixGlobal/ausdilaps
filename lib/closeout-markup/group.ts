@@ -35,22 +35,54 @@ export function isInspection(row: Pick<WorkOrderRow, "workType">): boolean {
   return !NON_INSPECTION_WORK_TYPES.has(row.workType ?? "");
 }
 
-/**
- * A council / external asset: `Ext/CA GPS`, `Ext/CA Non GPS`, and their SE variants.
- *
- * ⚠️ These are NOT properties and must not be grouped as one. A council asset is a stretch of
- * kerb, verge, footpath or roadway, and its address is only ever the nearest one — `Christensen
- * Road & Eastern Service Road`, `Medlow Bath Train Station`, or a house number it merely runs
- * past. Looking up the parcel there returns a private lot, and colouring that lot as an
- * inspected asset puts someone's house on the drawing as council infrastructure.
- *
- * There is no boundary to look up either: the shapes are hand-drawn ribbons that exist only as
- * pixels in a report image, with no coordinate stored anywhere in Salesforce or Box (checked —
- * no EXIF, no sidecar, no KML field). So they are listed with their reference images and the
- * operator draws the extent, which is exact rather than inferred.
- */
-export function isCouncilAsset(row: Pick<WorkOrderRow, "workType">): boolean {
+/** An external / council work type: `Ext/CA GPS`, `Ext/CA Non GPS`, and their SE variants. */
+export function isExternalAsset(row: Pick<WorkOrderRow, "workType">): boolean {
   return (row.workType ?? "").startsWith("Ext/CA");
+}
+
+/** Opens with a house number — `30-34 Hickson Road`, not `Hickson Roadway` or `Crown Facades`. */
+const HOUSE_NUMBER_START = /^\d+[a-z]?\b/i;
+
+/**
+ * Does this work order name a real, findable address?
+ *
+ * BOTH halves are needed. The text has to open with a house number, or `Wulugul Walk` and
+ * `Barton Street` would qualify with nothing to look up. And the geocode must not be
+ * `area` — `Council assets, 1-5 Polding Place, 6 & 12 Sturt St` would otherwise qualify too,
+ * since it cleans to a street with a number on it, and Salesforce located that one to the
+ * SUBURB, where the parcel is whatever sits at the centroid.
+ *
+ * ⚠️ `approximate` IS allowed. A block-level geocode of a real address is still an exact
+ * address — `Bond Building Exterior - 30-34 Hickson Road` is a findable lot — and the parcel
+ * lookup asks the state ADDRESS LAYER by text within 200 m before it ever uses the coordinate,
+ * so a block-level point usually resolves correctly anyway. If it does not, the row falls back
+ * to a pin rather than a wrong parcel, which is the same protection every other property has.
+ */
+export function hasExactAddress(row: Pick<WorkOrderRow, "street" | "geocodeAccuracy">): boolean {
+  return (
+    HOUSE_NUMBER_START.test(cleanStreet(row.street)) && precisionOf(row.geocodeAccuracy) !== "area"
+  );
+}
+
+/**
+ * An external asset that has to be drawn BY HAND rather than outlined from the cadastre.
+ *
+ * ⚠️ NOT every `Ext/CA` row. One with an exact address is highlighted like any other property
+ * (Rhys, 2026-09-17): `5 Manson Street` is a real lot and the asset is the kerb outside it, so
+ * drawing that lot is useful. It is the ones with no exact address that cannot be drawn — a
+ * stretch of kerb called `Hickson Roadway`, or a single row covering three streets at once,
+ * has no boundary to look up and no one point to look it up from.
+ *
+ * Those are listed with their reference images instead. Drawing them anyway would mean picking
+ * a parcel at a suburb centroid — a private property they merely run past, which would go onto
+ * a client's drawing as council infrastructure. And there is no geometry to recover: the shapes
+ * are hand-drawn ribbons that exist only as pixels in a report image, with no coordinate stored
+ * anywhere in Salesforce or Box (checked — no EXIF, no sidecar, no KML field).
+ */
+export function isCouncilAsset(
+  row: Pick<WorkOrderRow, "workType" | "street" | "geocodeAccuracy">
+): boolean {
+  return isExternalAsset(row) && !hasExactAddress(row);
 }
 
 /**
@@ -348,7 +380,11 @@ export function groupWorkOrders(rows: WorkOrderRow[]): GroupResult {
       councilAssets.push({
         workOrderId: row.id,
         number: row.number,
-        street: cleanStreet(row.street) || (row.street ?? "").trim() || "(no address)",
+        // ⚠️ The RAW street, not the cleaned one. Cleaning exists to collapse many work orders
+        // onto one property — there is nothing to collapse here, and it throws away detail a
+        // human needs: "Council assets, 1-5 Polding Place, 6 & 12 Sturt St" cleans to "6 & 12
+        // Sturt Street", which is half of what the operator has to draw.
+        street: (row.street ?? "").replace(/\s+/g, " ").trim() || "(no address)",
         suburb: row.city,
         workType: row.workType,
         color: colorForWorkOrder(row),

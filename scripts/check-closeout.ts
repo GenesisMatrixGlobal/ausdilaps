@@ -92,24 +92,49 @@ check("a billing line", isInspection({ workType: "Billing Item" }), false);
 check("training", isInspection({ workType: "Training (Auto)" }), false);
 check("no work type at all", isInspection({ workType: null }), true);
 
-console.log("\nisCouncilAsset — a stretch of kerb is not a property");
-check("Ext/CA GPS", isCouncilAsset({ workType: "Ext/CA GPS" }), true);
-check("Ext/CA Non GPS", isCouncilAsset({ workType: "Ext/CA Non GPS" }), true);
-check("Ext/CA SE Non GPS", isCouncilAsset({ workType: "Ext/CA SE Non GPS" }), true);
-check("a residential unit", isCouncilAsset({ workType: "Res Unit" }), false);
-check("common areas", isCouncilAsset({ workType: "Common Areas" }), false);
+console.log("\nisCouncilAsset — an external asset WITHOUT an exact address");
+const ext = (street: string, geocodeAccuracy: string, workType = "Ext/CA GPS") =>
+  ({ workType, street, geocodeAccuracy });
+
+// ⚠️ An external asset with a real street number and a rooftop geocode is drawn like any other
+// property — the asset is the kerb outside a lot we can actually find (Rhys, 2026-09-17).
+check("5 Manson Street, Address", isCouncilAsset(ext("5 Manson Street", "Address")), false);
+check("7-9 Manson Street, Address", isCouncilAsset(ext("7-9 Manson Street", "Address")), false);
+check("30-34 Hickson Road, NearAddress", isCouncilAsset(ext("30-34 Hickson Road", "NearAddress")), false);
+
+// No house number: nothing to look up, however good the geocode.
+check("Hickson Roadway", isCouncilAsset(ext("Hickson Roadway", "Address")), true);
+check("Barton Street", isCouncilAsset(ext("Barton Street", "Address")), true);
+check("Crown Facades", isCouncilAsset(ext("Crown Facades", "Address")), true);
+
+// ⚠️ A house number but a SUBURB-level geocode. This one covers three streets at once and
+// cleans to a numbered street, so the text test alone would have drawn it on whatever parcel
+// sits at the centroid.
+check(
+  "Council assets, 1-5 Polding Place, 6 & 12 Sturt St @ City",
+  isCouncilAsset(ext("Council assets, 1-5 Polding Place, 6 & 12 Sturt St", "City")),
+  true
+);
+// ⚠️ Block-level is still an exact address — the parcel lookup asks the address layer by text
+// first, and falls back to a pin rather than a wrong lot.
+check("a numbered street at Block accuracy", isCouncilAsset(ext("12 Smith Street", "Block")), false);
+check("Bond Building Exterior - 30-34 Hickson Road @ Block", isCouncilAsset(ext("Bond Building Exterior - 30-34 Hickson Road", "Block")), false);
+
+// Only external work types divert at all.
+check("a residential unit", isCouncilAsset(ext("12 Smith Street", "City", "Res Unit")), false);
+check("common areas", isCouncilAsset(ext("Common Areas", "City", "Common Areas")), false);
 
 console.log("\ngroupWorkOrders — the real job, end to end");
 const { properties, unmapped, skipped, councilAssets } = groupWorkOrders(fixture.rows);
 check("work orders in", fixture.rows.length, 257);
-// 257 work orders, 254 distinct Street strings, 42 distinct coordinates → 38 real properties.
+// 257 work orders, 254 distinct Street strings, 42 distinct coordinates → 39 real properties.
 // That collapse is the entire tool.
-check("properties out", properties.length, 38);
-// ⚠️ The one Ext/CA work order is NOT one of them — its address geocodes to a private lot it
-// merely runs past, so drawing that lot would put someone's house on the closeout as council
-// infrastructure.
-check("council assets listed separately", councilAssets.length, 1);
-check("  and are not properties", properties.some((p) => p.street === "36 Culwulla Street"), false);
+check("properties out", properties.length, 39);
+// ⚠️ This job's one Ext/CA work order IS among them: "36 Culwulla Street" is an exact address
+// at a rooftop geocode, so the lot is found and highlighted like any other. Only external
+// assets with nothing findable to look up go on the hand-drawn list.
+check("an external asset with an exact address is drawn", properties.some((p) => p.street === "36 Culwulla Street"), true);
+check("so nothing is left to hand-draw here", councilAssets.length, 0);
 check(
   "every work order accounted for",
   properties.reduce((n, p) => n + p.workOrders, 0) + unmapped.length + skipped.length + councilAssets.length,

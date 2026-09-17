@@ -36,7 +36,6 @@ import { buildCloseoutFile, parseCloseoutFile } from "@/lib/closeout-markup/file
 import { MARKUP_STYLES } from "@/lib/kml/standard-markup/style";
 import type { LatLng } from "@/lib/kml/types";
 import { CLOSEOUT_SHAPE_PALETTE, DrawByHand } from "./draw-by-hand";
-import { MapLegend } from "./map-legend";
 import { OpportunityCard } from "./opportunity-card";
 import { StatusTable } from "./status-table";
 import { FileToSalesforce } from "./file-to-salesforce";
@@ -364,14 +363,6 @@ export function CloseoutMarkupTool() {
     }
   }
 
-  const drawnColours = useMemo(() => {
-    const present = new Set(rows.filter((r) => r.selected).map((r) => r.property.color));
-    // A hand-drawn council asset is on the drawing too, so its colour needs a legend row —
-    // otherwise the one shape the operator drew themselves is the one nothing explains.
-    for (const sh of shapes.shapes) present.add(sh.color as (typeof rows)[number]["property"]["color"]);
-    return present;
-  }, [rows, shapes.shapes]);
-
   const counts = useMemo(() => {
     const acc: Record<string, number> = {};
     for (const r of rows) acc[r.property.color] = (acc[r.property.color] ?? 0) + 1;
@@ -511,7 +502,6 @@ export function CloseoutMarkupTool() {
           {generated && (
             <div className={cn("mt-6 flex flex-col gap-4 xl:flex-row xl:items-start", BREAKOUT_XL)}>
               <div className="relative w-full min-w-0 xl:flex-1">
-                <MapLegend present={drawnColours} />
                 {/* Panning away from the framing is easy and the export takes whatever the map
                     is left on, so there has to be a way back to it. Ticking rows changes what
                     is drawn WITHOUT moving the camera — yanking it while someone works through

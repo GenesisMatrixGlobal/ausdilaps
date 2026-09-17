@@ -545,6 +545,69 @@ function fitText(text: string, fontSize: number, maxWidth: number): string {
   return cut.trimEnd() + "...";
 }
 
+/** Gap between the title and an inline colour key, and between the key's own items. */
+const KEY_INLINE_GAP = 44;
+const KEY_ITEM_GAP = 36;
+/** Height of one line of key, when it cannot fit beside the title. */
+const KEY_LINE_HEIGHT = SCHEDULE_FONT + 18;
+
+/** One key item's width: swatch, gap, label. */
+function keyItemWidths(keys: LegendRow[]): number[] {
+  return keys.map(({ label }) => SCHEDULE_SWATCH + SCHEDULE_GAP + textWidth(asciiish(label), SCHEDULE_FONT));
+}
+
+/**
+ * Break the key into lines that each fit `maxWidth`.
+ *
+ * ⚠️ Always at least one item per line, even one wider than the band: the alternative is a loop
+ * that never places it. Four colours at the narrowest export this planner produces (640px) do
+ * not fit on one line, which is how this came to wrap at all.
+ */
+function keyLines(keys: LegendRow[], maxWidth: number): LegendRow[][] {
+  const widths = keyItemWidths(keys);
+  const lines: LegendRow[][] = [];
+  let line: LegendRow[] = [];
+  let used = 0;
+  keys.forEach((row, i) => {
+    if (line.length > 0 && used + KEY_ITEM_GAP + widths[i] > maxWidth) {
+      lines.push(line);
+      line = [];
+      used = 0;
+    }
+    used += (line.length > 0 ? KEY_ITEM_GAP : 0) + widths[i];
+    line.push(row);
+  });
+  if (line.length > 0) lines.push(line);
+  return lines;
+}
+
+/**
+ * The colour key, laid out ACROSS rather than down — for the band, which is wide and shallow.
+ *
+ * ⚠️ This is the same key `legendSvg` draws, in the other of its two homes. It is drawn with the
+ * ASCII atlas rather than overlay-paths.ts's pre-baked outlines because the band already draws
+ * all its text that way and a horizontal row needs its own measured widths; the label set is
+ * still validated against the baked list by the render schema, so the two homes can never
+ * disagree about which labels exist.
+ */
+function keyRowSvg(keys: LegendRow[], x: number, baseline: number): string {
+  const r = SCHEDULE_SWATCH / 2;
+  const parts: string[] = [];
+  let cursor = x;
+  keys.forEach(({ fill, stroke, label }, i) => {
+    if (i > 0) cursor += KEY_ITEM_GAP;
+    parts.push(
+      `<circle cx="${cursor + r}" cy="${baseline - r - 1}" r="${r}" ` +
+        `fill="#${fill}" stroke="#${stroke ?? fill}" stroke-width="3" />`
+    );
+    cursor += SCHEDULE_SWATCH + SCHEDULE_GAP;
+    const text = asciiish(label);
+    parts.push(textToSvgPaths(text, { x: cursor, y: baseline, fontSize: SCHEDULE_FONT, fill: INK }));
+    cursor += textWidth(text, SCHEDULE_FONT);
+  });
+  return parts.join("\n    ");
+}
+
 /**
  * Lay the schedule out into a band added BELOW the drawing.
  *
@@ -555,7 +618,7 @@ function fitText(text: string, fontSize: number, maxWidth: number): string {
  *
  * Reading order is down each column then across — how a numbered list is read.
  */
-function planSchedule(rows: ScheduleRow[], widthPx: number, title: string) {
+function planSchedule(rows: ScheduleRow[], widthPx: number, title: string, keys: LegendRow[]) {
   const textWidths = rows.map((r) => textWidth(asciiish(r.street), SCHEDULE_FONT));
   const textW = Math.min(SCHEDULE_MAX_TEXT, Math.max(150, ...textWidths));
   const columnW = SCHEDULE_NUM_W + SCHEDULE_GAP + SCHEDULE_SWATCH + SCHEDULE_GAP + textW;
@@ -563,25 +626,44 @@ function planSchedule(rows: ScheduleRow[], widthPx: number, title: string) {
   const usable = widthPx - SCHEDULE_PAD * 2;
   const columns = Math.max(1, Math.min(rows.length, Math.floor((usable + SCHEDULE_COL_GAP) / (columnW + SCHEDULE_COL_GAP))));
   const perColumn = Math.ceil(rows.length / columns);
-  const height = Math.ceil(
-    SCHEDULE_PAD * 2 + SCHEDULE_TITLE_FONT + SCHEDULE_TITLE_GAP + perColumn * SCHEDULE_ROW
-  );
+
+  // The key sits beside the title when the band is wide enough, and wraps onto its own line(s)
+  // below when it isn't — a narrow export would otherwise run it off the right edge or over the
+  // heading. Measured, not guessed at, because both strings are variable: the title is the
+  // caller's and the key has one row per colour actually on the drawing.
+  const titleW = textWidth(asciiish(title), SCHEDULE_TITLE_FONT);
+  const keyW = keys.length > 0 ? keyItemWidths(keys).reduce((a, b) => a + b, (keys.length - 1) * KEY_ITEM_GAP) : 0;
+  const keyInline = keyW > 0 && SCHEDULE_PAD + titleW + KEY_INLINE_GAP + keyW <= widthPx - SCHEDULE_PAD;
+  const wrapped = keyW > 0 && !keyInline ? keyLines(keys, usable) : [];
+
+  const titleBaseline = SCHEDULE_PAD + SCHEDULE_TITLE_FONT;
+  const listTop = titleBaseline + wrapped.length * KEY_LINE_HEIGHT + SCHEDULE_TITLE_GAP;
+  const height = Math.ceil(listTop + perColumn * SCHEDULE_ROW + SCHEDULE_PAD);
 
   const parts: string[] = [
     textToSvgPaths(asciiish(title), {
       x: SCHEDULE_PAD,
-      y: SCHEDULE_PAD + SCHEDULE_TITLE_FONT,
+      y: titleBaseline,
       fontSize: SCHEDULE_TITLE_FONT,
       fill: INK,
     }),
   ];
 
+  if (keyInline) {
+    // Right-aligned, so the key hugs the band's edge instead of floating at a distance that
+    // changes with the title's length.
+    parts.push(keyRowSvg(keys, widthPx - SCHEDULE_PAD - keyW, titleBaseline));
+  } else {
+    wrapped.forEach((line, i) => {
+      parts.push(keyRowSvg(line, SCHEDULE_PAD, titleBaseline + (i + 1) * KEY_LINE_HEIGHT));
+    });
+  }
+
   rows.forEach((row, i) => {
     const col = Math.floor(i / perColumn);
     const indexInCol = i % perColumn;
     const x = SCHEDULE_PAD + col * (columnW + SCHEDULE_COL_GAP);
-    const baseline =
-      SCHEDULE_PAD + SCHEDULE_TITLE_FONT + SCHEDULE_TITLE_GAP + indexInCol * SCHEDULE_ROW + SCHEDULE_FONT;
+    const baseline = listTop + indexInCol * SCHEDULE_ROW + SCHEDULE_FONT;
 
     // Right-aligned, so a two- and a three-digit item line up against the swatches.
     const num = asciiish(row.label);
@@ -726,6 +808,22 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
   for (const x of drawnShapes) shown.add(x.shape.color);
   const keys = colourKeys(shown, input.legend);
 
+  // ⚠️ The colour key has TWO homes and this is the choice between them: the schedule band when
+  // there is one, and over the imagery when there isn't.
+  //
+  // On the image it is drawn at a FIXED pixel size while the export's own dimensions follow the
+  // operator's viewport through the tiling planner — so the same key covered 26% of one export's
+  // width and 39% of another's, and on a Closeout Markup (Rhys, 2026-09-17) it landed on top of
+  // a property. Nothing on screen could predict it either: the live overlay is CSS-sized to the
+  // map, so it can only ever agree with the export by accident.
+  //
+  // A band is already being added below the drawing for the schedule, and a key belongs beside
+  // the list it explains. There it cannot cover anything, at any frame, ever. Building Markup
+  // and Measure send no schedule, so they keep the on-image key exactly as before — verified
+  // byte-identical.
+  const schedule = input.schedule ?? [];
+  const keyOnImage = schedule.length === 0;
+
   // Chrome at fixed pixel size, composited over the stitched frame in one sharp call.
   const overlay = Buffer.from(
     `<svg width="${pxWidth}" height="${pxHeight}" xmlns="http://www.w3.org/2000/svg">
@@ -742,7 +840,7 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
         : ""
     }
     ${badgesSvg(badges, plan.center, plan.zoom, plan.width, plan.height)}
-    ${legendSvg(keys)}
+    ${keyOnImage ? legendSvg(keys) : ""}
     ${northArrowSvg(pxWidth)}
   </svg>`
   );
@@ -752,7 +850,6 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
     .png()
     .toBuffer();
 
-  const schedule = input.schedule ?? [];
   if (schedule.length === 0) {
     return { imageBase64: drawing.toString("base64"), flags, widthPx: pxWidth, heightPx: pxHeight };
   }
@@ -760,7 +857,7 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
   // The band is ADDED below the drawing, never drawn over it — the map stays whole, which is
   // the point of a client summary. Two sharp passes: the map has to be flattened before it can
   // be extended and have the band placed at its old bottom edge.
-  const band = planSchedule(schedule, pxWidth, input.scheduleTitle ?? "Properties");
+  const band = planSchedule(schedule, pxWidth, input.scheduleTitle ?? "Properties", keys);
   const withSchedule = await sharp(drawing)
     .extend({ bottom: band.height, background: { r: 255, g: 255, b: 255, alpha: 1 } })
     .composite([{ input: Buffer.from(band.svg), top: pxHeight, left: 0 }])

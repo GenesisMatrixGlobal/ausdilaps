@@ -26,11 +26,11 @@ export function MapLegend({ present }: { present: ReadonlySet<InspectionColor> }
       <ul className="space-y-1.5">
         {rows.map((c) => (
           <li key={c} className="flex items-center gap-2 text-xs font-medium text-ad-ink">
-            {/* The same two-tone as the lot: a part-inspected property is a green centre with
-                an orange ring, so the swatch is drawn the same way rather than picking one. */}
+            {/* The same two-tone as the lot: a part-inspected property is a green centre with an
+                orange ring. A circle, matching the exported key, the schedule and the sheet. */}
             <span
               aria-hidden
-              className="inline-block size-3.5 shrink-0 rounded-sm border-2"
+              className="inline-block size-3.5 shrink-0 rounded-full border-2"
               style={{
                 backgroundColor: `#${MARKUP_STYLES[c].fill}`,
                 borderColor: `#${MARKUP_STYLES[c].stroke}`,

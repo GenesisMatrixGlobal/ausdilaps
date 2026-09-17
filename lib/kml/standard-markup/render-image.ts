@@ -365,7 +365,13 @@ const COMPASS_BLUE = "46688a"; // ad-steel — the AusDilaps brand accent
  * aspect through the tiling planner, so a proportional rule would make the key a different
  * size on every drawing of the same job.
  */
-const LEGEND_SCALE = 2 / 3;
+/**
+ * ⚠️ Was 2/3, which Rhys set in 2026-09-08 when the key was a 2x block of COLOURED text and the
+ * complaint was that it crowded the drawing. It is a swatch plus dark ink now, so it is lighter
+ * on the page at a larger size than it was at the smaller one — and at 2/3 an 18px glyph came
+ * out around 12px on a 1900px-wide export, which is what made it hard to read.
+ */
+const LEGEND_SCALE = 1.35;
 const NORTH_ARROW_SCALE = 1;
 /** Inset from the image edge, in FINAL pixels — so it is unaffected by either scale. */
 const MARGIN = 20;
@@ -445,21 +451,44 @@ function colourKeys(
  * panel, its corner radius, its border and the text together, which is the only way they stay in
  * proportion to each other.
  */
+/**
+ * The colour key: a SWATCH per row, and the label in ink.
+ *
+ * ⚠️ The label used to BE the colour — green words for "Inspected", orange for "Pending" — and
+ * it was hard to read (Rhys, 2026-09-17). Coloured text on a translucent white panel is low
+ * contrast whatever size it is, orange worst of all, and a two-tone status had to be drawn as
+ * an outlined glyph, which at legend sizes muddied the letters it was meant to distinguish.
+ *
+ * A circle carries the colour and the text is plain dark ink. That reads at any size, shows a
+ * two-tone status honestly as a ring round a centre — the same swatch the schedule and the
+ * on-screen sheet use — and let the panel grow without becoming a block of colour.
+ */
 function legendSvg(keys: LegendRow[]): string {
   if (keys.length === 0) return "";
 
-  const KEY_ROW_HEIGHT = 30;
-  const width = PANEL_PAD * 2 + Math.max(0, ...keys.map(({ label }) => LEGEND_LABEL_WIDTHS[label] ?? 0));
+  const KEY_ROW_HEIGHT = 34;
+  /** Natural-size radius; the group transform below scales the whole panel. */
+  const DOT_R = 9;
+  const DOT_GAP = 13;
+  const textX = PANEL_PAD + DOT_R * 2 + DOT_GAP;
+  const width = textX + PANEL_PAD + Math.max(0, ...keys.map(({ label }) => LEGEND_LABEL_WIDTHS[label] ?? 0));
   const height = PANEL_PAD * 2 + keys.length * KEY_ROW_HEIGHT;
 
   const inner = [
     panelRect(0, 0, width, height),
-    ...keys.map(
-      ({ fill, stroke, label }, i) =>
-        `<path transform="translate(${PANEL_PAD}, ${PANEL_PAD + 22 + i * KEY_ROW_HEIGHT})" d="${LEGEND_LABEL_PATHS[label]}" fill="#${fill}"` +
-        (stroke ? ` stroke="#${stroke}" stroke-width="0.8" stroke-linejoin="round"` : "") +
-        ` />`
-    ),
+    ...keys.flatMap(({ fill, stroke, label }, i) => {
+      // The glyph paths sit on their baseline, so the dot is centred on the cap height rather
+      // than on the row — otherwise it floats above the word it belongs to.
+      const baseline = PANEL_PAD + 23 + i * KEY_ROW_HEIGHT;
+      const cy = baseline - 6;
+      return [
+        `<circle cx="${PANEL_PAD + DOT_R}" cy="${cy}" r="${DOT_R}" fill="#${fill}"` +
+          // Two-tone rows get a ring in their outline colour; a single-colour row is stroked in
+          // its own fill so every dot has the same weight and none looks unfinished.
+          ` stroke="#${stroke ?? fill}" stroke-width="3" />`,
+        `<path transform="translate(${textX}, ${baseline})" d="${LEGEND_LABEL_PATHS[label]}" fill="#${INK}" />`,
+      ];
+    }),
   ].join("\n      ");
 
   return `<g transform="translate(${MARGIN}, ${MARGIN}) scale(${LEGEND_SCALE})">
@@ -566,11 +595,13 @@ function planSchedule(rows: ScheduleRow[], widthPx: number, title: string) {
     );
 
     // The same stroke/fill pair the lot is drawn in, so the row and the outline match by eye.
+    // A CIRCLE, matching the colour key and the on-screen sheet — one shape means one thing
+    // wherever a status is shown.
     const style = MARKUP_STYLES[row.color ?? "blue"] ?? MARKUP_STYLES.blue;
     const swatchX = x + SCHEDULE_NUM_W + SCHEDULE_GAP;
-    const swatchY = baseline - SCHEDULE_SWATCH + 3;
+    const r = SCHEDULE_SWATCH / 2;
     parts.push(
-      `<rect x="${swatchX}" y="${swatchY}" width="${SCHEDULE_SWATCH}" height="${SCHEDULE_SWATCH}" rx="4" ` +
+      `<circle cx="${swatchX + r}" cy="${baseline - r - 1}" r="${r}" ` +
         `fill="#${style.fill}" stroke="#${style.stroke}" stroke-width="3" />`
     );
 

@@ -13,6 +13,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { downloadBlob } from "@/components/tools/shared/download";
+import { AddressSearch, type PlaceSelection } from "@/components/tools/shared/address-search";
+import { parseGoogleMapsUrl, type GoogleMapsTarget } from "@/lib/maps/parse-google-maps-url";
 import {
   buildOwnerGrid,
   doorWalls,
@@ -49,6 +51,13 @@ const MAX_UNDO = 40;
 
 /** A4 at 300 DPI = 2480x3508, the size the report expects. */
 const EXPORT_DPI = 300;
+
+/** Google formats every Australian address with ", Australia" on the end. The title block
+ *  is on an Australian dilapidation report — it is a line of wasted width, and the address
+ *  line is already the tightest thing on the sheet. */
+function tidyAddress(value: string): string {
+  return value.replace(/,\s*Australia\s*$/i, "").trim();
+}
 
 function slugify(value: string): string {
   return (
@@ -159,7 +168,6 @@ export function FloorPlanTool() {
    *  photos is click, click, click rather than retype, click, retype, click. */
   const [markText, setMarkText] = useState("1");
   const [markTone, setMarkTone] = useState<"defect" | "figure">("defect");
-  const [aerialAddress, setAerialAddress] = useState("");
   const aerialInput = useRef<HTMLInputElement>(null);
   const [hoverWall, setHoverWall] = useState<{ a: string; b: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -313,7 +321,8 @@ export function FloorPlanTool() {
     return w >= h ? { w: LONG, h: short } : { w: short, h: LONG };
   }
 
-  function startOnBackdrop(src: string, label: string, imgW: number, imgH: number) {
+  function startOnBackdrop(src: string, rawLabel: string, imgW: number, imgH: number) {
+    const label = tidyAddress(rawLabel);
     setError(null);
     setPlan({
       address: label,
@@ -358,19 +367,16 @@ export function FloorPlanTool() {
     }
   }
 
-  async function findAerial() {
-    const address = aerialAddress.trim();
-    if (address.length < 3) {
-      setError("Type an address to look up.");
-      return;
-    }
+  /** Fetch the satellite tile and start a plan on it. The body is either a coordinate —
+   *  which is what the address search hands over — or free text to geocode server-side. */
+  async function loadAerial(body: Record<string, unknown>) {
     setError(null);
     setBusy("aerial");
     try {
       const res = await fetch("/api/floor-plan/aerial", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ address }),
+        body: JSON.stringify(body),
       });
       const json = (await res.json().catch(() => null)) as
         | { ok: boolean; aerial?: { src: string; w: number; h: number; label: string }; error?: string }
@@ -383,6 +389,63 @@ export function FloorPlanTool() {
     } finally {
       setBusy(null);
     }
+  }
+
+  /** A pick from the autocomplete. Places resolved the coordinate as part of the lookup, so
+   *  the image request carries the POINT — geocoding the text again would be a second billed
+   *  call to re-derive it, and a free-text geocode can land on a different property from the
+   *  one that was picked. The address falls back for a place with no coordinate at all. */
+  function pickAerial(place: PlaceSelection) {
+    const label = place.formattedAddress ?? place.label ?? "";
+    void loadAerial(
+      place.location
+        ? { lat: place.location.lat, lng: place.location.lng, label }
+        : { address: label }
+    );
+  }
+
+  /** A pasted Google Maps link or coordinate pair, using the same parser and share-link
+   *  resolver as the Measure tab. Without this a pasted URL would go to Places as a search
+   *  term and come back with nothing. */
+  function aerialFor(target: GoogleMapsTarget): boolean | string {
+    // A name with no coordinate in it — hand it back to the search box to look up.
+    if (target.kind === "query") return target.query;
+    if (target.kind !== "coords") return true;
+    // The @ is the view centre, which can sit on the lot across the road. !3d/!4d is the
+    // feature Google actually had selected, so prefer it when the link carries one.
+    const point = target.pin ?? { lat: target.lat, lng: target.lng };
+    void loadAerial({
+      lat: point.lat,
+      lng: point.lng,
+      label: target.placeName ?? "",
+      ...(target.zoom ? { zoom: target.zoom } : {}),
+    });
+    return true;
+  }
+
+  async function pasteAerial(text: string): Promise<boolean | string> {
+    const target = parseGoogleMapsUrl(text);
+    if (!target) {
+      setError("That doesn't look like a Google Maps link or a coordinate pair.");
+      return true;
+    }
+    if (target.kind !== "shortlink") return aerialFor(target);
+
+    // maps.app.goo.gl — only a redirect knows where it points, and the browser cannot read
+    // a cross-origin Location header.
+    const res = await fetch("/api/maps/resolve-link", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: target.url }),
+    });
+    const json = (await res.json().catch(() => null)) as
+      | { ok: boolean; target?: GoogleMapsTarget; error?: string }
+      | null;
+    if (!json?.ok || !json.target) {
+      setError(json?.error ?? "Couldn't resolve that share link.");
+      return true;
+    }
+    return aerialFor(json.target);
   }
 
   function startBlank() {
@@ -664,28 +727,24 @@ export function FloorPlanTool() {
           <div className="mt-4 rounded-xl border border-ad-border bg-ad-surface p-5">
             <p className="text-sm font-medium text-ad-ink">No sketch? Mark up a satellite image</p>
             <p className="mt-1 text-sm text-ad-muted">
-              Type the address, then click the photo wherever a defect is to drop a numbered pin.
+              Search the address, then click the photo wherever a defect is to drop a numbered pin.
             </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <input
-                value={aerialAddress}
-                onChange={(e) => setAerialAddress(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void findAerial();
-                }}
-                placeholder="75 Justin Street, Lilyfield NSW"
-                aria-label="Address to look up"
-                className="min-w-0 flex-1 rounded-lg border border-ad-border p-2 text-sm outline-none focus:border-ad-steel"
+            {/* The same type-ahead the Residential, Measure and Cover Photo tools use, so an
+                address is picked from a list rather than typed and hoped for — and the pick
+                carries a coordinate, which is exactly what the satellite tile needs. */}
+            <div className="mt-2">
+              <AddressSearch
+                onSelect={pickAerial}
+                onPastedLocation={pasteAerial}
+                // A coordinate is all a satellite view needs, so a unit, a park or a road
+                // with no street number is a perfectly good target.
+                requireAddress={false}
+                placeholder="Start typing an address, or paste a Google Maps link…"
               />
-              <button
-                type="button"
-                onClick={() => void findAerial()}
-                disabled={busy !== null}
-                className={cn(buttonVariants({ variant: "accent" }), "shrink-0")}
-              >
-                {busy === "aerial" ? "Finding…" : "Find it"}
-              </button>
             </div>
+            {busy === "aerial" && (
+              <p className="mt-1 text-xs text-ad-muted">Fetching the satellite image…</p>
+            )}
             <input
               ref={aerialInput}
               type="file"

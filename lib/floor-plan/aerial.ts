@@ -28,6 +28,8 @@ export const DEFAULT_ZOOM = 19;
 const MIN_ZOOM = 16;
 const MAX_ZOOM = 21;
 
+export type Centre = { lat: number; lng: number };
+
 export type Aerial = {
   /** The image itself, inlined. */
   src: string;
@@ -52,15 +54,24 @@ export function clampZoom(zoom: number): number {
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(zoom)));
 }
 
-export async function fetchAerial(address: string, zoom = DEFAULT_ZOOM): Promise<AerialOutcome> {
+/**
+ * The picture at a point we already know.
+ *
+ * This is the path the address box takes: the Places autocomplete it shares with the other
+ * marker tools returns a coordinate with the selection, so geocoding again would be a second
+ * billed call to re-derive something we were just handed — and a worse one, because a
+ * free-text geocode can land on a different property from the one the operator picked.
+ */
+export async function fetchAerialAt(
+  centre: Centre,
+  label: string,
+  zoom = DEFAULT_ZOOM
+): Promise<AerialOutcome> {
   const key = process.env.GOOGLE_MAPS_API_KEY;
   if (!key) return { status: "not_configured" };
 
-  const found = await geocodeViaGoogle(address.trim());
-  if (found.status !== "ok") return { status: "no_match" };
-
   const params = new URLSearchParams({
-    center: `${found.y},${found.x}`,
+    center: `${centre.lat},${centre.lng}`,
     zoom: String(clampZoom(zoom)),
     size: `${TILE_W}x${TILE_H}`,
     scale: String(SCALE),
@@ -81,11 +92,22 @@ export async function fetchAerial(address: string, zoom = DEFAULT_ZOOM): Promise
         src: `data:image/jpeg;base64,${bytes.toString("base64")}`,
         w: TILE_W * SCALE,
         h: TILE_H * SCALE,
-        label: found.matchedAddress ?? address.trim(),
+        label,
         zoom: clampZoom(zoom),
       },
     };
   } catch (err) {
     return { status: "failed", detail: err instanceof Error ? err.message : "Could not reach Google." };
   }
+}
+
+/** The picture at an address, geocoded here. Kept for text that was typed and never picked
+ *  out of the autocomplete, and for anything calling this without a coordinate to hand. */
+export async function fetchAerial(address: string, zoom = DEFAULT_ZOOM): Promise<AerialOutcome> {
+  if (!process.env.GOOGLE_MAPS_API_KEY) return { status: "not_configured" };
+
+  const found = await geocodeViaGoogle(address.trim());
+  if (found.status !== "ok") return { status: "no_match" };
+
+  return fetchAerialAt({ lat: found.y, lng: found.x }, found.matchedAddress ?? address.trim(), zoom);
 }

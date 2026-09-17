@@ -199,6 +199,18 @@ export function AddressSearch({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onFocus={() => suggestions.length > 0 && setOpen(true)}
+        // Enter takes the top suggestion. Nothing in the app submits on Enter here (none of
+        // these boxes sit in a form), so typing the address and hitting return used to do
+        // nothing at all — which reads as a broken field on a search that IS the first step.
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setOpen(false);
+            return;
+          }
+          if (e.key !== "Enter" || !open || suggestions.length === 0) return;
+          e.preventDefault();
+          void select(suggestions[0]);
+        }}
         placeholder={placeholder}
         className="mt-1 w-full rounded-lg border border-ad-border px-3 py-2 text-sm text-ad-ink outline-none focus:border-ad-steel"
       />

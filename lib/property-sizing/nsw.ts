@@ -1,6 +1,6 @@
 // New South Wales lot-size lookup — free, no state API key needed.
 // Pipeline: address -> Google Geocoding API -> point-in-polygon query against the NSW
-// DCDB Lot layer -> planlotarea (falls back to shape_Area) in m².
+// DCDB Lot layer -> area computed from the returned ring, in m².
 // Returns the parcel geometry too, for the building-attributes step.
 //
 // Geocoding previously went through the NSW Point service, which required a registered
@@ -13,6 +13,8 @@
 import type { LotResult } from "./types";
 import { geocodeViaGoogle } from "./google-geocode";
 import { arcgisErrorMessage } from "@/lib/arcgis";
+import { ringAreaSqm } from "@/lib/kml/standard-markup/geometry";
+import { latLngRingFromArcgis } from "./rings";
 
 const CADASTRE_URL = "https://maps.six.nsw.gov.au/arcgis/rest/services/sixmaps/Boundaries/MapServer/15/query";
 
@@ -82,7 +84,23 @@ export async function lookupNsw(addr: { street: string; suburb: string; postcode
     }
     const feat = c.features?.[0];
     const attrs = feat?.attributes;
-    const area = attrs?.planlotarea ?? attrs?.shape_Area;
+
+    // ⚠️ NEVER shape_Area. The NSW cadastre publishes it in Web Mercator, inflated by
+    // 1/cos²(latitude) — 1.45x at Sydney. This read `planlotarea ?? shape_Area`, and
+    // planlotarea is NULL for almost every lot (measured 2026-09-17: 300/300 in Telopea,
+    // 291/300 in Dover Heights, 267/300 in South Hurstville), so the fallback was the normal
+    // path and NSW lot sizes were ~45% too big. 7-9 Manson Street Telopea read 3,005 m²
+    // against the 2,075 m² its own ring measures; 42 Eastern Ave Dover Heights 313 against 216.
+    //
+    // That number is not cosmetic: bulk-parcels.ts feeds it into Building Markup's lot area,
+    // which seeds Internal m² on a Quote Line Item.
+    //
+    // Same bug VIC had and the same fix — area from the RING, which is also what the markup
+    // draws, so the figure always describes the shape on the drawing. planlotarea stays as the
+    // fallback for a lot with no usable geometry: it is a true surveyed area (verified equal to
+    // the ring at 12 Craig Ave, Vaucluse, where it is populated).
+    const ring = latLngRingFromArcgis(feat?.geometry?.rings);
+    const area = ring ? ringAreaSqm(ring) : attrs?.planlotarea;
     if (!attrs || area == null) {
       return {
         status: "no_parcel",

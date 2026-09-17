@@ -78,7 +78,10 @@ eq(coord.map((l) => l.addr.state), ["NSW", "NSW", "NSW"], "a bare pair inherits 
 // ── Sizing adapter ──────────────────────────────────────────────────────────────────────
 const base: SizingResult = {
   raw: "", street: "42 EASTERN AVE", suburb: "DOVER HEIGHTS", state: "NSW", postcode: "2030",
-  lotSizeSqm: 313, lotPlan: "61//DP837", matchedAddress: "42 Eastern Ave, Dover Heights NSW 2030, Australia",
+  // ⚠️ 216, not the 313 this said until 2026-09-17. That figure was the NSW cadastre's
+  // shape_Area — Web Mercator, inflated 1.45x at Sydney — captured here as if it were real.
+  // 216 m² is what the lot's own ring measures, which is what the adapter reports now.
+  lotSizeSqm: 216, lotPlan: "61//DP837", matchedAddress: "42 Eastern Ave, Dover Heights NSW 2030, Australia",
   matchScore: null, source: "NSW DCDB", levels: 2, levelsConfidence: 60, dwellingAreaSqm: 187.4,
   dwellingAreaConfidence: 40, status: "ok", flags: [],
 };

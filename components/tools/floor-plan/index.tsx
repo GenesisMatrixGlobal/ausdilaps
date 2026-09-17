@@ -43,18 +43,17 @@ import {
   type EditResult,
 } from "@/lib/floor-plan/edit";
 import { renderPlan } from "@/lib/floor-plan/render";
-import {
-  a4Pixels,
-  AERIAL_ZOOM,
-  floorPlanSchema,
-  OUTSIDE,
-  type Backdrop,
-  type FloorPlan,
-  type Level,
-} from "@/lib/floor-plan/types";
+import { a4Pixels, floorPlanSchema, OUTSIDE, type FloorPlan, type Level } from "@/lib/floor-plan/types";
+import { fractionAt, pointAt, type Bounds, type Frame } from "@/lib/floor-plan/frame";
+import { FramePicker } from "./frame-picker";
 import { DRAW_KINDS, FloorPlanEditor, type DrawKind, type Selection, type Tool } from "./editor";
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+/** Where the frame picker's camera starts — a suburban lot with its neighbours. Only a
+ *  starting point now: the operator zooms and pans from there and the sheet takes whatever
+ *  they leave it on. */
+const START_ZOOM = 19;
 const MAX_UNDO = 40;
 
 /** A4 at 300 DPI = 2480x3508, the size the report expects. */
@@ -74,8 +73,7 @@ type Aerial = {
   w: number;
   h: number;
   label: string;
-  centre: { lat: number; lng: number };
-  zoom: number;
+  frame: Frame;
 };
 
 function slugify(value: string): string {
@@ -188,6 +186,11 @@ export function FloorPlanTool() {
   const [markText, setMarkText] = useState("1");
   const [markTone, setMarkTone] = useState<"defect" | "figure">("defect");
   const aerialInput = useRef<HTMLInputElement>(null);
+  /** The live map, when it is open: where to point it, what to call the result, and whether
+   *  confirming starts a plan or reframes the one already open. */
+  const [picker, setPicker] = useState<
+    { start: Frame | { centre: { lat: number; lng: number }; zoom: number }; label: string; reframe: boolean } | null
+  >(null);
   const [hoverWall, setHoverWall] = useState<{ a: string; b: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const jsonInput = useRef<HTMLInputElement>(null);
@@ -345,14 +348,14 @@ export function FloorPlanTool() {
     rawLabel: string,
     imgW: number,
     imgH: number,
-    /** Only a satellite tile has one — an uploaded image cannot be re-fetched. */
-    origin?: { centre: { lat: number; lng: number }; zoom: number }
+    /** Only a satellite tile has one — an uploaded image cannot be reframed. */
+    frame?: Frame
   ) {
     const label = tidyAddress(rawLabel);
     setError(null);
     setPlan({
       address: label,
-      backdrop: { src, label, ...origin },
+      backdrop: { src, label, ...(frame ? { frame } : {}) },
       grid: gridForImage(imgW, imgH),
       north: 0,
       northNote: "",
@@ -393,16 +396,26 @@ export function FloorPlanTool() {
     }
   }
 
-  /** Fetch the satellite tile and start a plan on it. The body is either a coordinate —
-   *  which is what the address search hands over — or free text to geocode server-side. */
-  async function loadAerial(body: Record<string, unknown>) {
+  /**
+   * Capture whatever the operator left the live map on.
+   *
+   * `reframe` is the same request against an existing plan: the picture is replaced and every
+   * pin is put back on the ground it was pointing at. Both frames are exact Static Maps
+   * requests, so a pin's lat/lng out of the old one goes straight back into the new one —
+   * there is no drift, and reframing to the old view restores the old positions.
+   *
+   * A pin that the new frame does not reach is parked on the edge rather than left off the
+   * page, where it would drag the A4 out of shape. Visibly wrong beats invisibly wrong, and
+   * it is one drag to fix.
+   */
+  async function captureFrame(bounds: Bounds, reframe: boolean) {
     setError(null);
     setBusy("aerial");
     try {
       const res = await fetch("/api/floor-plan/aerial", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ bounds, label: reframe ? (plan?.backdrop?.label ?? "") : picker?.label ?? "" }),
       });
       const json = (await res.json().catch(() => null)) as
         | { ok: boolean; aerial?: Aerial; error?: string }
@@ -410,72 +423,30 @@ export function FloorPlanTool() {
       if (!json) throw new Error(`The server returned an unexpected response (HTTP ${res.status}).`);
       if (!json.ok || !json.aerial) throw new Error(json.error ?? "Could not fetch that image.");
       const a = json.aerial;
-      startOnBackdrop(a.src, a.label, a.w, a.h, { centre: a.centre, zoom: a.zoom });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not fetch that image.");
-    } finally {
-      setBusy(null);
-    }
-  }
+      setPicker(null);
 
-  /**
-   * Re-fetch the satellite tile a step wider or closer about the same point.
-   *
-   * Zoom 19 frames one lot, which is wrong for a strata block, a row of terraces or a defect
-   * on the far side of a site — and once the picture is on screen there was no way to change
-   * it short of starting again.
-   *
-   * Pins move with it. One zoom step is exactly a factor of two in Web Mercator, so a pin d
-   * from the centre belongs at 2d a step closer and d/2 a step wider, which keeps it on the
-   * feature it was put on. Going out and back in restores them exactly. A pin pushed off the
-   * edge by zooming CLOSER is parked at the edge rather than left off the page, where it
-   * would drag the A4 out of shape — visibly wrong beats invisibly wrong, and it is one drag
-   * to fix.
-   */
-  async function rezoomAerial(delta: number) {
-    const backdrop = plan?.backdrop;
-    if (!plan || !backdrop?.centre) return;
-    const from = backdrop.zoom ?? AERIAL_ZOOM.default;
-    const to = Math.max(AERIAL_ZOOM.min, Math.min(AERIAL_ZOOM.max, from + delta));
-    if (to === from) return;
+      const backdrop = plan?.backdrop;
+      const was = backdrop?.frame;
+      if (!reframe || !plan || !backdrop || !was) {
+        startOnBackdrop(a.src, a.label, a.w, a.h, a.frame);
+        return;
+      }
 
-    setError(null);
-    setBusy("aerial");
-    try {
-      const res = await fetch("/api/floor-plan/aerial", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ lat: backdrop.centre.lat, lng: backdrop.centre.lng, zoom: to }),
-      });
-      const json = (await res.json().catch(() => null)) as
-        | { ok: boolean; aerial?: Aerial; error?: string }
-        | null;
-      if (!json) throw new Error(`The server returned an unexpected response (HTTP ${res.status}).`);
-      if (!json.ok || !json.aerial) throw new Error(json.error ?? "Could not fetch that image.");
-
-      const factor = 2 ** (to - from);
-      const cx = plan.grid.w / 2;
-      const cy = plan.grid.h / 2;
+      const from = plan.grid;
+      const grid = gridForImage(a.w, a.h);
       const on = (v: number, span: number) => Math.max(0, Math.min(span, v));
       const levels = plan.levels.map((lv) => ({
         ...lv,
-        annotations: lv.annotations.map((a) =>
-          a.anchor.type === "free"
-            ? {
-                ...a,
-                anchor: {
-                  ...a.anchor,
-                  x: on(cx + (a.anchor.x - cx) * factor, plan.grid.w),
-                  y: on(cy + (a.anchor.y - cy) * factor, plan.grid.h),
-                },
-              }
-            : a
-        ),
+        annotations: lv.annotations.map((ann) => {
+          if (ann.anchor.type !== "free") return ann;
+          const where = pointAt(was, ann.anchor.x / from.w, ann.anchor.y / from.h);
+          const { u, v } = fractionAt(a.frame, where);
+          return { ...ann, anchor: { ...ann.anchor, x: on(u * grid.w, grid.w), y: on(v * grid.h, grid.h) } };
+        }),
       }));
 
       // One patch, so one undo takes the picture and the pins back together.
-      const next: Backdrop = { ...backdrop, src: json.aerial.src, zoom: to };
-      update({ backdrop: next, levels });
+      update({ backdrop: { ...backdrop, src: a.src, frame: a.frame }, grid, levels });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not fetch that image.");
     } finally {
@@ -483,17 +454,19 @@ export function FloorPlanTool() {
     }
   }
 
-  /** A pick from the autocomplete. Places resolved the coordinate as part of the lookup, so
-   *  the image request carries the POINT — geocoding the text again would be a second billed
-   *  call to re-derive it, and a free-text geocode can land on a different property from the
-   *  one that was picked. The address falls back for a place with no coordinate at all. */
+  /** A pick from the autocomplete opens the map THERE rather than capturing a picture — the
+   *  zoom is the operator's to choose, and 19 is only where the camera starts. */
   function pickAerial(place: PlaceSelection) {
-    const label = place.formattedAddress ?? place.label ?? "";
-    void loadAerial(
-      place.location
-        ? { lat: place.location.lat, lng: place.location.lng, label }
-        : { address: label }
-    );
+    if (!place.location) {
+      setError("Google gave no coordinate for that one — try a street address.");
+      return;
+    }
+    setError(null);
+    setPicker({
+      start: { centre: { lat: place.location.lat, lng: place.location.lng }, zoom: START_ZOOM },
+      label: place.formattedAddress ?? place.label ?? "",
+      reframe: false,
+    });
   }
 
   /** A pasted Google Maps link or coordinate pair, using the same parser and share-link
@@ -506,11 +479,11 @@ export function FloorPlanTool() {
     // The @ is the view centre, which can sit on the lot across the road. !3d/!4d is the
     // feature Google actually had selected, so prefer it when the link carries one.
     const point = target.pin ?? { lat: target.lat, lng: target.lng };
-    void loadAerial({
-      lat: point.lat,
-      lng: point.lng,
+    setError(null);
+    setPicker({
+      start: { centre: point, zoom: target.zoom ?? START_ZOOM },
       label: target.placeName ?? "",
-      ...(target.zoom ? { zoom: target.zoom } : {}),
+      reframe: false,
     });
     return true;
   }
@@ -766,6 +739,17 @@ export function FloorPlanTool() {
 
   return (
     <div>
+      {picker && (
+        <FramePicker
+          start={picker.start}
+          title={picker.reframe ? "Reframe the satellite view" : "Frame the satellite view"}
+          confirmLabel={picker.reframe ? "Use this view" : "Start marking up"}
+          busy={busy === "aerial"}
+          onCancel={() => setPicker(null)}
+          onConfirm={(bounds) => void captureFrame(bounds, picker.reframe)}
+        />
+      )}
+
       {!plan && (
         <>
           <div
@@ -819,7 +803,8 @@ export function FloorPlanTool() {
           <div className="mt-4 rounded-xl border border-ad-border bg-ad-surface p-5">
             <p className="text-sm font-medium text-ad-ink">No sketch? Mark up a satellite image</p>
             <p className="mt-1 text-sm text-ad-muted">
-              Search the address, then click the photo wherever a defect is to drop a numbered pin.
+              Search the address, frame the shot on a live map, then click the photo wherever a
+              defect is to drop a numbered pin.
             </p>
             {/* The same type-ahead the Residential, Measure and Cover Photo tools use, so an
                 address is picked from a list rather than typed and hoped for — and the pick
@@ -1532,35 +1517,25 @@ export function FloorPlanTool() {
               </label>
             </div>
 
-            {/* Only for a satellite backdrop. An uploaded image has no centre to re-fetch
-                around, so there is nothing to offer and the panel stays away. */}
-            {plan.backdrop?.centre && (
+            {/* Only for a satellite backdrop. An uploaded image has no frame to reopen, so
+                there is nothing to offer and the panel stays away. */}
+            {plan.backdrop?.frame && (
               <div className="rounded-xl border border-ad-border bg-white p-5">
                 <h3 className="text-sm font-semibold text-ad-ink">Satellite view</h3>
-                <div className="mt-3 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void rezoomAerial(-1)}
-                    disabled={busy !== null || (plan.backdrop.zoom ?? AERIAL_ZOOM.default) <= AERIAL_ZOOM.min}
-                    className="flex-1 rounded-lg border border-ad-border px-2 py-1.5 text-xs font-medium text-ad-ink hover:bg-ad-surface disabled:opacity-40"
-                  >
-                    − Wider
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void rezoomAerial(1)}
-                    disabled={busy !== null || (plan.backdrop.zoom ?? AERIAL_ZOOM.default) >= AERIAL_ZOOM.max}
-                    className="flex-1 rounded-lg border border-ad-border px-2 py-1.5 text-xs font-medium text-ad-ink hover:bg-ad-surface disabled:opacity-40"
-                  >
-                    + Closer
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const frame = plan.backdrop?.frame;
+                    if (frame) setPicker({ start: frame, label: plan.backdrop?.label ?? "", reframe: true });
+                  }}
+                  disabled={busy !== null}
+                  className="mt-3 w-full rounded-lg border border-ad-border px-2 py-1.5 text-xs font-medium text-ad-ink hover:bg-ad-surface disabled:opacity-40"
+                >
+                  {busy === "aerial" ? "Capturing…" : "Reframe"}
+                </button>
                 <p className="mt-2 text-xs text-ad-muted">
-                  {busy === "aerial"
-                    ? "Fetching…"
-                    : `Each step doubles or halves how much ground is in frame. Pins move with it. (Zoom ${
-                        plan.backdrop.zoom ?? AERIAL_ZOOM.default
-                      } of ${AERIAL_ZOOM.min}–${AERIAL_ZOOM.max}.)`}
+                  Reopens the live map on this view. Zoom and pan wherever you like — the pins
+                  stay on the ground they were put on.
                 </p>
               </div>
             )}

@@ -268,29 +268,37 @@ export type Level = z.infer<typeof levelObject>;
  * reopens with its backdrop months later, and the export canvas is never tainted by a
  * cross-origin image — which would silently produce a blank PNG.
  */
-/**
- * The Google Static Maps zoom levels the satellite backdrop is fetched at.
- *
- * Here rather than in lib/floor-plan/aerial.ts because the editor needs to know the range to
- * know when to stop offering Wider, and that module imports the geocoder and Buffer — it is
- * server-only and must not reach the client bundle.
- */
-export const AERIAL_ZOOM = { min: 12, max: 21, default: 19 };
+/** The Static Maps request behind a satellite backdrop. Mirrors Frame in
+ *  lib/floor-plan/frame.ts — declared here so the plan schema owns its own shape. */
+export const frameSchema = z.object({
+  centre: z.object({ lat: z.number(), lng: z.number() }),
+  zoom: z.number().int().min(0).max(24),
+  width: z.number().int().min(1).max(640),
+  height: z.number().int().min(1).max(640),
+});
 
-export const backdropSchema = z.object({
+export const backdropSchema = z.preprocess((value) => {
+  if (!value || typeof value !== "object") return value;
+  const v = value as Record<string, unknown>;
+  // One release stored a fixed-size tile as centre + zoom, before the frame was the
+  // operator's to choose. Those plans still open, on the tile they were saved with.
+  if (v.frame || !v.centre) return v;
+  const { centre, zoom, ...rest } = v;
+  return { ...rest, frame: { centre, zoom: zoom ?? 19, width: 490, height: 640 } };
+}, z.object({
   src: z.string().min(1),
   /** What the address resolved to, so a wrong one is visible rather than assumed. */
   label: z.string().default(""),
   /**
-   * Where the satellite tile was taken from, so it can be re-fetched wider or closer about
-   * the same point without going back to the address.
+   * Where the picture was taken from, so the operator can reframe it without starting again
+   * and the pins can be put back on the same ground afterwards.
    *
-   * Absent on an UPLOADED image, which is the difference that matters: there is nothing to
-   * re-fetch, so the tool offers no zoom for one.
+   * Absent on an UPLOADED image, which is the difference that matters: there is no frame to
+   * reopen, so the tool offers no Reframe for one.
    */
-  centre: z.object({ lat: z.number(), lng: z.number() }).optional(),
-  zoom: z.number().int().optional(),
-});
+  frame: frameSchema.optional(),
+}));
+
 export type Backdrop = z.infer<typeof backdropSchema>;
 
 const floorPlanObject = z.object({

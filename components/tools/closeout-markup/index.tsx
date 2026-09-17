@@ -263,6 +263,20 @@ export function CloseoutMarkupTool() {
             color: r.property.color,
           })),
         legend: CLOSEOUT_LEGEND,
+        // The schedule beside the drawing: what a client needs to read it. Numbers come from the
+        // SAME `numbers` map the pins and the sheet use, and the colour is the property's own, so
+        // a row, a pin and an outline can never disagree about which property is item 12.
+        //
+        // Row order, which is the sheet's order (suburb then street, numeric-aware), so the list
+        // reads like a walk down the job rather than like Salesforce's record order.
+        schedule: rows
+          .filter((r) => r.selected)
+          .map((r) => ({
+            label: String(numbers.get(r.property.key) ?? ""),
+            street: r.property.suburb ? `${r.property.street}, ${r.property.suburb}` : r.property.street,
+            color: r.property.color,
+          })),
+        scheduleTitle: "Inspection summary",
         mapType: camera.mapType,
         bounds: camera.bounds,
         // Every outline in the SVG composite: a 60-property drawing would otherwise be

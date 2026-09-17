@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { subjectRing, subjectStreet, subjectAreaSqm, subjectLabel, neighbours, mapType, bounds, excludeIds, hideSubject, overlayOutlines, points, legend } =
+  const { subjectRing, subjectStreet, subjectAreaSqm, subjectLabel, neighbours, mapType, bounds, excludeIds, hideSubject, overlayOutlines, points, legend, schedule, scheduleTitle } =
     parsed.data;
   // `councilAssets` is the pre-rename field name, read only as a fallback so a tab that
   // was open across the rename deploy keeps rendering instead of silently dropping the
@@ -51,6 +51,8 @@ export async function POST(req: NextRequest) {
       shapes,
       points,
       legend,
+      schedule,
+      scheduleTitle,
     });
     return NextResponse.json({
       ok: true,

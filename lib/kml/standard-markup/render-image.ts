@@ -12,11 +12,11 @@ import {
   type StaticMapPolygon,
 } from "@/lib/kml/site-markup/static-map";
 import { renderTiledStaticMap } from "@/lib/maps/static-map-tiles";
-import { textToSvgPathsCentred } from "@/lib/kml/overlay/text-path";
+import { textToSvgPaths, textToSvgPathsCentred, textWidth } from "@/lib/kml/overlay/text-path";
 // Only the panel chrome now. The row primitives (ROW_SIZE, splitValue, textWithSuper, …) are
 // still shared with the Measure export, which does list each measurement — they are unused HERE
 // because this legend is the colour key alone.
-import { PANEL_PAD, panelRect } from "@/lib/kml/overlay/legend";
+import { HAIRLINE, INK, MUTED, PANEL_PAD, panelRect } from "@/lib/kml/overlay/legend";
 import { badgeAnchor, measureShape, ringAnchor, ringFor } from "./measure";
 import {
   COMPASS_N_PATH,
@@ -86,6 +86,18 @@ export interface MarkupPoint {
   color?: MarkupColorKey;
 }
 
+/**
+ * One line of the schedule beside the drawing — see `schedule` on RenderMapInput.
+ *
+ * The number is the item number already on the pin, so a reader matches the two by eye. The
+ * colour is the same status colour the lot is drawn in, for the same reason.
+ */
+export interface ScheduleRow {
+  label: string;
+  street: string;
+  color?: MarkupColorKey;
+}
+
 /** Assigns each neighbour a stable display number, in the order given — call this once,
  *  right after resolving, and keep the labels attached for every later re-render so a
  *  lot's number never changes as others get excluded.
@@ -130,6 +142,21 @@ export interface RenderMapInput {
   points?: MarkupPoint[];
   /** What each colour means in the legend. Absent = the markup tabs' three fixed rows. */
   legend?: { color: MarkupColorKey; label: LegendLabel }[];
+  /**
+   * A numbered list of what is on the drawing, rendered in a strip added BESIDE the map.
+   *
+   * ⚠️ Building Markup printed a schedule over the image once and it was dropped on request
+   * (2026-09-08): too busy on a drawing a client sees, and it duplicated a table the estimator
+   * already had on screen and in Salesforce. Neither objection holds for a Closeout Markup —
+   * it IS the client's summary of what was inspected, and they have no other table — so this
+   * comes back, but in its own strip rather than over the drawing, and only when asked for.
+   *
+   * The schema fields this needs (`NumberedNeighbour.street`) were kept on the wire for exactly
+   * this; see the note on MarkupShapeInput.name.
+   */
+  schedule?: ScheduleRow[];
+  /** Heading above the schedule. Defaults to "Properties". */
+  scheduleTitle?: string;
   /** ⚠️ NOT DRAWN, same as `name` above — these fed the legend's project-site row. Retained
    *  rather than removed so the item schedule can come back without a schema change. */
   subjectStreet?: string | null;
@@ -452,6 +479,123 @@ function northArrowSvg(nativeSize: number): string {
     </g>`;
 }
 
+// ─── The schedule band ───────────────────────────────────────────────────────────────────
+
+const SCHEDULE_FONT = 26;
+const SCHEDULE_ROW = 40;
+const SCHEDULE_PAD = 30;
+/** Number column, right-aligned, wide enough for three digits. */
+const SCHEDULE_NUM_W = 54;
+const SCHEDULE_SWATCH = 21;
+const SCHEDULE_GAP = 14;
+/** Gutter between columns. */
+const SCHEDULE_COL_GAP = 44;
+/** Longer than this and the address is truncated — one very long tenancy name must not set the
+ *  column width for the other fifty rows. */
+const SCHEDULE_MAX_TEXT = 520;
+const SCHEDULE_TITLE_FONT = 30;
+const SCHEDULE_TITLE_GAP = 22;
+
+/** ⚠️ The glyph atlas is printable ASCII. Real addresses carry en dashes — "42–46 Connell
+ *  Street" is in the org — and an unmapped character renders as "?", so fold the dashes and
+ *  quotes that actually turn up rather than letting them show as noise on a client's drawing. */
+function asciiish(text: string): string {
+  return text
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/\u00a0/g, " ");
+}
+
+/** Cut to fit, with an ellipsis, measuring real glyph widths rather than counting characters —
+ *  "1-5 Polding Place" and "WWW Wollongong" are nothing like the same width per letter. */
+function fitText(text: string, fontSize: number, maxWidth: number): string {
+  if (textWidth(text, fontSize) <= maxWidth) return text;
+  let cut = text;
+  while (cut.length > 1 && textWidth(cut + "...", fontSize) > maxWidth) cut = cut.slice(0, -1);
+  return cut.trimEnd() + "...";
+}
+
+/**
+ * Lay the schedule out into a band added BELOW the drawing.
+ *
+ * Below rather than beside, and sized to its contents: a strip down the side takes the map's
+ * full height, so a ten-property job spends two thirds of the page on blank white. A band wraps
+ * into as many columns as the drawing is wide and stops where the list stops, which is what
+ * makes the result read as one finished sheet.
+ *
+ * Reading order is down each column then across — how a numbered list is read.
+ */
+function planSchedule(rows: ScheduleRow[], widthPx: number, title: string) {
+  const textWidths = rows.map((r) => textWidth(asciiish(r.street), SCHEDULE_FONT));
+  const textW = Math.min(SCHEDULE_MAX_TEXT, Math.max(150, ...textWidths));
+  const columnW = SCHEDULE_NUM_W + SCHEDULE_GAP + SCHEDULE_SWATCH + SCHEDULE_GAP + textW;
+
+  const usable = widthPx - SCHEDULE_PAD * 2;
+  const columns = Math.max(1, Math.min(rows.length, Math.floor((usable + SCHEDULE_COL_GAP) / (columnW + SCHEDULE_COL_GAP))));
+  const perColumn = Math.ceil(rows.length / columns);
+  const height = Math.ceil(
+    SCHEDULE_PAD * 2 + SCHEDULE_TITLE_FONT + SCHEDULE_TITLE_GAP + perColumn * SCHEDULE_ROW
+  );
+
+  const parts: string[] = [
+    textToSvgPaths(asciiish(title), {
+      x: SCHEDULE_PAD,
+      y: SCHEDULE_PAD + SCHEDULE_TITLE_FONT,
+      fontSize: SCHEDULE_TITLE_FONT,
+      fill: INK,
+    }),
+  ];
+
+  rows.forEach((row, i) => {
+    const col = Math.floor(i / perColumn);
+    const indexInCol = i % perColumn;
+    const x = SCHEDULE_PAD + col * (columnW + SCHEDULE_COL_GAP);
+    const baseline =
+      SCHEDULE_PAD + SCHEDULE_TITLE_FONT + SCHEDULE_TITLE_GAP + indexInCol * SCHEDULE_ROW + SCHEDULE_FONT;
+
+    // Right-aligned, so a two- and a three-digit item line up against the swatches.
+    const num = asciiish(row.label);
+    parts.push(
+      textToSvgPaths(num, {
+        x: x + SCHEDULE_NUM_W - textWidth(num, SCHEDULE_FONT),
+        y: baseline,
+        fontSize: SCHEDULE_FONT,
+        fill: MUTED,
+      })
+    );
+
+    // The same stroke/fill pair the lot is drawn in, so the row and the outline match by eye.
+    const style = MARKUP_STYLES[row.color ?? "blue"] ?? MARKUP_STYLES.blue;
+    const swatchX = x + SCHEDULE_NUM_W + SCHEDULE_GAP;
+    const swatchY = baseline - SCHEDULE_SWATCH + 3;
+    parts.push(
+      `<rect x="${swatchX}" y="${swatchY}" width="${SCHEDULE_SWATCH}" height="${SCHEDULE_SWATCH}" rx="4" ` +
+        `fill="#${style.fill}" stroke="#${style.stroke}" stroke-width="3" />`
+    );
+
+    parts.push(
+      textToSvgPaths(fitText(asciiish(row.street), SCHEDULE_FONT, textW), {
+        x: swatchX + SCHEDULE_SWATCH + SCHEDULE_GAP,
+        y: baseline,
+        fontSize: SCHEDULE_FONT,
+        fill: INK,
+      })
+    );
+  });
+
+  const svg =
+    `<svg width="${widthPx}" height="${height}" xmlns="http://www.w3.org/2000/svg">` +
+    `<rect width="${widthPx}" height="${height}" fill="#ffffff" />` +
+    // A hairline where the band meets the drawing, so the two read as one sheet rather than an
+    // image that happens to have white under it.
+    `<line x1="0" y1="0.5" x2="${widthPx}" y2="0.5" stroke="${HAIRLINE}" stroke-width="1" />` +
+    parts.join("\n    ") +
+    `</svg>`;
+
+  return { height, svg };
+}
+
 export async function renderStandardMarkupImage(input: RenderMapInput): Promise<RenderMapResult> {
   const excluded = new Set(input.excludeIds ?? []);
   const visible = input.neighbours.filter((n) => !excluded.has(n.id));
@@ -572,15 +716,30 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
   </svg>`
   );
 
-  const composed = await sharp(stitched)
+  const drawing = await sharp(stitched)
     .composite([{ input: overlay, top: 0, left: 0 }])
     .png()
     .toBuffer();
 
+  const schedule = input.schedule ?? [];
+  if (schedule.length === 0) {
+    return { imageBase64: drawing.toString("base64"), flags, widthPx: pxWidth, heightPx: pxHeight };
+  }
+
+  // The band is ADDED below the drawing, never drawn over it — the map stays whole, which is
+  // the point of a client summary. Two sharp passes: the map has to be flattened before it can
+  // be extended and have the band placed at its old bottom edge.
+  const band = planSchedule(schedule, pxWidth, input.scheduleTitle ?? "Properties");
+  const withSchedule = await sharp(drawing)
+    .extend({ bottom: band.height, background: { r: 255, g: 255, b: 255, alpha: 1 } })
+    .composite([{ input: Buffer.from(band.svg), top: pxHeight, left: 0 }])
+    .png()
+    .toBuffer();
+
   return {
-    imageBase64: composed.toString("base64"),
+    imageBase64: withSchedule.toString("base64"),
     flags,
     widthPx: pxWidth,
-    heightPx: pxHeight,
+    heightPx: pxHeight + band.height,
   };
 }

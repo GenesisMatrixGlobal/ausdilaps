@@ -134,6 +134,20 @@ export const standardMarkupRenderRequestSchema = z.object({
    * are no fonts on Vercel's runtime, so a label with no baked outlines renders as blank space
    * in a drawing that may already be on its way to a client. A 400 here is the honest failure.
    */
+  /** A numbered list of what is on the drawing, rendered in a strip added beside the map. The
+   *  street is free text (an address), which the glyph atlas can render — unlike a legend
+   *  label, which needs pre-baked outlines. */
+  schedule: z
+    .array(
+      z.object({
+        label: z.string().max(4),
+        street: z.string().max(200),
+        color: z.enum(MARKUP_COLOR_KEYS).default("blue"),
+      })
+    )
+    .max(120)
+    .default([]),
+  scheduleTitle: z.string().max(120).optional(),
   legend: z
     .array(
       z.object({

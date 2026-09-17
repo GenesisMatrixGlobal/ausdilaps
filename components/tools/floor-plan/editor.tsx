@@ -19,6 +19,7 @@ import {
   deriveWalls,
   doorGeometry,
   labelAnchor,
+  markPin,
   openingsFor,
   outdoorIds,
   placeDoors,
@@ -41,7 +42,7 @@ import {
   updateStair,
   type Edge,
 } from "@/lib/floor-plan/edit";
-import { OUTSIDE, type FloorPlan, type Level, type Line } from "@/lib/floor-plan/types";
+import { OUTSIDE, type Annotation, type FloorPlan, type Level, type Line } from "@/lib/floor-plan/types";
 
 export type Selection =
   | { type: "room"; id: string }
@@ -74,8 +75,9 @@ interface EditorProps {
   /** The wall pair under the cursor in the Walls list, drawn highlighted so you can see which
    *  one you are about to remove. */
   highlightWall?: { a: string; b: string } | null;
-  /** The value the Number tool will place next. */
+  /** The value and kind the Number tool will place next. */
   markText: string;
+  markTone: Annotation["tone"];
   /** With a room selected, a drawn rectangle joins it instead of starting a new one. */
   extendSelected: boolean;
   onSelect: (selection: Selection) => void;
@@ -128,8 +130,9 @@ function rectOf(d: { x0: number; y0: number; x1: number; y1: number }) {
 
 const STEEL = "#46688a";
 const INK = "#2f343a";
-/** Must match MARK_RED in lib/floor-plan/render.ts. */
+/** Must match MARK_RED and FIGURE_INK in lib/floor-plan/render.ts. */
 const MARK_RED = "#d92b2b";
+const FIGURE_INK = "#1f2327";
 
 export function FloorPlanEditor({
   plan,
@@ -138,6 +141,7 @@ export function FloorPlanEditor({
   selection,
   highlightWall,
   markText,
+  markTone,
   extendSelected,
   onSelect,
   onChange,
@@ -253,7 +257,10 @@ export function FloorPlanEditor({
       }
       updateView((b) => {
         const perPx = b.w / Math.max(1, svg.clientWidth);
-        return clampBox({ ...b, x: b.x + e.deltaX * perPx, y: b.y + e.deltaY * perPx });
+        // Shift turns a vertical wheel into a horizontal one, for mice that have only the one.
+        const dx = e.shiftKey ? e.deltaY : e.deltaX;
+        const dy = e.shiftKey ? 0 : e.deltaY;
+        return clampBox({ ...b, x: b.x + dx * perPx, y: b.y + dy * perPx });
       });
     };
     svg.addEventListener("wheel", onWheel, { passive: false });
@@ -566,13 +573,17 @@ export function FloorPlanEditor({
         }
         if (tool === "select") {
           onSelect(null);
+          if (viewBox.w < fitBox.w - 0.001) {
+            (e.target as Element).setPointerCapture?.(e.pointerId);
+            setDrag({ mode: "pan", from: { x: e.clientX, y: e.clientY }, base: viewBox });
+          }
           return;
         }
         const at = toGrid(e);
         onError(null);
 
         if (tool === "number") {
-          const result = addMark(plan.levels[levelIndex], at.x, at.y, markText);
+          const result = addMark(plan.levels[levelIndex], at.x, at.y, markText, markTone);
           if (result.ok) {
             onChange(result.level);
             onSelect({
@@ -635,7 +646,10 @@ export function FloorPlanEditor({
         const start = Math.round(orient === "v" ? at.y : at.x);
         setDrag({ mode: "line", kind: tool as Line["kind"], orient, pos, from: start, to: start });
       }}
-      style={{ maxHeight: "70vh", cursor: drawing ? "crosshair" : undefined }}
+      style={{
+        maxHeight: "70vh",
+        cursor: drawing ? "crosshair" : drag?.mode === "pan" ? "grabbing" : undefined,
+      }}
     >
       <g stroke="#eef0f2" strokeWidth={0.02}>
         {Array.from({ length: grid.w + 1 }, (_, i) => (
@@ -991,33 +1005,47 @@ export function FloorPlanEditor({
           if (mark.anchor.type !== "free") return null;
           const { x, y } = mark.anchor;
           const isSelected = selection?.type === "mark" && selection.id === mark.id;
+          // Same pin the A4 renderer draws, from the same numbers.
+          const size = 0.52;
+          const pin = markPin(mark.text, size);
+          const fill = mark.tone === "figure" ? FIGURE_INK : MARK_RED;
           return (
             <g key={mark.id}>
-              {isSelected && (
-                <circle cx={x} cy={y} r={0.42} fill={STEEL} fillOpacity={0.16} pointerEvents="none" />
-              )}
+              <polygon
+                points={pin.tail.map(([px, py]) => `${x + px},${y + py}`).join(" ")}
+                fill={fill}
+                pointerEvents="none"
+              />
+              <rect
+                x={x + pin.box.x}
+                y={y + pin.box.y}
+                width={pin.box.w}
+                height={pin.box.h}
+                rx={pin.radius}
+                fill={fill}
+                stroke={isSelected ? STEEL : "none"}
+                strokeWidth={isSelected ? 0.08 : 0}
+                pointerEvents="none"
+              />
               <text
                 x={x}
-                y={y}
-                fontSize={0.52}
+                y={y + pin.textY}
+                fontSize={size}
                 fontWeight={700}
                 textAnchor="middle"
                 dominantBaseline="central"
-                fill={MARK_RED}
-                stroke="#ffffff"
-                strokeWidth={0.17}
-                strokeLinejoin="round"
-                paintOrder="stroke"
+                fill="#ffffff"
                 fontFamily="Arial, Helvetica, sans-serif"
                 pointerEvents="none"
               >
                 {mark.text}
               </text>
-              {/* Text is a poor hit target at this size; grab a disc around it instead. */}
-              <circle
-                cx={x}
-                cy={y}
-                r={0.42}
+              {/* Grab the badge, which is the part you can see and aim at. */}
+              <rect
+                x={x + pin.box.x}
+                y={y + pin.box.y}
+                width={pin.box.w}
+                height={pin.box.h + size * 0.5}
                 fill="transparent"
                 pointerEvents="all"
                 style={{ cursor: "move" }}

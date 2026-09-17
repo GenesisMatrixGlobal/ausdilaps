@@ -448,23 +448,36 @@ export function restoreWall(level: Level, wallId: string): EditResult {
 
 let markSeq = 0;
 
-/** 1 to 999. Wider than that stops being a key into the report and starts being a caption. */
-const MARK_PATTERN = /^\d{1,3}$/;
+/**
+ * Up to four digits, optionally a range.
+ *
+ * The range is the point: several defects often sit in one spot on the building and get
+ * written "3-4" rather than stacked on top of each other.
+ */
+const MARK_PATTERN = /^\d{1,4}(-\d{1,4})?$/;
+const MARK_HELP = "A number up to 9999, or a range like 3-4.";
 
 /**
- * Drop a red number on a point.
+ * Drop a numbered pin on a point.
  *
  * Free-anchored rather than pinned to whatever room it lands in, because it refers to a place
  * ("the crack, there"), not to a room. The trade is stated in types.ts: move a room afterwards
  * and its numbers stay put.
  */
-export function addMark(level: Level, x: number, y: number, text: string): EditResult {
+export function addMark(
+  level: Level,
+  x: number,
+  y: number,
+  text: string,
+  tone: Annotation["tone"] = "defect"
+): EditResult {
   const value = text.trim();
-  if (!MARK_PATTERN.test(value)) return { ok: false, error: "A number from 1 to 999." };
+  if (!MARK_PATTERN.test(value)) return { ok: false, error: MARK_HELP };
   const mark: Annotation = {
     id: `mark-${Date.now().toString(36)}-${markSeq++}`,
     kind: "mark",
     text: value,
+    tone,
     anchor: { type: "free", x, y },
     placement: "manual",
   };
@@ -475,7 +488,7 @@ export function updateMark(level: Level, markId: string, patch: Partial<Annotati
   const idx = level.annotations.findIndex((a) => a.id === markId);
   if (idx === -1) return { ok: false, error: "Number not found." };
   if (patch.text !== undefined && !MARK_PATTERN.test(patch.text.trim())) {
-    return { ok: false, error: "A number from 1 to 999." };
+    return { ok: false, error: MARK_HELP };
   }
   const annotations = [...level.annotations];
   annotations[idx] = { ...annotations[idx], ...patch };

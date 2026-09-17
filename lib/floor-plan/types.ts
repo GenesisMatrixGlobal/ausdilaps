@@ -118,6 +118,14 @@ export const annotationSchema = z.object({
   id: z.string().min(1),
   kind: z.enum(["photo-range", "note", "mark"]),
   text: z.string(),
+  /**
+   * What a numbered mark IS, which is the only thing that changes about it.
+   *
+   * A defect number keys the plan to the defect table and is red; a figure number keys it to
+   * the photographs and is black. Same pin, same gesture, same everything else — so a field
+   * rather than a second kind, and old marks read as defects because that is what they were.
+   */
+  tone: z.enum(["defect", "figure"]).default("defect"),
   anchor: z.discriminatedUnion("type", [
     z.object({ type: z.literal("room"), roomId: z.string().min(1), dx: z.number(), dy: z.number() }),
     z.object({ type: z.literal("free"), x: z.number(), y: z.number() }),

@@ -158,6 +158,7 @@ export function FloorPlanTool() {
   /** What the Number tool places next. Steps on after each placement so numbering a set of
    *  photos is click, click, click rather than retype, click, retype, click. */
   const [markText, setMarkText] = useState("1");
+  const [markTone, setMarkTone] = useState<"defect" | "figure">("defect");
   const [hoverWall, setHoverWall] = useState<{ a: string; b: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const jsonInput = useRef<HTMLInputElement>(null);
@@ -715,13 +716,37 @@ export function FloorPlanTool() {
                   </button>
                 ))}
                 {tool === "number" && (
-                  <input
-                    value={markText}
-                    onChange={(e) => setMarkText(e.target.value.replace(/\D/g, "").slice(0, 3))}
-                    inputMode="numeric"
-                    aria-label="Number to place"
-                    className="ml-1 h-6 w-12 rounded border border-ad-border px-1 text-center text-xs font-semibold text-ad-ink outline-none focus:border-ad-steel"
-                  />
+                  <>
+                    <input
+                      value={markText}
+                      // Digits and one dash: "3-4" is how two defects in one spot get written.
+                      onChange={(e) => setMarkText(e.target.value.replace(/[^\d-]/g, "").slice(0, 9))}
+                      inputMode="numeric"
+                      aria-label="Number to place"
+                      className="ml-1 h-6 w-16 rounded border border-ad-border px-1 text-center text-xs font-semibold outline-none focus:border-ad-steel"
+                      style={{ color: markTone === "figure" ? "#1f2327" : "#d92b2b" }}
+                    />
+                    <div className="ml-1 flex h-6 overflow-hidden rounded border border-ad-border">
+                      {([
+                        { key: "defect", label: "Defect" },
+                        { key: "figure", label: "Figure" },
+                      ] as const).map((t) => (
+                        <button
+                          key={t.key}
+                          type="button"
+                          onClick={() => setMarkTone(t.key)}
+                          className={cn(
+                            "px-2 text-xs font-medium",
+                            markTone === t.key
+                              ? "bg-white text-ad-ink"
+                              : "text-ad-muted hover:text-ad-ink"
+                          )}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
                 )}
                 {(tool === "room" || tool === "outdoor") && selection?.type === "room" && (
                   <label className="ml-2 flex h-6 items-center gap-1.5 text-xs text-ad-muted">
@@ -746,12 +771,17 @@ export function FloorPlanTool() {
                   selection={selection}
                   highlightWall={hoverWall}
                   markText={markText}
+                  markTone={markTone}
                   extendSelected={extendSelected}
                   onSelect={setSelection}
                   onChange={setLevel}
                   onError={setError}
                   onMarkPlaced={() =>
-                    setMarkText((n) => String(Math.min(999, (Number(n) || 0) + 1)))
+                    // Step on from the END of a range, so 3-4 is followed by 5.
+                    setMarkText((n) => {
+                      const last = Number(n.split("-").pop());
+                      return Number.isFinite(last) ? String(Math.min(9999, last + 1)) : n;
+                    })
                   }
                   // Back to Select once something is drawn, so the next click adjusts it
                   // rather than doing nothing — a drawing tool makes everything unhittable.
@@ -1140,21 +1170,46 @@ export function FloorPlanTool() {
               )}
 
               {selectedMark && (
-                <input
-                  value={selectedMark.text}
-                  inputMode="numeric"
-                  aria-label="Number"
-                  onChange={(e) =>
-                    apply(
-                      updateMark(level, selectedMark.id, {
-                        text: e.target.value.replace(/\D/g, "").slice(0, 3),
-                      }),
-                      `mark:${selectedMark.id}`
-                    )
-                  }
-                  className="mt-2 w-24 rounded-lg border border-ad-border p-2 text-center text-sm font-semibold outline-none focus:border-ad-steel"
-                  style={{ color: "#d92b2b" }}
-                />
+                <>
+                  <input
+                    value={selectedMark.text}
+                    inputMode="numeric"
+                    aria-label="Number"
+                    onChange={(e) =>
+                      apply(
+                        updateMark(level, selectedMark.id, {
+                          text: e.target.value.replace(/[^\d-]/g, "").slice(0, 9),
+                        }),
+                        `mark:${selectedMark.id}`
+                      )
+                    }
+                    className="mt-2 w-28 rounded-lg border border-ad-border p-2 text-center text-sm font-semibold outline-none focus:border-ad-steel"
+                    style={{ color: selectedMark.tone === "figure" ? "#1f2327" : "#d92b2b" }}
+                  />
+                  <div className="mt-2 flex gap-1 rounded-lg border border-ad-border p-1">
+                    {([
+                      { key: "defect", label: "Defect" },
+                      { key: "figure", label: "Figure" },
+                    ] as const).map((t) => (
+                      <button
+                        key={t.key}
+                        type="button"
+                        onClick={() => apply(updateMark(level, selectedMark.id, { tone: t.key }))}
+                        className={cn(
+                          "flex-1 rounded px-2 py-1 text-xs font-medium",
+                          selectedMark.tone === t.key
+                            ? "bg-ad-steel/10 text-ad-ink"
+                            : "text-ad-muted hover:text-ad-ink"
+                        )}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-ad-muted">
+                    Up to 9999, or a range like 3-4 where two defects share a spot.
+                  </p>
+                </>
               )}
 
               {selection && (

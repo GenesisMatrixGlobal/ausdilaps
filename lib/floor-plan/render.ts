@@ -15,6 +15,7 @@ import {
   doorGeometry,
   labelAnchor,
   labelWidth,
+  markPin,
   openingsFor,
   outdoorIds,
   placeDoors,
@@ -25,8 +26,10 @@ import {
 import { a4Pixels, type Annotation, type FloorPlan, type Level, type Line, type Room, type Stair } from "./types";
 
 const INK = "#2f343a";
-/** Marks only. Loud on purpose — a number keying the plan to the report has to be findable. */
+/** A defect pin. Loud on purpose — a number keying the plan to the report has to be findable. */
 const MARK_RED = "#d92b2b";
+/** A figure pin. Same shape, so the two read as one system and not two. */
+const FIGURE_INK = "#1f2327";
 const HAIRLINE = "#c9ced4";
 const GRID_LINE = "#e8eaed";
 
@@ -147,10 +150,8 @@ export function renderPlan(plan: FloorPlan, opts: RenderOptions): string {
     `<style>text{font-family:Arial,Helvetica,sans-serif;fill:${INK}}` +
       `.rm{text-anchor:middle;dominant-baseline:central}` +
       `.cap{text-anchor:middle;font-weight:700}` +
-      // paint-order puts the white stroke UNDER the fill, so a number stays readable where it
-      // crosses a wall line instead of being swallowed by it.
-      `.mk{text-anchor:middle;dominant-baseline:central;font-weight:700;fill:${MARK_RED};` +
-      `paint-order:stroke;stroke:#ffffff;stroke-linejoin:round}</style>`
+      // White on a solid badge, so it stays legible over a wall line or a satellite photo.
+      `.mk{text-anchor:middle;dominant-baseline:central;font-weight:700;fill:#ffffff}</style>`
   );
 
   if (opts.mode === "preview") parts.push(previewGrid(placed, scale));
@@ -403,9 +404,16 @@ function annotationChip(ann: Annotation, level: Level, ox: number, oy: number, s
   if (ann.kind === "mark") {
     // Bigger than a room label (0.34) so it reads as an overlay on the plan, not part of it.
     const size = Math.max(7, scale * 0.4);
+    const pin = markPin(ann.text, size);
+    const cx = ox + gx * scale;
+    const cy = oy + gy * scale;
+    const fill = ann.tone === "figure" ? FIGURE_INK : MARK_RED;
+    const tail = pin.tail.map(([px, py]) => `${r2(cx + px)},${r2(cy + py)}`).join(" ");
     return (
-      `<text class="mk" x="${r2(ox + gx * scale)}" y="${r2(oy + gy * scale)}" font-size="${r2(size)}" ` +
-      `stroke-width="${r2(size * 0.34)}">${esc(ann.text)}</text>`
+      `<g><polygon points="${tail}" fill="${fill}"/>` +
+      `<rect x="${r2(cx + pin.box.x)}" y="${r2(cy + pin.box.y)}" width="${r2(pin.box.w)}" ` +
+      `height="${r2(pin.box.h)}" rx="${r2(pin.radius)}" fill="${fill}"/>` +
+      `<text class="mk" x="${r2(cx)}" y="${r2(cy + pin.textY)}" font-size="${r2(size)}">${esc(ann.text)}</text></g>`
     );
   }
 

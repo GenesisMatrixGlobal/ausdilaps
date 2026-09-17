@@ -468,6 +468,46 @@ export function doorGeometry(door: DoorPlacement): DoorGeometry {
   return { leaves: [leaf(hingeAlong, along, span)], panels: [], mid };
 }
 
+/** A numbered pin: a badge floating above the point it marks, with a tail down to it. */
+export type MarkPin = {
+  /** Badge box, relative to the marked point. */
+  box: { x: number; y: number; w: number; h: number };
+  /** The tail, as three points relative to the marked point. */
+  tail: Array<[number, number]>;
+  radius: number;
+  /** Centre of the text, relative to the marked point. */
+  textY: number;
+};
+
+/**
+ * Where a numbered pin's parts sit, given its text and font size.
+ *
+ * A pin rather than bare text because these have to be found on a photograph: red on grey
+ * roof tiles is invisible, white on a solid red badge is not. The badge grows with the text,
+ * because a defect range like "12-15" is five characters and a round pin cannot hold it.
+ *
+ * The marked point is the TAIL'S POINT, not the badge centre — you click the defect, and the
+ * number sits above your finger instead of under it.
+ */
+export function markPin(text: string, size: number): MarkPin {
+  const padX = size * 0.42;
+  const w = Math.max(size * 1.45, text.length * size * 0.62 + padX * 2);
+  const h = size * 1.55;
+  const tailH = size * 0.5;
+  const tailW = size * 0.34;
+
+  return {
+    box: { x: -w / 2, y: -tailH - h, w, h },
+    tail: [
+      [-tailW, -tailH - 1e-3],
+      [tailW, -tailH - 1e-3],
+      [0, 0],
+    ],
+    radius: h * 0.32,
+    textY: -tailH - h / 2,
+  };
+}
+
 /** Treads per grid cell along the flight. Two reads as stairs without turning into hatching. */
 const TREADS_PER_CELL = 2;
 

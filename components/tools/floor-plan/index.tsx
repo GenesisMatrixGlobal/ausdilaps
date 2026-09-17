@@ -43,7 +43,15 @@ import {
   type EditResult,
 } from "@/lib/floor-plan/edit";
 import { renderPlan } from "@/lib/floor-plan/render";
-import { a4Pixels, floorPlanSchema, OUTSIDE, type FloorPlan, type Level } from "@/lib/floor-plan/types";
+import {
+  a4Pixels,
+  AERIAL_ZOOM,
+  floorPlanSchema,
+  OUTSIDE,
+  type Backdrop,
+  type FloorPlan,
+  type Level,
+} from "@/lib/floor-plan/types";
 import { DRAW_KINDS, FloorPlanEditor, type DrawKind, type Selection, type Tool } from "./editor";
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -58,6 +66,17 @@ const EXPORT_DPI = 300;
 function tidyAddress(value: string): string {
   return value.replace(/,\s*Australia\s*$/i, "").trim();
 }
+
+/** What /api/floor-plan/aerial returns. Declared here rather than imported from
+ *  lib/floor-plan/aerial.ts, which is server-only — it pulls in the geocoder and Buffer. */
+type Aerial = {
+  src: string;
+  w: number;
+  h: number;
+  label: string;
+  centre: { lat: number; lng: number };
+  zoom: number;
+};
 
 function slugify(value: string): string {
   return (
@@ -321,12 +340,19 @@ export function FloorPlanTool() {
     return w >= h ? { w: LONG, h: short } : { w: short, h: LONG };
   }
 
-  function startOnBackdrop(src: string, rawLabel: string, imgW: number, imgH: number) {
+  function startOnBackdrop(
+    src: string,
+    rawLabel: string,
+    imgW: number,
+    imgH: number,
+    /** Only a satellite tile has one — an uploaded image cannot be re-fetched. */
+    origin?: { centre: { lat: number; lng: number }; zoom: number }
+  ) {
     const label = tidyAddress(rawLabel);
     setError(null);
     setPlan({
       address: label,
-      backdrop: { src, label },
+      backdrop: { src, label, ...origin },
       grid: gridForImage(imgW, imgH),
       north: 0,
       northNote: "",
@@ -379,11 +405,77 @@ export function FloorPlanTool() {
         body: JSON.stringify(body),
       });
       const json = (await res.json().catch(() => null)) as
-        | { ok: boolean; aerial?: { src: string; w: number; h: number; label: string }; error?: string }
+        | { ok: boolean; aerial?: Aerial; error?: string }
         | null;
       if (!json) throw new Error(`The server returned an unexpected response (HTTP ${res.status}).`);
       if (!json.ok || !json.aerial) throw new Error(json.error ?? "Could not fetch that image.");
-      startOnBackdrop(json.aerial.src, json.aerial.label, json.aerial.w, json.aerial.h);
+      const a = json.aerial;
+      startOnBackdrop(a.src, a.label, a.w, a.h, { centre: a.centre, zoom: a.zoom });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not fetch that image.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /**
+   * Re-fetch the satellite tile a step wider or closer about the same point.
+   *
+   * Zoom 19 frames one lot, which is wrong for a strata block, a row of terraces or a defect
+   * on the far side of a site — and once the picture is on screen there was no way to change
+   * it short of starting again.
+   *
+   * Pins move with it. One zoom step is exactly a factor of two in Web Mercator, so a pin d
+   * from the centre belongs at 2d a step closer and d/2 a step wider, which keeps it on the
+   * feature it was put on. Going out and back in restores them exactly. A pin pushed off the
+   * edge by zooming CLOSER is parked at the edge rather than left off the page, where it
+   * would drag the A4 out of shape — visibly wrong beats invisibly wrong, and it is one drag
+   * to fix.
+   */
+  async function rezoomAerial(delta: number) {
+    const backdrop = plan?.backdrop;
+    if (!plan || !backdrop?.centre) return;
+    const from = backdrop.zoom ?? AERIAL_ZOOM.default;
+    const to = Math.max(AERIAL_ZOOM.min, Math.min(AERIAL_ZOOM.max, from + delta));
+    if (to === from) return;
+
+    setError(null);
+    setBusy("aerial");
+    try {
+      const res = await fetch("/api/floor-plan/aerial", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lat: backdrop.centre.lat, lng: backdrop.centre.lng, zoom: to }),
+      });
+      const json = (await res.json().catch(() => null)) as
+        | { ok: boolean; aerial?: Aerial; error?: string }
+        | null;
+      if (!json) throw new Error(`The server returned an unexpected response (HTTP ${res.status}).`);
+      if (!json.ok || !json.aerial) throw new Error(json.error ?? "Could not fetch that image.");
+
+      const factor = 2 ** (to - from);
+      const cx = plan.grid.w / 2;
+      const cy = plan.grid.h / 2;
+      const on = (v: number, span: number) => Math.max(0, Math.min(span, v));
+      const levels = plan.levels.map((lv) => ({
+        ...lv,
+        annotations: lv.annotations.map((a) =>
+          a.anchor.type === "free"
+            ? {
+                ...a,
+                anchor: {
+                  ...a.anchor,
+                  x: on(cx + (a.anchor.x - cx) * factor, plan.grid.w),
+                  y: on(cy + (a.anchor.y - cy) * factor, plan.grid.h),
+                },
+              }
+            : a
+        ),
+      }));
+
+      // One patch, so one undo takes the picture and the pins back together.
+      const next: Backdrop = { ...backdrop, src: json.aerial.src, zoom: to };
+      update({ backdrop: next, levels });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not fetch that image.");
     } finally {
@@ -1439,6 +1531,39 @@ export function FloorPlanTool() {
                 />
               </label>
             </div>
+
+            {/* Only for a satellite backdrop. An uploaded image has no centre to re-fetch
+                around, so there is nothing to offer and the panel stays away. */}
+            {plan.backdrop?.centre && (
+              <div className="rounded-xl border border-ad-border bg-white p-5">
+                <h3 className="text-sm font-semibold text-ad-ink">Satellite view</h3>
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void rezoomAerial(-1)}
+                    disabled={busy !== null || (plan.backdrop.zoom ?? AERIAL_ZOOM.default) <= AERIAL_ZOOM.min}
+                    className="flex-1 rounded-lg border border-ad-border px-2 py-1.5 text-xs font-medium text-ad-ink hover:bg-ad-surface disabled:opacity-40"
+                  >
+                    − Wider
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void rezoomAerial(1)}
+                    disabled={busy !== null || (plan.backdrop.zoom ?? AERIAL_ZOOM.default) >= AERIAL_ZOOM.max}
+                    className="flex-1 rounded-lg border border-ad-border px-2 py-1.5 text-xs font-medium text-ad-ink hover:bg-ad-surface disabled:opacity-40"
+                  >
+                    + Closer
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-ad-muted">
+                  {busy === "aerial"
+                    ? "Fetching…"
+                    : `Each step doubles or halves how much ground is in frame. Pins move with it. (Zoom ${
+                        plan.backdrop.zoom ?? AERIAL_ZOOM.default
+                      } of ${AERIAL_ZOOM.min}–${AERIAL_ZOOM.max}.)`}
+                </p>
+              </div>
+            )}
 
             {/* North is the likeliest silent error: the reference sketch's compass has N
                 pointing DOWN the page. Show the model's reading so it can be checked. */}

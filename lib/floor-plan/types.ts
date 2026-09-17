@@ -268,10 +268,28 @@ export type Level = z.infer<typeof levelObject>;
  * reopens with its backdrop months later, and the export canvas is never tainted by a
  * cross-origin image — which would silently produce a blank PNG.
  */
+/**
+ * The Google Static Maps zoom levels the satellite backdrop is fetched at.
+ *
+ * Here rather than in lib/floor-plan/aerial.ts because the editor needs to know the range to
+ * know when to stop offering Wider, and that module imports the geocoder and Buffer — it is
+ * server-only and must not reach the client bundle.
+ */
+export const AERIAL_ZOOM = { min: 12, max: 21, default: 19 };
+
 export const backdropSchema = z.object({
   src: z.string().min(1),
   /** What the address resolved to, so a wrong one is visible rather than assumed. */
   label: z.string().default(""),
+  /**
+   * Where the satellite tile was taken from, so it can be re-fetched wider or closer about
+   * the same point without going back to the address.
+   *
+   * Absent on an UPLOADED image, which is the difference that matters: there is nothing to
+   * re-fetch, so the tool offers no zoom for one.
+   */
+  centre: z.object({ lat: z.number(), lng: z.number() }).optional(),
+  zoom: z.number().int().optional(),
 });
 export type Backdrop = z.infer<typeof backdropSchema>;
 

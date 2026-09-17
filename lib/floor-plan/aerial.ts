@@ -14,6 +14,7 @@
 // your own aerial screenshot instead — that path takes whatever resolution you give it.
 
 import { geocodeViaGoogle } from "@/lib/property-sizing/google-geocode";
+import { AERIAL_ZOOM } from "@/lib/floor-plan/types";
 import { recordApiCall } from "@/lib/api-usage";
 
 const STATIC_MAP_URL = "https://maps.googleapis.com/maps/api/staticmap";
@@ -23,10 +24,18 @@ const TILE_W = 490;
 const TILE_H = 640;
 const SCALE = 2;
 
-/** Zoom 19 frames a suburban lot with its neighbours; 21 is about as far as AU imagery holds. */
-export const DEFAULT_ZOOM = 19;
-const MIN_ZOOM = 16;
-const MAX_ZOOM = 21;
+/**
+ * Zoom 19 frames a suburban lot with its neighbours, which is the usual dilapidation job.
+ *
+ * The floor is deliberately a long way below that. A job is not always one house — a strata
+ * block, a row of terraces, a school, or a defect on the far side of a construction site all
+ * need the street and its neighbours in frame, and at 19 you cannot get them. 12 is a whole
+ * suburb, well past anything useful, which is the point: the limit should never be the thing
+ * you hit. 21 is the ceiling because that is about as far as Australian imagery holds detail.
+ */
+export const DEFAULT_ZOOM = AERIAL_ZOOM.default;
+export const MIN_ZOOM = AERIAL_ZOOM.min;
+export const MAX_ZOOM = AERIAL_ZOOM.max;
 
 export type Centre = { lat: number; lng: number };
 
@@ -37,6 +46,8 @@ export type Aerial = {
   h: number;
   /** What Google matched, so a wrong address is visible rather than assumed. */
   label: string;
+  /** Kept with the picture so it can be re-fetched wider or closer about the same point. */
+  centre: Centre;
   zoom: number;
 };
 
@@ -93,6 +104,7 @@ export async function fetchAerialAt(
         w: TILE_W * SCALE,
         h: TILE_H * SCALE,
         label,
+        centre,
         zoom: clampZoom(zoom),
       },
     };

@@ -258,8 +258,26 @@ export const levelSchema = z.preprocess((value) => {
 
 export type Level = z.infer<typeof levelObject>;
 
+/**
+ * A photograph under the drawing — a satellite view fetched from an address, or an aerial
+ * image you uploaded.
+ *
+ * Fills the WHOLE grid, and the grid is chosen to match the picture's proportions when it is
+ * set, so the A4 page fits it without letterboxing and nothing else has to know it is there.
+ * Inlined as a data URL rather than a link: the plan stays self-contained, so a saved .json
+ * reopens with its backdrop months later, and the export canvas is never tainted by a
+ * cross-origin image — which would silently produce a blank PNG.
+ */
+export const backdropSchema = z.object({
+  src: z.string().min(1),
+  /** What the address resolved to, so a wrong one is visible rather than assumed. */
+  label: z.string().default(""),
+});
+export type Backdrop = z.infer<typeof backdropSchema>;
+
 const floorPlanObject = z.object({
   address: z.string(),
+  backdrop: backdropSchema.optional(),
   /** Cells across and down. Chosen to roughly match the building's proportions. */
   grid: z.object({ w: z.number().int().min(2).max(80), h: z.number().int().min(2).max(80) }),
   /** Which way north points ON THE PAGE. 0 = up, 90 = right, 180 = down, 270 = left. */

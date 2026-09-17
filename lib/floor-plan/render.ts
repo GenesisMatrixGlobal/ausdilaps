@@ -111,7 +111,15 @@ export function renderPlan(plan: FloorPlan, opts: RenderOptions): string {
   // swelling to fill it. That was true when levels stacked on one sheet and stays true now.
   const all = plan.levels.map((level) => {
     const owner = buildOwnerGrid(level.rooms, grid);
-    return { level, owner, bounds: contentBounds(level, owner, grid) };
+    // A backdrop fills the grid, so the grid IS the page's content — no need to measure what
+    // is drawn on top of it.
+    return {
+      level,
+      owner,
+      bounds: plan.backdrop
+        ? { x: 0, y: 0, w: grid.w, h: grid.h }
+        : contentBounds(level, owner, grid),
+    };
   });
   const current = all[index];
 
@@ -154,7 +162,16 @@ export function renderPlan(plan: FloorPlan, opts: RenderOptions): string {
       `.mk{text-anchor:middle;dominant-baseline:central;font-weight:700;fill:#ffffff}</style>`
   );
 
-  if (opts.mode === "preview") parts.push(previewGrid(placed, scale));
+  if (plan.backdrop) {
+    // preserveAspectRatio="none" because the grid was sized to the picture when it was set,
+    // so filling it exactly is filling it correctly.
+    parts.push(
+      `<image href="${esc(plan.backdrop.src)}" x="${r2(placed.ox)}" y="${r2(placed.oy)}" ` +
+        `width="${r2(grid.w * scale)}" height="${r2(grid.h * scale)}" preserveAspectRatio="none"/>`
+    );
+  } else if (opts.mode === "preview") {
+    parts.push(previewGrid(placed, scale));
+  }
 
   parts.push(drawLevel(placed, grid, scale, opts));
 

@@ -591,9 +591,11 @@ export function FloorPlanEditor({
               id: result.level.annotations[result.level.annotations.length - 1].id,
             });
             onMarkPlaced();
-            // Back to Select like every other tool. Costs a click per number in a run, and buys
-            // the one thing that was missing: you can touch what you just put down.
-            onDrew();
+            // NOT onDrew(): numbers are the one thing placed in runs — clicking a dozen
+            // defects across a satellite photo, the value stepping on each time — and going
+            // back to Select after every one would double the clicks. Everything else hands
+            // back so it can be adjusted; a number is adjusted later, in Select, where
+            // double-clicking one opens it for editing.
           } else onError(result.error);
           return;
         }
@@ -651,14 +653,28 @@ export function FloorPlanEditor({
         cursor: drawing ? "crosshair" : drag?.mode === "pan" ? "grabbing" : undefined,
       }}
     >
-      <g stroke="#eef0f2" strokeWidth={0.02}>
-        {Array.from({ length: grid.w + 1 }, (_, i) => (
-          <line key={`v${i}`} x1={i} y1={0} x2={i} y2={grid.h} />
-        ))}
-        {Array.from({ length: grid.h + 1 }, (_, i) => (
-          <line key={`h${i}`} x1={0} y1={i} x2={grid.w} y2={i} />
-        ))}
-      </g>
+      {/* The backdrop fills the grid, and replaces the grid lines — faint squares over a
+          photograph are clutter, not guidance. */}
+      {plan.backdrop ? (
+        <image
+          href={plan.backdrop.src}
+          x={0}
+          y={0}
+          width={grid.w}
+          height={grid.h}
+          preserveAspectRatio="none"
+          pointerEvents="none"
+        />
+      ) : (
+        <g stroke="#eef0f2" strokeWidth={0.02}>
+          {Array.from({ length: grid.w + 1 }, (_, i) => (
+            <line key={`v${i}`} x1={i} y1={0} x2={i} y2={grid.h} />
+          ))}
+          {Array.from({ length: grid.h + 1 }, (_, i) => (
+            <line key={`h${i}`} x1={0} y1={i} x2={grid.w} y2={i} />
+          ))}
+        </g>
+      )}
 
       <g pointerEvents={drawing ? "none" : "auto"}>
       {level.rooms.map((room) => {

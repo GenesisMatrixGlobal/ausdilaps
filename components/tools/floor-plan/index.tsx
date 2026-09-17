@@ -151,7 +151,7 @@ export function FloorPlanTool() {
   const [levelIndex, setLevelIndex] = useState(0);
   const [selection, setSelection] = useState<Selection>(null);
   const [sketchUrl, setSketchUrl] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"extract" | "export" | null>(null);
+  const [busy, setBusy] = useState<"extract" | "export" | "aerial" | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -159,6 +159,8 @@ export function FloorPlanTool() {
    *  photos is click, click, click rather than retype, click, retype, click. */
   const [markText, setMarkText] = useState("1");
   const [markTone, setMarkTone] = useState<"defect" | "figure">("defect");
+  const [aerialAddress, setAerialAddress] = useState("");
+  const aerialInput = useRef<HTMLInputElement>(null);
   const [hoverWall, setHoverWall] = useState<{ a: string; b: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const jsonInput = useRef<HTMLInputElement>(null);
@@ -171,7 +173,7 @@ export function FloorPlanTool() {
   );
 
   const issues = useMemo(() => {
-    if (!plan) return [];
+    if (!plan || plan.backdrop) return [];
     return plan.levels.flatMap((lvl) =>
       validateLevel(lvl, plan.grid).map((i) => ({ ...i, level: lvl.name }))
     );
@@ -303,6 +305,85 @@ export function FloorPlanTool() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, deleteSelection]);
+
+  /** Grid shaped to the picture, so the backdrop fills it and the A4 page fits it. */
+  function gridForImage(w: number, h: number) {
+    const LONG = 40;
+    const short = Math.max(2, Math.min(80, Math.round((LONG * Math.min(w, h)) / Math.max(w, h))));
+    return w >= h ? { w: LONG, h: short } : { w: short, h: LONG };
+  }
+
+  function startOnBackdrop(src: string, label: string, imgW: number, imgH: number) {
+    setError(null);
+    setPlan({
+      address: label,
+      backdrop: { src, label },
+      grid: gridForImage(imgW, imgH),
+      north: 0,
+      northNote: "",
+      orientation: "portrait",
+      levels: [
+        {
+          id: "level-1",
+          name: "Defect locations",
+          rooms: [],
+          doors: [],
+          lines: [],
+          removedWalls: [],
+          stairs: [],
+          annotations: [],
+        },
+      ],
+    });
+    setHistory([]);
+    setLevelIndex(0);
+    setSelection(null);
+    // The only thing there is to do on a photograph is put numbers on it.
+    setTool("number");
+    setLastKind("number");
+    setView("edit");
+  }
+
+  async function handleAerialUpload(file: File) {
+    if (!ACCEPTED.includes(file.type)) {
+      setError("That file is not an image. Use a JPG or PNG.");
+      return;
+    }
+    try {
+      const img = await loadImage(file);
+      const src = await readAsBase64(file);
+      startOnBackdrop(`data:${file.type};base64,${src}`, file.name.replace(/\.[^.]+$/, ""), img.naturalWidth, img.naturalHeight);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "That image could not be opened.");
+    }
+  }
+
+  async function findAerial() {
+    const address = aerialAddress.trim();
+    if (address.length < 3) {
+      setError("Type an address to look up.");
+      return;
+    }
+    setError(null);
+    setBusy("aerial");
+    try {
+      const res = await fetch("/api/floor-plan/aerial", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ address }),
+      });
+      const json = (await res.json().catch(() => null)) as
+        | { ok: boolean; aerial?: { src: string; w: number; h: number; label: string }; error?: string }
+        | null;
+      if (!json) throw new Error(`The server returned an unexpected response (HTTP ${res.status}).`);
+      if (!json.ok || !json.aerial) throw new Error(json.error ?? "Could not fetch that image.");
+      startOnBackdrop(json.aerial.src, json.aerial.label, json.aerial.w, json.aerial.h);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not fetch that image.");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   function startBlank() {
     setError(null);
@@ -449,7 +530,13 @@ export function FloorPlanTool() {
       ctx.fillRect(0, 0, page.w, page.h);
       ctx.drawImage(img, 0, 0, page.w, page.h);
 
-      const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/png"));
+      // A photograph in a PNG is 10MB a page; the same sheet as a JPEG is under one, and no
+      // one can tell the difference on satellite imagery. Line art stays PNG, where it is both
+      // smaller AND sharper — lossless on flat colour, and no ringing around the wall strokes.
+      const photo = !!target.backdrop;
+      const blob = await new Promise<Blob | null>((r) =>
+        canvas.toBlob(r, photo ? "image/jpeg" : "image/png", photo ? 0.92 : undefined)
+      );
       if (!blob) throw new Error("Could not render the plan.");
       return blob;
     } finally {
@@ -474,7 +561,8 @@ export function FloorPlanTool() {
       for (const [i, lvl] of plan.levels.entries()) {
         const blob = await renderPng(plan, i);
         const name = plan.levels.length > 1 ? `${stem}-${slugify(lvl.name || `level-${i + 1}`)}` : stem;
-        downloadBlob(blob, `${name}-floor-plan.png`, "image/png");
+        const ext = blob.type === "image/jpeg" ? "jpg" : "png";
+        downloadBlob(blob, `${name}-floor-plan.${ext}`, blob.type);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not render the plan.");
@@ -566,6 +654,56 @@ export function FloorPlanTool() {
               A phone photo of the inspector&apos;s hand drawing. Rooms, labels and the compass are read
               off it; nothing is measured, so the plan is schematic.
             </p>
+          </div>
+
+          {/*
+            The other way in, sat under the sketch dropzone where it is found by anyone who
+            looks at the first one and realises they have no sketch. A satellite view or your
+            own aerial photo, with nothing to do on it but drop numbered pins.
+          */}
+          <div className="mt-4 rounded-xl border border-ad-border bg-ad-surface p-5">
+            <p className="text-sm font-medium text-ad-ink">No sketch? Mark up a satellite image</p>
+            <p className="mt-1 text-sm text-ad-muted">
+              Type the address, then click the photo wherever a defect is to drop a numbered pin.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <input
+                value={aerialAddress}
+                onChange={(e) => setAerialAddress(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void findAerial();
+                }}
+                placeholder="75 Justin Street, Lilyfield NSW"
+                aria-label="Address to look up"
+                className="min-w-0 flex-1 rounded-lg border border-ad-border p-2 text-sm outline-none focus:border-ad-steel"
+              />
+              <button
+                type="button"
+                onClick={() => void findAerial()}
+                disabled={busy !== null}
+                className={cn(buttonVariants({ variant: "accent" }), "shrink-0")}
+              >
+                {busy === "aerial" ? "Finding…" : "Find it"}
+              </button>
+            </div>
+            <input
+              ref={aerialInput}
+              type="file"
+              accept={ACCEPTED.join(",")}
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void handleAerialUpload(f);
+                e.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => aerialInput.current?.click()}
+              className="mt-3 text-sm text-ad-muted underline hover:text-ad-ink"
+            >
+              or upload your own aerial image
+            </button>
           </div>
 
           <div className="mt-4 text-center">
@@ -1302,7 +1440,7 @@ export function FloorPlanTool() {
             <div className="rounded-xl border border-ad-border bg-white p-5">
               <h3 className="text-sm font-semibold text-ad-ink">Export</h3>
               <p className="mt-1 text-xs text-ad-muted">
-                A4 portrait, 300 DPI — 2480 × 3508.
+                A4 portrait, 300 DPI — 2480 × 3508{plan.backdrop ? " .jpg" : " .png"}.
                 {plan.levels.length > 1 && ` One file per level — ${plan.levels.length} downloads.`}
               </p>
               <button
@@ -1311,7 +1449,7 @@ export function FloorPlanTool() {
                 disabled={busy !== null}
                 className={cn(buttonVariants({ variant: "accent" }), "mt-4 w-full")}
               >
-                {busy === "export" ? "Rendering…" : "Download A4 .png"}
+                {busy === "export" ? "Rendering…" : `Download A4 .${plan.backdrop ? "jpg" : "png"}`}
               </button>
               <button
                 type="button"

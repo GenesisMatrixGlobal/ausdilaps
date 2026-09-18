@@ -166,7 +166,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     slug: "closeout-markup",
     code: "CLO",
-    title: "Overview Markup",
+    title: "Overview Markup Generator",
     description:
       "Paste an opportunity: every property its work orders name, coloured by whether it was inspected, and filed onto the opportunity's Closeout Markup field.",
     departments: ["projects", "reports"],

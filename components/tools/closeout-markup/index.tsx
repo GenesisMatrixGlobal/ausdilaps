@@ -511,6 +511,24 @@ export function CloseoutMarkupTool() {
             >
               {downloading ? "Rendering…" : "Download .png"}
             </button>
+            {/* ⚠️ Deliberately BESIDE Download .png, because the position is what says "this is
+                about the export" — which is what lets the label be two words (Rhys, 2026-09-18).
+                It read "Summary list on the exported image (and its pin numbers)" for exactly one
+                revision; spelling it out was answering, in the label, a question the placement
+                already answers. Move this control away from the download button and the wording
+                stops being enough.
+                It governs the EXPORT only: the map, the sheet and the tick state are untouched,
+                and the pin numbers go with the list because a number indexing a list the drawing
+                doesn't carry explains nothing. */}
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ad-ink">
+              <input
+                type="checkbox"
+                checked={includeSummary}
+                onChange={(e) => setIncludeSummary(e.target.checked)}
+                className="size-4 shrink-0 accent-ad-steel"
+              />
+              Include summary
+            </label>
             <button
               type="button"
               onClick={() => {
@@ -522,22 +540,6 @@ export function CloseoutMarkupTool() {
             >
               Save .json
             </button>
-            {/* ⚠️ The label names the EXPORTED IMAGE on purpose. Worded as just "Inspection
-                summary" it read as a change to what the tool draws or which properties are
-                ticked, which is the confusion it caused (Rhys, 2026-09-18). It governs the
-                export and nothing else — the map, the sheet and the tick state are untouched.
-                The pins are named too, because they go with the list: a number on a client's
-                drawing that indexes a list the drawing doesn't carry explains nothing. */}
-            <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ad-ink">
-              <input
-                type="checkbox"
-                checked={includeSummary}
-                onChange={(e) => setIncludeSummary(e.target.checked)}
-                className="size-4 shrink-0 accent-ad-steel"
-              />
-              Summary list on the exported image
-              <span className="text-ad-muted">(and its pin numbers)</span>
-            </label>
             <button
               type="button"
               onClick={() => fileInput.current?.click()}

@@ -41,7 +41,7 @@ export function isCloseoutConfigError(e: unknown): boolean {
 /** A filename that sorts and reads well in Box beside the closeout letter. */
 export function suggestCloseoutFilename(opportunityName: string): string {
   const stamp = new Date().toISOString().slice(0, 10);
-  return sanitiseBoxFilename(`${opportunityName} - Closeout Markup ${stamp}.png`);
+  return sanitiseBoxFilename(`${opportunityName} - Overview Markup ${stamp}.png`);
 }
 
 export async function uploadCloseoutMarkup(opts: {
@@ -114,7 +114,7 @@ export async function uploadCloseoutMarkup(opts: {
 
   if (opts.linkToOpportunity) {
     if (opts.existingMarkupUrl && !opts.replaceExistingLink) {
-      result.linkError = "This opportunity already has a closeout markup — tick Replace to overwrite it.";
+      result.linkError = "This opportunity already has an overview markup — tick Replace to overwrite it.";
     } else {
       try {
         await updateRecord("Opportunity", opts.opportunityId, { [CLOSEOUT_MARKUP_FIELD]: sharedLink });

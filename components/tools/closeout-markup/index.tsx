@@ -1,6 +1,6 @@
 "use client";
 
-// Closeout Markup — a job's progress on one drawing.
+// Overview Markup — a job's progress on one drawing.
 //
 // Paste the opportunity, the tool reads its work orders out of Salesforce, collapses them into
 // the properties they name, and colours each by how its inspections went. The drawing is what
@@ -80,7 +80,7 @@ function siteNoteFor(site: ResolvedCloseoutSite): string | null {
 }
 
 function slugify(s: string) {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "closeout";
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "overview";
 }
 
 export function CloseoutMarkupTool({ isAdmin }: ToolProps) {
@@ -407,7 +407,10 @@ export function CloseoutMarkupTool({ isAdmin }: ToolProps) {
     );
   }
 
-  const filenameStem = opportunity ? `${slugify(opportunity.name)}-closeout-markup` : "closeout-markup";
+  // Downloaded .png / .json / .csv names. Renamed with the tool's label (2026-09-18); the SLUG,
+  // the code CLO and the save file's `kind` all stay `closeout-markup` — a slug is a live route
+  // and the kind is what lets a file saved before the rename still open.
+  const filenameStem = opportunity ? `${slugify(opportunity.name)}-overview-markup` : "overview-markup";
 
   async function download() {
     setError(null);

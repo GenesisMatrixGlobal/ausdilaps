@@ -102,9 +102,9 @@ export function parseCloseoutFile(
   } catch {
     return { ok: false, error: "That file isn't valid JSON." };
   }
-  if (!doc || typeof doc !== "object") return { ok: false, error: "That file isn't a closeout markup." };
+  if (!doc || typeof doc !== "object") return { ok: false, error: "That file isn't an overview markup." };
   if (doc.kind !== CLOSEOUT_FILE_KIND) {
-    return { ok: false, error: "That file isn't a closeout markup — open it on the tab it was saved from." };
+    return { ok: false, error: "That file isn't an overview markup — open it on the tab it was saved from." };
   }
 
   const opp = (doc.opportunity ?? {}) as Record<string, unknown>;

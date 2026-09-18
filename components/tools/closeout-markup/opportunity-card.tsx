@@ -122,7 +122,7 @@ export function OpportunityCard({
           </p>
           {opportunity.existingMarkupUrl && (
             <p className="mt-1 text-xs text-ad-orange">
-              This opportunity already has a closeout markup filed.
+              This opportunity already has an overview markup filed.
             </p>
           )}
           {!opportunity.boxFolderUrl && (

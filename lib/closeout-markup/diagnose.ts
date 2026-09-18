@@ -94,7 +94,7 @@ export function diagnoseCloseout(input: {
     return {
       headline: `${input.opportunityName} has no work orders, so there is nothing to draw.`,
       next:
-        "A closeout markup is built from the work orders linked to the opportunity. Check this is the right record — a job's PRE and POST opportunities are separate, and the work orders sit on one of them.",
+        "An overview markup is built from the work orders linked to the opportunity. Check this is the right record — a job's PRE and POST opportunities are separate, and the work orders sit on one of them.",
       items: [],
       total: 0,
     };

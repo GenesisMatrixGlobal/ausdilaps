@@ -40,6 +40,11 @@ export type ShapeColorKey = keyof typeof SHAPE_COLORS;
  *  went, not by whether it is the project site. */
 export const INSPECTED_GREEN = "16a34a";
 
+export const FILL_OPACITY_PERCENT = 50;
+export const STROKE_OPACITY_PERCENT = 90;
+/** The site fill is the one thing drawn at full stroke opacity. */
+export const SITE_STROKE_OPACITY_PERCENT = 100;
+
 /**
  * How a LOT is drawn: an outline colour and a fill colour.
  *
@@ -61,11 +66,26 @@ export const INSPECTED_GREEN = "16a34a";
  * colour of this thing" (badges, swatches) without a special case.
  */
 export const MARKUP_STYLES = {
-  red: { stroke: SITE_RED, fill: SITE_RED },
-  blue: { stroke: NEIGHBOUR_FILL, fill: NEIGHBOUR_FILL },
-  orange: { stroke: SHAPE_COLORS.orange, fill: SHAPE_COLORS.orange },
-  green: { stroke: INSPECTED_GREEN, fill: INSPECTED_GREEN },
-  partial: { stroke: SHAPE_COLORS.orange, fill: INSPECTED_GREEN },
+  red: { stroke: SITE_RED, fill: SITE_RED, fillOpacity: FILL_OPACITY_PERCENT },
+  blue: { stroke: NEIGHBOUR_FILL, fill: NEIGHBOUR_FILL, fillOpacity: FILL_OPACITY_PERCENT },
+  orange: { stroke: SHAPE_COLORS.orange, fill: SHAPE_COLORS.orange, fillOpacity: FILL_OPACITY_PERCENT },
+  green: { stroke: INSPECTED_GREEN, fill: INSPECTED_GREEN, fillOpacity: FILL_OPACITY_PERCENT },
+  partial: { stroke: SHAPE_COLORS.orange, fill: INSPECTED_GREEN, fillOpacity: FILL_OPACITY_PERCENT },
+  /**
+   * The project site on a CLOSEOUT markup: a red outline and NO fill.
+   *
+   * ⚠️ It cannot be plain `red`, which on a closeout already means "closed, not inspected" —
+   * two rows of the colour key would carry an identical red dot meaning different things
+   * (Rhys, 2026-09-18, choosing this over Building Markup's solid red). Unfilled is the right
+   * distinction rather than an arbitrary one: the site is the WORKS, not a property that was or
+   * wasn't inspected, so it carries no status fill — and the imagery showing through is what
+   * makes it read as an extent rather than a subject.
+   *
+   * ⚠️ NOT dashed, which would have been the other obvious answer: `google.maps.Polygon` can
+   * only dash a stroke via a Polyline's `icons`, so the live map could not match the export.
+   * Same reason MARKUP_STYLES has no stripes.
+   */
+  site: { stroke: SITE_RED, fill: SITE_RED, fillOpacity: 0 },
 } as const;
 
 export type MarkupColorKey = keyof typeof MARKUP_STYLES;
@@ -86,7 +106,4 @@ export function markupColor(key: MarkupColorKey | undefined): string {
   return MARKUP_STYLES[key ?? "blue"]?.fill ?? NEIGHBOUR_FILL;
 }
 
-export const FILL_OPACITY_PERCENT = 50;
-export const STROKE_OPACITY_PERCENT = 90;
-/** The site fill is the one thing drawn at full stroke opacity. */
-export const SITE_STROKE_OPACITY_PERCENT = 100;
+

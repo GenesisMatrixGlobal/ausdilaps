@@ -21,6 +21,7 @@ interface GoogleGeocodeResp {
     types?: string[];
     partial_match?: boolean;
     geometry?: { location?: { lat: number; lng: number }; location_type?: string };
+    address_components?: { types?: string[] }[];
   }[];
 }
 
@@ -35,7 +36,27 @@ const PRECISE_RESULT_TYPES = new Set(["street_address", "premise", "subpremise"]
 const PRECISE_LOCATION_TYPES = new Set(["ROOFTOP", "RANGE_INTERPOLATED"]);
 
 export type GoogleGeocodeOutcome =
-  | { status: "ok"; x: number; y: number; matchedAddress: string | null }
+  | {
+      status: "ok";
+      x: number;
+      y: number;
+      matchedAddress: string | null;
+      /**
+       * Google's own word for how it found the point: ROOFTOP / RANGE_INTERPOLATED /
+       * GEOMETRIC_CENTER / APPROXIMATE.
+       *
+       * ⚠️ A hit can pass the precision gate above on its `types` alone and still be a
+       * GEOMETRIC_CENTER — the middle of a road, not a building. "12 Sturt Street, Telopea"
+       * comes back that way, 389 m from the real site and on an unrelated 24,062 m² lot, and
+       * the formatted address gives it away by leading with a PLUS CODE. Callers with an
+       * address layer to check against can live with that; callers without one should insist on
+       * a rooftop. See lib/closeout-markup/site.ts.
+       */
+      locationType: string | null;
+      /** True when Google answered with a plus code rather than a real street address — always
+       *  a sign it did not actually find the address asked for. */
+      plusCode: boolean;
+    }
   /** Nothing matched, or the only match was too coarse to be a real address. */
   | { status: "no_candidates" }
   | { status: "no_location"; matchedAddress: string | null };
@@ -94,5 +115,12 @@ export async function geocodeViaGoogle(addressLine: string, timeoutMs = 8000): P
   const location = top.geometry?.location;
   const matchedAddress = top.formatted_address ?? null;
   if (!location) return { status: "no_location", matchedAddress };
-  return { status: "ok", x: location.lng, y: location.lat, matchedAddress };
+  return {
+    status: "ok",
+    x: location.lng,
+    y: location.lat,
+    matchedAddress,
+    locationType: top.geometry?.location_type ?? null,
+    plusCode: (top.address_components ?? []).some((c) => (c.types ?? []).includes("plus_code")),
+  };
 }

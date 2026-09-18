@@ -18,6 +18,7 @@ import {
   isInspection,
   looksLikeAddress,
 } from "../lib/closeout-markup/group";
+import { siteAddressSegments } from "../lib/closeout-markup/site";
 import type { WorkOrderRow } from "../lib/closeout-markup/types";
 
 const fixture = JSON.parse(
@@ -209,6 +210,46 @@ check("every street looks like one", properties.every((p) => looksLikeAddress(p.
 check("keys unique", new Set(properties.map((p) => p.key)).size, properties.length);
 // Nor may two rows claim the same address — that is the duplicate-pin bug mergeSameBuilding exists for.
 check("addresses unique", new Set(properties.map((p) => p.street)).size, properties.length);
+
+// ── The project site's address, split ───────────────────────────────────────────────────────
+//
+// Every string below is a REAL Site_Address__c value out of the org. Only 72% of that field is
+// a single clean address, and what the other 28% does decides whether the drawing gets a red
+// outline in the right place, in the wrong place, or not at all — so it is pinned here.
+check(
+  // Rhys's own test job, and the case that makes this a splitter rather than one geocode:
+  // "6" borrows its street from the segment AFTER it. Geocoding the whole string instead
+  // returns one precise-looking hit and draws a third of the site.
+  "1-5 Polding Place, 6 & 12 Sturt Street → three addresses",
+  siteAddressSegments("1-5 Polding Place, 6 & 12 Sturt Street"),
+  ["1-5 Polding Place", "6 Sturt Street", "12 Sturt Street"]
+);
+check("a single address is left alone", siteAddressSegments("27 Fletcher Street"), ["27 Fletcher Street"]);
+check(
+  "two full addresses split",
+  siteAddressSegments("172-180 Anzac Parade & 116R Todman Avenue"),
+  ["172-180 Anzac Parade", "116R Todman Avenue"]
+);
+check("706 & 710 Midland Highway", siteAddressSegments("706 & 710 Midland Highway"), [
+  "706 Midland Highway",
+  "710 Midland Highway",
+]);
+check(
+  "a trailing comma is not a segment",
+  siteAddressSegments("Connells Point Road & William Street,"),
+  ["Connells Point Road", "William Street"]
+);
+// These carry no house number, so nothing here can become a parcel — resolveCloseoutSite
+// rejects them rather than letting Google answer with a suburb centroid.
+check("a project name stays one segment", siteAddressSegments("Western Tunneling Package"), [
+  "Western Tunneling Package",
+]);
+check("an intersection splits into two streets", siteAddressSegments("Corner Nissen Street & Urraween Road"), [
+  "Corner Nissen Street",
+  "Urraween Road",
+]);
+check("empty in, empty out", siteAddressSegments(null), []);
+check("whitespace only", siteAddressSegments("   "), []);
 
 const colours = properties.reduce<Record<string, number>>((acc, p) => {
   acc[p.color] = (acc[p.color] ?? 0) + 1;

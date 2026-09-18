@@ -8,6 +8,7 @@ import { lightningUrl } from "@/lib/quote-lines/resolve";
 import { soqlQuery, soqlQueryAll } from "@/lib/salesforce";
 import { parseSalesforceRecord, soqlEscape } from "@/lib/salesforce-links";
 import { groupWorkOrders } from "./group";
+import { siteAddressFrom } from "./site";
 import type {
   CloseoutOpportunity,
   CloseoutProperty,
@@ -33,6 +34,10 @@ interface OpportunityRecord {
   StageName?: string | null;
   Account?: { Name?: string | null } | null;
   Closeout_Markup__c?: string | null;
+  Site_Address__Street__s?: string | null;
+  Site_Address__City__s?: string | null;
+  Site_Address__StateCode__s?: string | null;
+  Site_Address__PostalCode__s?: string | null;
   [field: string]: unknown;
 }
 
@@ -121,7 +126,11 @@ export async function resolveCloseout(input: string): Promise<ResolvedCloseout> 
   const folderField = boxFolderField();
 
   const [opp] = await soqlQuery<OpportunityRecord>(
-    `SELECT Id, Name, StageName, Account.Name, ${folderField}, ${CLOSEOUT_MARKUP_FIELD} ` +
+    `SELECT Id, Name, StageName, Account.Name, ${folderField}, ${CLOSEOUT_MARKUP_FIELD}, ` +
+      // The project site. A compound Address field, so its components are read individually —
+      // and ⚠️ it carries NO Latitude/Longitude: the org geocodes WorkOrder.Address, not this
+      // one, so the site is the one thing here that needs a Google lookup. See ./site.ts.
+      `Site_Address__Street__s, Site_Address__City__s, Site_Address__StateCode__s, Site_Address__PostalCode__s ` +
       `FROM Opportunity WHERE Id = '${escaped}' LIMIT 1`
   );
   if (!opp) throw new MarkupSyncError(`No Opportunity found for "${id}".`);
@@ -176,6 +185,12 @@ export async function resolveCloseout(input: string): Promise<ResolvedCloseout> 
       boxFolderUrl: (opp[folderField] as string | null) ?? null,
       existingMarkupUrl: opp[CLOSEOUT_MARKUP_FIELD] ?? null,
       url: lightningUrl(opp.Id, "Opportunity"),
+      siteAddress: siteAddressFrom(
+        opp.Site_Address__Street__s ?? null,
+        opp.Site_Address__City__s ?? null,
+        opp.Site_Address__StateCode__s ?? null,
+        opp.Site_Address__PostalCode__s ?? null
+      ),
     },
     properties,
     unmapped,

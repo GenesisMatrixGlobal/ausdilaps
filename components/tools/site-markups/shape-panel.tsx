@@ -50,7 +50,12 @@ const DEFAULT_PALETTE: ShapeSwatch[] = [
  *  look on the map. */
 function swatchStyle(key: ShapeColor) {
   const style = MARKUP_STYLES[key] ?? MARKUP_STYLES.orange;
-  return { backgroundColor: `#${style.fill}`, borderColor: `#${style.stroke}` };
+  return {
+    // An unfilled option (the Closeout Markup's project site) shows as a RING, so the picker
+    // looks like what it draws — the same rule the exported colour key follows.
+    backgroundColor: style.fillOpacity === 0 ? "transparent" : `#${style.fill}`,
+    borderColor: `#${style.stroke}`,
+  };
 }
 
 /**

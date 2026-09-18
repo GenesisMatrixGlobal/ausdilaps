@@ -141,4 +141,40 @@ export interface CloseoutOpportunity {
    *  rather than silently replacing one. */
   existingMarkupUrl: string | null;
   url: string | null;
+  /** The works, from Site_Address__c. Null when the Opportunity carries no site address at all
+   *  (3% of them) — the drawing is then just the inspected properties, as before. */
+  siteAddress: CloseoutSiteAddress | null;
+}
+
+/**
+ * The project site — the works, read off `Opportunity.Site_Address__c`.
+ *
+ * ⚠️ NOT an inspection colour. A closeout's four colours say how a property's work orders went;
+ * the site is the thing that caused them, and it is drawn as an UNFILLED red outline
+ * (MARKUP_STYLES.site) so it can never be read as "closed, not inspected".
+ */
+export interface CloseoutSiteAddress {
+  /** The whole thing on one line, for display. */
+  line: string;
+  street: string | null;
+  suburb: string | null;
+  state: AuStateCode | null;
+  postcode: string | null;
+}
+
+/** One title the site address resolved to. A site address routinely names several. */
+export interface CloseoutSiteLot {
+  id: string;
+  ring: LatLng[];
+  areaSqm: number | null;
+  lotPlan: string | null;
+  point: LatLng;
+  /** The segment of the site address this lot came from. */
+  address: string;
+}
+
+export interface ResolvedCloseoutSite {
+  lots: CloseoutSiteLot[];
+  /** Segments that could not be placed, and why — shown, never silently dropped. */
+  unresolved: { address: string; reason: string }[];
 }

@@ -31,7 +31,7 @@ import {
   type SkippedWorkOrder,
   type UnmappedWorkOrder,
 } from "@/lib/closeout-markup/types";
-import type { CloseoutProperty } from "@/lib/closeout-markup/types";
+import type { CloseoutProperty, CloseoutSiteLot, ResolvedCloseoutSite } from "@/lib/closeout-markup/types";
 import { buildCloseoutFile, parseCloseoutFile } from "@/lib/closeout-markup/file";
 import { MARKUP_STYLES } from "@/lib/kml/standard-markup/style";
 import type { LatLng } from "@/lib/kml/types";
@@ -56,6 +56,25 @@ const CLOSEOUT_LEGEND = (["green", "red", "orange", "partial"] as const).map((co
   label: INSPECTION_LEGEND[color],
 }));
 
+/** ⚠️ "Project Site" reuses the label Building Markup's key already has baked glyphs for
+ *  (overlay-paths.ts is GENERATED and regenerating it would change every existing markup's
+ *  legend), and saying the same thing the same way across the two tools is the better answer
+ *  anyway. Drawn as a hollow ring, because MARKUP_STYLES.site has no fill. */
+const SITE_LEGEND_ROW = { color: "site", label: "Project Site" } as const;
+
+/** What to tell the operator about the site: nothing when it all resolved, otherwise which
+ *  parts didn't and why, so they can draw those by hand. */
+function siteNoteFor(site: ResolvedCloseoutSite): string | null {
+  if (site.unresolved.length === 0) return null;
+  const parts = site.unresolved.map((u) => `${u.address} — ${u.reason.toLowerCase()}`);
+  return site.lots.length === 0
+    ? `Project site couldn't be placed: ${parts.join("; ")}. Draw it by hand with the Project site colour.`
+    // ⚠️ "separately", and the hint, because a consolidated site usually already contains the
+    // address that failed — 12 Sturt Street is inside the 9,102 m² lot its two neighbours
+    // resolved to. Saying only "couldn't be placed" invites drawing a second outline over it.
+    : `${parts.join("; ")} — not placed separately; check it isn't already inside the outline.`;
+}
+
 function slugify(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "closeout";
 }
@@ -69,6 +88,11 @@ export function CloseoutMarkupTool() {
   const [workOrderCount, setWorkOrderCount] = useState(0);
   const [deselected, setDeselected] = useState<Set<string>>(new Set());
   const [parcels, setParcels] = useState<Map<string, ResolvedParcel>>(new Map());
+  // The project site — resolved at Generate, because it costs a geocode. `siteNote` is what
+  // could NOT be placed, which on a quarter of opportunities is everything (the field holds a
+  // project name rather than an address on 25% of them).
+  const [siteLots, setSiteLots] = useState<CloseoutSiteLot[]>([]);
+  const [siteNote, setSiteNote] = useState<string | null>(null);
   const [generated, setGenerated] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -109,11 +133,18 @@ export function CloseoutMarkupTool() {
   const overCap = selectedRows.length > MAX_CLOSEOUT_LOTS;
 
   const lots = useMemo(
-    () =>
-      rows
+    () => [
+      // The project site FIRST, so it sits under the inspected properties where they overlap it.
+      // Colour `site`, not `red`: an unfilled outline, because red on this drawing already means
+      // "closed, not inspected" and the site is the works rather than a property with a status.
+      // It carries no number — `numbers` is keyed off the sheet's ticked rows and the site is
+      // not one of them, so MarkupMap draws no badge for it.
+      ...siteLots.map((l) => ({ id: l.id, ring: l.ring, color: "site" as const })),
+      ...rows
         .filter((r) => r.selected && r.ring)
         .map((r) => ({ id: r.property.key, ring: r.ring!, color: r.property.color })),
-    [rows]
+    ],
+    [rows, siteLots]
   );
   const points = useMemo(
     () =>
@@ -144,6 +175,8 @@ export function CloseoutMarkupTool() {
   const reset = useCallback(() => {
     runRef.current++;
     setParcels(new Map());
+    setSiteLots([]);
+    setSiteNote(null);
     setGenerated(false);
     setError(null);
     setFitRequest(null);
@@ -200,6 +233,9 @@ export function CloseoutMarkupTool() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          // The works. Null on the 3% of opportunities with no site address at all, and the
+          // route reports back whatever it could not place rather than guessing.
+          site: opportunity.siteAddress,
           properties: selectedRows.map((r) => ({
             key: r.property.key,
             street: r.property.street,
@@ -214,15 +250,20 @@ export function CloseoutMarkupTool() {
         }),
       });
       const json = (await res.json().catch(() => null)) as
-        | { ok: boolean; parcels?: ResolvedParcel[]; error?: string }
+        | { ok: boolean; parcels?: ResolvedParcel[]; site?: ResolvedCloseoutSite; error?: string }
         | null;
       if (!res.ok || !json?.parcels) throw new Error(json?.error ?? "Couldn't look up the boundaries.");
       if (run !== runRef.current) return;
 
       const map = new Map(json.parcels.map((p) => [p.key, p]));
       setParcels(map);
+      const site = json.site ?? { lots: [], unresolved: [] };
+      setSiteLots(site.lots);
+      setSiteNote(siteNoteFor(site));
       setGenerated(true);
-      frameFrom(json.parcels, `${opportunity.id}:${Date.now()}`);
+      // The site is framed WITH the properties: it is usually in the middle of them, but on a
+      // job where the works sit at one end, leaving it out would frame it off the edge.
+      frameFrom([...json.parcels, ...site.lots.map((l) => ({ ring: l.ring, point: l.point }))], `${opportunity.id}:${Date.now()}`);
     } catch (e) {
       if (run === runRef.current) setError((e as Error).message);
     } finally {
@@ -242,17 +283,31 @@ export function CloseoutMarkupTool() {
         // went. Same arrangement as a multi-property Building Markup.
         subjectRing: [],
         hideSubject: true,
-        neighbours: rows
-          .filter((r) => r.selected && r.ring)
-          .map((r) => ({
-            id: r.property.key,
-            ring: r.ring!,
-            areaSqm: r.areaSqm,
-            label: String(numbers.get(r.property.key) ?? ""),
-            street: r.property.street,
-            suburb: r.property.suburb,
-            color: r.property.color,
+        neighbours: [
+          // The project site, drawn first so the inspected properties sit over it. `label: ""`
+          // means no badge: the numbers are quote-style item numbers over the sheet's ticked
+          // rows, and the site is not one of them.
+          ...siteLots.map((l) => ({
+            id: l.id,
+            ring: l.ring,
+            areaSqm: l.areaSqm,
+            label: "",
+            street: l.address,
+            suburb: opportunity?.siteAddress?.suburb ?? null,
+            color: "site" as const,
           })),
+          ...rows
+            .filter((r) => r.selected && r.ring)
+            .map((r) => ({
+              id: r.property.key,
+              ring: r.ring!,
+              areaSqm: r.areaSqm,
+              label: String(numbers.get(r.property.key) ?? ""),
+              street: r.property.street,
+              suburb: r.property.suburb,
+              color: r.property.color,
+            })),
+        ],
         points: rows
           .filter((r) => r.selected && !r.ring)
           .map((r) => ({
@@ -261,7 +316,9 @@ export function CloseoutMarkupTool() {
             label: String(numbers.get(r.property.key) ?? ""),
             color: r.property.color,
           })),
-        legend: CLOSEOUT_LEGEND,
+        // The site row is added only when a site is actually drawn — the renderer filters the
+        // key to colours on the drawing anyway, but keeping the caller honest costs nothing.
+        legend: siteLots.length > 0 ? [...CLOSEOUT_LEGEND, SITE_LEGEND_ROW] : CLOSEOUT_LEGEND,
         // The schedule beside the drawing: what a client needs to read it. Numbers come from the
         // SAME `numbers` map the pins and the sheet use, and the colour is the property's own, so
         // a row, a pin and an outline can never disagree about which property is item 12.
@@ -305,6 +362,7 @@ export function CloseoutMarkupTool() {
           note: r.note,
         })),
         unmapped,
+        siteLots,
         workOrderCount,
         mapType: mapRef.current?.getCamera()?.mapType ?? "hybrid",
         shapes: shapes.shapes
@@ -356,8 +414,19 @@ export function CloseoutMarkupTool() {
         ])
       )
     );
+    // Restored, never re-resolved: re-geocoding on open would spend a call AND could hand back
+    // a different parcel from the one that was signed off. Files saved before the project site
+    // existed simply have none, and open exactly as they did.
+    setSiteLots(parsed.file.siteLots);
+    setSiteNote(null);
+    // The hand-drawn shapes. ⚠️ They were saved and then dropped here — nothing restored them —
+    // so a council asset or a hand-drawn project site vanished on reopen.
+    shapes.replaceAll(parsed.file.shapes);
     setGenerated(true);
-    frameFrom(parsed.file.properties, `open:${Date.now()}`);
+    frameFrom(
+      [...parsed.file.properties, ...parsed.file.siteLots.map((l) => ({ ring: l.ring, point: l.point }))],
+      `open:${Date.now()}`
+    );
     if (parsed.skipped > 0) {
       setError(`${parsed.skipped} propert${parsed.skipped === 1 ? "y" : "ies"} in that file couldn't be read and were skipped.`);
     }
@@ -498,6 +567,20 @@ export function CloseoutMarkupTool() {
                 </span>
               ))}
           </p>
+
+          {/* The project site, said out loud. It is the one outline on the drawing with no number
+              and no sheet row, so without this line there is nothing to explain the red edge —
+              and when it could NOT be placed (a quarter of opportunities carry a project name in
+              that field rather than an address) that is the only place it is reported. */}
+          {generated && (siteLots.length > 0 || siteNote) && (
+            <p className={cn("mt-1.5 text-sm", siteNote ? "text-ad-orange" : "text-ad-muted")}>
+              <span aria-hidden className="mr-1.5 inline-block size-2.5 rounded-full border-2 align-middle" style={{ borderColor: `#${MARKUP_STYLES.site.stroke}` }} />
+              {siteLots.length > 0
+                ? `Project site: ${siteLots.map((l) => l.address).join(", ")}`
+                : "Project site"}
+              {siteNote ? ` · ${siteNote}` : null}
+            </p>
+          )}
 
           {generated && (
             <div className={cn("mt-6 flex flex-col gap-4 xl:flex-row xl:items-start", BREAKOUT_XL)}>

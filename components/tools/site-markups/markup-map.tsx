@@ -351,7 +351,8 @@ export function MarkupMap({
               strokeWeight: OUTLINE_WEIGHT,
               strokeOpacity: STROKE_OPACITY,
               fillColor: fillHex,
-              fillOpacity: FILL_OPACITY,
+              // From the STYLE: an unfilled project site drawn by hand is unfilled here too.
+              fillOpacity: (MARKUP_STYLES[shape.color]?.fillOpacity ?? FILL_OPACITY_PERCENT) / 100,
             })
           : new google.maps.Polyline({
               ...shared,
@@ -380,7 +381,8 @@ export function MarkupMap({
               strokeWeight: OUTLINE_WEIGHT,
               strokeOpacity: STROKE_OPACITY,
               fillColor: fillHex,
-              fillOpacity: FILL_OPACITY,
+              // From the STYLE: an unfilled project site drawn by hand is unfilled here too.
+              fillOpacity: (MARKUP_STYLES[shape.color]?.fillOpacity ?? FILL_OPACITY_PERCENT) / 100,
             })
           : null;
 
@@ -659,11 +661,15 @@ export function MarkupMap({
       const style = MARKUP_STYLES[lot.color ?? "blue"] ?? MARKUP_STYLES.blue;
       const hex = `#${style.stroke}`;
       const fillHex = `#${style.fill}`;
+      const key = lot.color ?? "blue";
       let h = handles.get(lot.id);
       // A lot that changed colour (the same address re-generated with the surrounding-assets
       // switch flipped) is rebuilt: the badge has no colour setter, and a stale blue pin on a
       // red lot is exactly the kind of mismatch nobody notices until it is printed.
-      if (h && h.color !== hex) {
+      //
+      // ⚠️ Compared on the KEY, not the hex. `red` and `site` are both ff0000 and differ only in
+      // fill opacity, so a hex comparison would leave a project site drawn as a filled lot.
+      if (h && h.color !== key) {
         h.polygon.setMap(null);
         h.badge.destroy();
         handles.delete(lot.id);
@@ -671,7 +677,7 @@ export function MarkupMap({
       }
       if (!h) {
         h = {
-          color: hex,
+          color: key,
           polygon: new google.maps.Polygon({
             map,
             // Read-only, and NOT clickable: a lot covers most of the frame, so a clickable
@@ -685,7 +691,9 @@ export function MarkupMap({
             strokeOpacity: STROKE_OPACITY,
             strokeWeight: OUTLINE_WEIGHT,
             fillColor: fillHex,
-            fillOpacity: FILL_OPACITY,
+            // ⚠️ From the STYLE, so an unfilled project site is unfilled on screen too. The
+            // export reads the same field — preview/export parity is the standing hazard here.
+            fillOpacity: style.fillOpacity / 100,
           }),
           // Matching the outline it sits on — the bubble's colour is the item's own colour
           // throughout rather than orange for every lot.

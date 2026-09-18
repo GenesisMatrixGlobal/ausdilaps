@@ -138,8 +138,15 @@ export function DrawByHand({
 /** The colours a Closeout Markup's legend can explain, for the shape picker — so a hand-drawn
  *  council asset is coloured by whether it was inspected, not by the markup tabs' meanings
  *  (where orange is "Council / External Assets" and here it is "Pending"). */
-export const CLOSEOUT_SHAPE_PALETTE = (["green", "red", "orange", "partial"] as const).map((key) => ({
-  key,
-  label: INSPECTION_LEGEND[key],
-  hint: `Legend: ${INSPECTION_LEGEND[key]}`,
-}));
+export const CLOSEOUT_SHAPE_PALETTE = [
+  ...(["green", "red", "orange", "partial"] as const).map((key) => ({
+    key,
+    label: INSPECTION_LEGEND[key],
+    hint: `Legend: ${INSPECTION_LEGEND[key]}`,
+  })),
+  // The works, for the jobs where the Opportunity's site address can't be placed — a quarter of
+  // them hold a project name ("Western Tunneling Package") rather than an address. Unfilled red,
+  // the same as a site the tool found itself, so a hand-drawn one is indistinguishable on the
+  // drawing and can never be read as "closed, not inspected".
+  { key: "site" as const, label: "Project site", hint: "Legend: Project Site — the works" },
+];

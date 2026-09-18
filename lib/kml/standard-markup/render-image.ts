@@ -210,6 +210,10 @@ function markupPolygons(
             : []
           : bufferLineToPolygon(sh.points, sh.widthMetres),
       color: MARKUP_STYLES[sh.color]?.fill ?? SHAPE_COLORS.orange,
+      stroke: MARKUP_STYLES[sh.color]?.stroke ?? SHAPE_COLORS.orange,
+      // A hand-drawn project site is unfilled, exactly like a detected one — that is how the
+      // 25% of jobs whose site address is really a project name get a site on the drawing.
+      fillOpacity: MARKUP_STYLES[sh.color]?.fillOpacity ?? FILL_OPACITY_PERCENT,
     }))
     .filter((p) => p.ring.length >= 3);
 
@@ -231,26 +235,30 @@ function markupPolygons(
           },
         ]),
     ...kept.map((n) => {
-      const red = n.color === "red";
+      // Both reds are the site: `red` is Building Markup's subject lot, `site` is the Closeout
+      // Markup's unfilled one. Neither is an ordinary lot.
+      const isSite = n.color === "red" || n.color === "site";
       // Outline and fill are separate: a part-inspected property on a Closeout Markup is a green
       // outline round an orange fill. Every other key is the same colour twice.
       const style = MARKUP_STYLES[n.color ?? "blue"] ?? MARKUP_STYLES.blue;
       return {
         ring: simplify(n.ring),
         fillColor: style.fill,
-        fillOpacityPercent: FILL_OPACITY_PERCENT,
+        // ⚠️ From the STYLE, not the shared constant: `site` is drawn at 0, as an outline with
+        // the imagery showing through.
+        fillOpacityPercent: style.fillOpacity,
         strokeColor: style.stroke,
         // Red keeps full stroke opacity: it is the project site, and that convention predates
         // there being more than two lot colours. Every other colour reads as an ordinary lot.
-        strokeOpacityPercent: red ? SITE_STROKE_OPACITY_PERCENT : STROKE_OPACITY_PERCENT,
+        strokeOpacityPercent: isSite ? SITE_STROKE_OPACITY_PERCENT : STROKE_OPACITY_PERCENT,
         strokeWeight: OUTLINE_WEIGHT,
       };
     }),
-    ...shapePolygons.map(({ ring, color }) => ({
+    ...shapePolygons.map(({ ring, color, stroke, fillOpacity }) => ({
       ring: simplify(ring),
       fillColor: color,
-      fillOpacityPercent: FILL_OPACITY_PERCENT,
-      strokeColor: color,
+      fillOpacityPercent: fillOpacity,
+      strokeColor: stroke,
       strokeOpacityPercent: STROKE_OPACITY_PERCENT,
       strokeWeight: OUTLINE_WEIGHT,
     })),
@@ -399,6 +407,9 @@ interface LegendRow {
   fill: string;
   stroke: string | null;
   label: string;
+  /** Drawn as a RING rather than a disc — the project site on a Closeout Markup, which is an
+   *  unfilled outline on the drawing, so its swatch is unfilled too. */
+  hollow: boolean;
 }
 
 function colourKeys(
@@ -424,6 +435,8 @@ function colourKeys(
         // byte-identical.
         stroke: style.stroke === style.fill ? null : style.stroke,
         label: row.label,
+        // The swatch is drawn the way the lot is: no fill on the lot, no fill in the key.
+        hollow: style.fillOpacity === 0,
       };
     });
 }
@@ -476,13 +489,13 @@ function legendSvg(keys: LegendRow[]): string {
 
   const inner = [
     panelRect(0, 0, width, height),
-    ...keys.flatMap(({ fill, stroke, label }, i) => {
+    ...keys.flatMap(({ fill, stroke, label, hollow }, i) => {
       // The glyph paths sit on their baseline, so the dot is centred on the cap height rather
       // than on the row — otherwise it floats above the word it belongs to.
       const baseline = PANEL_PAD + 23 + i * KEY_ROW_HEIGHT;
       const cy = baseline - 6;
       return [
-        `<circle cx="${PANEL_PAD + DOT_R}" cy="${cy}" r="${DOT_R}" fill="#${fill}"` +
+        `<circle cx="${PANEL_PAD + DOT_R}" cy="${cy}" r="${DOT_R}" fill="${hollow ? "none" : `#${fill}`}"` +
           // Two-tone rows get a ring in their outline colour; a single-colour row is stroked in
           // its own fill so every dot has the same weight and none looks unfinished.
           ` stroke="#${stroke ?? fill}" stroke-width="3" />`,
@@ -594,11 +607,11 @@ function keyRowSvg(keys: LegendRow[], x: number, baseline: number): string {
   const r = SCHEDULE_SWATCH / 2;
   const parts: string[] = [];
   let cursor = x;
-  keys.forEach(({ fill, stroke, label }, i) => {
+  keys.forEach(({ fill, stroke, label, hollow }, i) => {
     if (i > 0) cursor += KEY_ITEM_GAP;
     parts.push(
       `<circle cx="${cursor + r}" cy="${baseline - r - 1}" r="${r}" ` +
-        `fill="#${fill}" stroke="#${stroke ?? fill}" stroke-width="3" />`
+        `fill="${hollow ? "none" : `#${fill}`}" stroke="#${stroke ?? fill}" stroke-width="3" />`
     );
     cursor += SCHEDULE_SWATCH + SCHEDULE_GAP;
     const text = asciiish(label);

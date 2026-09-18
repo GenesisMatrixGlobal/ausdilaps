@@ -11,10 +11,13 @@
 
 import type { LatLng } from "@/lib/kml/types";
 import { isFiniteNumber, parseLatLng, parseLatLngList } from "@/lib/maps/latlng-parse";
-import type { MarkupMapType } from "@/lib/maps/building-markup-file";
+import { parseSavedShapes, type MarkupMapType, type SavedMarkupShape } from "@/lib/maps/building-markup-file";
+import type { SavedShapeLimits } from "@/lib/maps/building-markup-file";
+import type { AuStateCode } from "@/lib/property-sizing/types";
 import type {
   CloseoutOpportunity,
   CloseoutProperty,
+  CloseoutSiteLot,
   CouncilAsset,
   InspectionColor,
   UnmappedWorkOrder,
@@ -42,9 +45,17 @@ export interface CloseoutMarkupFile {
   unmapped: UnmappedWorkOrder[];
   /** Stored: reopening a drawing to adjust a hand-drawn asset needs the reference links again. */
   councilAssets: CouncilAsset[];
+  /** The project site's outlines, resolved. Stored like every other ring rather than re-derived
+   *  on open: re-resolving would re-spend a geocode AND could hand back a different parcel from
+   *  the one that was signed off. */
+  siteLots: CloseoutSiteLot[];
   workOrderCount: number;
   mapType: MarkupMapType;
-  shapes: unknown[];
+  /** ⚠️ Validated, not `unknown[]`. They were stored and then silently dropped on open, because
+   *  nothing here parsed them — so a hand-drawn council asset, or a hand-drawn project site on
+   *  the quarter of jobs whose site address cannot be placed, was lost the moment the file was
+   *  reopened. */
+  shapes: SavedMarkupShape[];
 }
 
 export function buildCloseoutFile(
@@ -63,6 +74,7 @@ export type ParseCloseoutResult =
   | { ok: false; error: string };
 
 const COLORS: InspectionColor[] = ["green", "red", "orange", "partial"];
+const AU_STATES: AuStateCode[] = ["QLD", "NSW", "VIC", "SA", "WA", "TAS", "ACT", "NT"];
 const MAP_TYPES: MarkupMapType[] = ["satellite", "hybrid", "roadmap"];
 
 function str(v: unknown): string {
@@ -76,7 +88,11 @@ function str(v: unknown): string {
  * cost the operator the drawing — but a file with no readable properties at all is an error,
  * because there is nothing to show and silently opening an empty map reads as a bug in the map.
  */
-export function parseCloseoutFile(text: string, maxRingPoints = 2000): ParseCloseoutResult {
+export function parseCloseoutFile(
+  text: string,
+  maxRingPoints = 2000,
+  shapeLimits: SavedShapeLimits = { maxShapePoints: 100, minWidth: 1, maxWidth: 200 }
+): ParseCloseoutResult {
   let doc: Record<string, unknown>;
   try {
     doc = JSON.parse(text) as Record<string, unknown>;
@@ -153,6 +169,18 @@ export function parseCloseoutFile(text: string, maxRingPoints = 2000): ParseClos
         boxFolderUrl: str(opp.boxFolderUrl) || null,
         existingMarkupUrl: str(opp.existingMarkupUrl) || null,
         url: str(opp.url) || null,
+        siteAddress:
+          opp.siteAddress && typeof opp.siteAddress === "object"
+            ? {
+                line: str((opp.siteAddress as Record<string, unknown>).line),
+                street: str((opp.siteAddress as Record<string, unknown>).street) || null,
+                suburb: str((opp.siteAddress as Record<string, unknown>).suburb) || null,
+                state: AU_STATES.includes(str((opp.siteAddress as Record<string, unknown>).state) as AuStateCode)
+                  ? (str((opp.siteAddress as Record<string, unknown>).state) as AuStateCode)
+                  : null,
+                postcode: str((opp.siteAddress as Record<string, unknown>).postcode) || null,
+              }
+            : null,
       },
       properties,
       unmapped: Array.isArray(doc.unmapped)
@@ -181,9 +209,23 @@ export function parseCloseoutFile(text: string, maxRingPoints = 2000): ParseClos
               siteMarkupUrl: str(c.siteMarkupUrl) || null,
             }))
         : [],
+      // A ring shorter than 3 points is not an outline; drop that lot rather than the file.
+      siteLots: Array.isArray(doc.siteLots)
+        ? (doc.siteLots as Record<string, unknown>[])
+            .filter((l) => l && typeof l === "object")
+            .map((l) => ({
+              id: str(l.id),
+              ring: parseLatLngList(l.ring, maxRingPoints) ?? [],
+              areaSqm: isFiniteNumber(l.areaSqm) ? l.areaSqm : null,
+              lotPlan: str(l.lotPlan) || null,
+              point: parseLatLng(l.point) ?? { lat: 0, lng: 0 },
+              address: str(l.address),
+            }))
+            .filter((l) => l.ring.length >= 3)
+        : [],
       workOrderCount: isFiniteNumber(doc.workOrderCount) ? doc.workOrderCount : properties.length,
       mapType: MAP_TYPES.includes(doc.mapType as MarkupMapType) ? (doc.mapType as MarkupMapType) : "hybrid",
-      shapes: Array.isArray(doc.shapes) ? doc.shapes : [],
+      shapes: parseSavedShapes(doc.shapes, shapeLimits).shapes,
     },
   };
 }

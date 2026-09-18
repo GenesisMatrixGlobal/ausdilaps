@@ -17,7 +17,8 @@ export const BUILDING_MARKUP_FILE_VERSION = 2;
 
 export type MarkupMapType = "satellite" | "hybrid" | "roadmap";
 type ShapeMode = "line" | "area";
-/** Hand-drawn shapes stay at the legend's three original rows — see SHAPE_COLORS. */
+/** Any lot colour is drawable by hand — the palette a tool OFFERS is the tool's own business
+ *  (see CLOSEOUT_SHAPE_PALETTE), and this only decides what a file may carry. */
 type ShapeColor = MarkupColorKey;
 /** A LOT may carry any markup colour. The Closeout Markup colours a lot by how its work orders
  *  went, so green and purple reach the save file even though no shape can be drawn in them. */
@@ -123,6 +124,53 @@ const LINE_ITEM_FIELDS = new Set([
 ]);
 
 const MODES: ShapeMode[] = ["line", "area"];
+
+export interface SavedShapeLimits {
+  maxShapePoints: number;
+  minWidth: number;
+  maxWidth: number;
+}
+
+/**
+ * Hand-drawn shapes out of a save file.
+ *
+ * Extracted from parseBuildingMarkupFile so the Closeout Markup's own file can validate shapes
+ * by exactly the same rules — it was storing them and then dropping them on open, because it had
+ * no parser of its own. A bad shape is SKIPPED AND COUNTED rather than fatal: one malformed
+ * entry out of twenty is not a reason to refuse the drawing.
+ */
+export function parseSavedShapes(
+  raw: unknown,
+  limits: SavedShapeLimits
+): { shapes: SavedMarkupShape[]; skipped: number } {
+  const shapes: SavedMarkupShape[] = [];
+  let skipped = 0;
+  for (const entry of Array.isArray(raw) ? raw : []) {
+    if (!entry || typeof entry !== "object") {
+      skipped += 1;
+      continue;
+    }
+    const sh = entry as Record<string, unknown>;
+    const points = parseLatLngList(sh.points, limits.maxShapePoints);
+    if (!points || !MODES.includes(sh.mode as ShapeMode)) {
+      skipped += 1;
+      continue;
+    }
+    shapes.push({
+      id: typeof sh.id === "string" && sh.id ? sh.id : undefined,
+      mode: sh.mode as ShapeMode,
+      // Clamped, not rejected: an out-of-range width still describes a real ribbon.
+      widthMetres: isFiniteNumber(sh.widthMetres)
+        ? Math.min(limits.maxWidth, Math.max(limits.minWidth, sh.widthMetres))
+        : limits.minWidth,
+      // Anything unrecognised falls back to the legend's default row rather than dropping
+      // the shape over a colour name.
+      color: COLORS.includes(sh.color as ShapeColor) ? (sh.color as ShapeColor) : "orange",
+      points,
+    });
+  }
+  return { shapes, skipped };
+}
 const COLORS: ShapeColor[] = [...MARKUP_COLOR_KEYS];
 const LOT_COLORS: LotColor[] = [...MARKUP_COLOR_KEYS];
 
@@ -199,32 +247,7 @@ export function parseBuildingMarkupFile(
     });
   }
 
-  const shapes: SavedMarkupShape[] = [];
-  let skippedShapes = 0;
-  for (const entry of Array.isArray(doc.shapes) ? doc.shapes : []) {
-    if (!entry || typeof entry !== "object") {
-      skippedShapes += 1;
-      continue;
-    }
-    const sh = entry as Record<string, unknown>;
-    const points = parseLatLngList(sh.points, limits.maxShapePoints);
-    if (!points || !MODES.includes(sh.mode as ShapeMode)) {
-      skippedShapes += 1;
-      continue;
-    }
-    shapes.push({
-      id: typeof sh.id === "string" && sh.id ? sh.id : undefined,
-      mode: sh.mode as ShapeMode,
-      // Clamped, not rejected: an out-of-range width still describes a real ribbon.
-      widthMetres: isFiniteNumber(sh.widthMetres)
-        ? Math.min(limits.maxWidth, Math.max(limits.minWidth, sh.widthMetres))
-        : limits.minWidth,
-      // Anything unrecognised falls back to the legend's default row rather than dropping
-      // the shape over a colour name.
-      color: COLORS.includes(sh.color as ShapeColor) ? (sh.color as ShapeColor) : "orange",
-      points,
-    });
-  }
+  const { shapes, skipped: skippedShapes } = parseSavedShapes(doc.shapes, limits);
 
   const addr = (doc.address ?? {}) as Record<string, unknown>;
   const frameRaw = (doc.frame ?? null) as Record<string, unknown> | null;

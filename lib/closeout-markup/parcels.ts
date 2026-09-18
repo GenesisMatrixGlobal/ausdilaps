@@ -15,7 +15,7 @@ import type { CloseoutProperty } from "./types";
 /** The states with a cadastre adapter. Everywhere else the property is drawn as a pin — SA, WA
  *  and the ACT are ~18% of the work orders raised in the last two years, so this is a normal
  *  outcome rather than an edge case. */
-const CADASTRE_STATES = new Set<string>(["QLD", "NSW", "VIC"]);
+export const CADASTRE_STATES = new Set<string>(["QLD", "NSW", "VIC"]);
 
 /** ArcGIS is free, but it is someone else's server. Same ceiling lookupParcels() uses. */
 const CONCURRENCY = 5;
@@ -65,47 +65,8 @@ export async function resolveCloseoutParcels(properties: CloseoutProperty[]): Pr
     // 1. By ADDRESS. Handles a shared point, a block-level geocode, and a geocode that simply
     //    landed on the wrong lot — all with one free call.
     if (p.suburb) {
-      try {
-        const verdict = await verifyParcelForAddress({
-          state,
-          street: p.street,
-          suburb: p.suburb,
-          geocodedPoint: p.point,
-          // Null: we are not checking a parcel, we are asking the layer to find one. With no
-          // ring to agree with, a match goes straight to the cadastre under the layer's point.
-          parcelRing: null,
-          parcelLabel: null,
-        });
-        if (verdict.outcome === "corrected") {
-          // ⚠️ An address can span more than one LOT, and the lot under the address layer's
-          // anchor is then only part of it. 7-9 Manson Street, Telopea is a 3,742 m² property
-          // over 1//DP612384 (2,075 m²) and 1//DP512074 (1,667 m²) — drawing the anchor's lot
-          // put 55% of the address on the drawing and left the rest white.
-          //
-          // So where the layer publishes the whole PROPERTY polygon (NSW does) and it is
-          // materially bigger than that lot, the property is the outline: it is the extent of
-          // the address, which is what a closeout is reporting on. The 1.2 threshold is well
-          // clear of the few percent a polygon and its single lot differ by, and well under the
-          // 1.8 this case showed.
-          const property = verdict.property;
-          const spansSeveralLots = Boolean(property && property.areaSqm > verdict.areaSqm * 1.2);
-          return {
-            key: p.key,
-            ring: spansSeveralLots ? property!.ring : verdict.parcel.ring,
-            areaSqm: spansSeveralLots ? property!.areaSqm : verdict.areaSqm,
-            lotPlan: verdict.parcel.idKey ?? null,
-            point: verdict.point,
-            // Said out loud, because the area and the lot/plan no longer describe the same
-            // thing: the outline is the property, the lot/plan is its principal title.
-            note: spansSeveralLots
-              ? `Address spans more than one lot — outline is the whole property (${property!.areaSqm} m²), principal lot ${verdict.parcel.idKey ?? "unknown"}`
-              : null,
-          };
-        }
-      } catch {
-        // Never fatal. The address layer is a convenience; falling through to the coordinate
-        // (or to a pin) is a worse answer, not a broken one.
-      }
+      const found = await parcelByAddress(state, p.street, p.suburb, p.point);
+      if (found) return { key: p.key, ...found };
     }
 
     // 2. By COORDINATE — only where Salesforce located a building and only where this property
@@ -138,3 +99,62 @@ export async function resolveCloseoutParcels(properties: CloseoutProperty[]): Pr
   });
 }
 
+
+
+/**
+ * The parcel for a street address, found through the state ADDRESS LAYER.
+ *
+ * Extracted from resolveCloseoutParcels so the PROJECT SITE resolves by exactly the same rules
+ * as an inspected property — including the spans-several-lots rule below, which a site needs
+ * more often than a property does: a site address like "1-5 Polding Place" is usually several
+ * titles.
+ *
+ * Returns null when the layer has nothing, and NEVER throws: the address layer is a
+ * convenience, so falling through to the caller's own fallback is a worse answer, not a broken
+ * one.
+ */
+export async function parcelByAddress(
+  state: StandardMarkupState,
+  street: string,
+  suburb: string,
+  point: LatLng
+): Promise<Omit<ResolvedParcel, "key"> | null> {
+  try {
+    const verdict = await verifyParcelForAddress({
+      state,
+      street,
+      suburb,
+      geocodedPoint: point,
+      // Null: we are not checking a parcel, we are asking the layer to find one. With no ring
+      // to agree with, a match goes straight to the cadastre under the layer's point.
+      parcelRing: null,
+      parcelLabel: null,
+    });
+    if (verdict.outcome !== "corrected") return null;
+
+    // ⚠️ An address can span more than one LOT, and the lot under the address layer's anchor is
+    // then only part of it. 7-9 Manson Street, Telopea is a 3,742 m² property over 1//DP612384
+    // (2,075 m²) and 1//DP512074 (1,667 m²) — drawing the anchor's lot put 55% of the address
+    // on the drawing and left the rest white.
+    //
+    // So where the layer publishes the whole PROPERTY polygon (NSW does) and it is materially
+    // bigger than that lot, the property is the outline: it is the extent of the address, which
+    // is what a closeout is reporting on. The 1.2 threshold is well clear of the few percent a
+    // polygon and its single lot differ by, and well under the 1.8 this case showed.
+    const property = verdict.property;
+    const spansSeveralLots = Boolean(property && property.areaSqm > verdict.areaSqm * 1.2);
+    return {
+      ring: spansSeveralLots ? property!.ring : verdict.parcel.ring,
+      areaSqm: spansSeveralLots ? property!.areaSqm : verdict.areaSqm,
+      lotPlan: verdict.parcel.idKey ?? null,
+      point: verdict.point,
+      // Said out loud, because the area and the lot/plan no longer describe the same thing: the
+      // outline is the property, the lot/plan is its principal title.
+      note: spansSeveralLots
+        ? `Address spans more than one lot — outline is the whole property (${property!.areaSqm} m²), principal lot ${verdict.parcel.idKey ?? "unknown"}`
+        : null,
+    };
+  } catch {
+    return null;
+  }
+}

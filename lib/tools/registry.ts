@@ -167,7 +167,7 @@ export const TOOLS: ToolDefinition[] = [
     title: "Closeout Markup",
     description:
       "Paste an opportunity: every property its work orders name, coloured by whether it was inspected, and filed onto the Closeout Markup field.",
-    departments: ["projects"],
+    departments: ["projects", "reports"],
     Component: dynamic(() =>
       import("@/components/tools/closeout-markup").then((m) => m.CloseoutMarkupTool)
     ),

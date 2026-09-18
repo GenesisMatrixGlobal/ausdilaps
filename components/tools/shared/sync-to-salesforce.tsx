@@ -22,6 +22,8 @@ interface ResolvedTarget {
   opportunityName: string | null;
   boxFolderLink: string | null;
   folder: { id: string; path: string } | null;
+  /** Signed by /resolve for this record + folder; /upload accepts no other destination. */
+  destinationToken?: string;
   needsManualFolder: boolean;
   missingStep?: string;
   suggestedFilename: string;
@@ -211,6 +213,7 @@ export function SyncToSalesforce({
         body: JSON.stringify({
           quoteId: target.quoteId,
           folderId: target.folder.id,
+          destinationToken: target.destinationToken,
           filename,
           image,
           linkToQuote,

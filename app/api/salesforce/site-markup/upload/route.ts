@@ -3,7 +3,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { isStaff } from "@/lib/auth/is-staff";
+import { isStaffInAnyDepartment } from "@/lib/auth/is-staff";
+import { asJsonName, asPngName, destinationProblem, isPng, SF_ID, verifyDestination } from "@/lib/box-destination";
+import { MARKUP_SYNC_DEPARTMENTS } from "@/lib/sync-departments";
 import { BoxNameConflictError } from "@/lib/box";
 import { isConfigError, MarkupSyncError, uploadMarkup } from "@/lib/markup-sync";
 
@@ -17,16 +19,19 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_SIDECAR_BYTES = 2 * 1024 * 1024;
 
 const requestSchema = z.object({
-  quoteId: z.string().trim().min(15).max(18),
+  quoteId: z.string().trim().regex(SF_ID, "Not a Salesforce Id"),
   /** Box folder ids are numeric strings. */
   folderId: z.string().trim().regex(/^\d+$/, "Invalid Box folder id"),
+  /** Issued by /resolve for exactly this quoteId + folderId. Without a valid one the
+   *  upload is refused — a staff session alone must not be able to file into any folder. */
+  destinationToken: z.string().min(1, "Press Find first"),
   filename: z.string().trim().min(1, "The file needs a name").max(240),
   /** Base64 PNG, supplied by the browser so the image isn't re-rendered (and re-billed). */
   image: z.string().min(1, "Missing image data"),
   linkToQuote: z.boolean().default(false),
   /** When present the link is written to this line item's own markup field instead of a
    *  Quote slot. The file still goes to the Quote's Box folder. */
-  lineItemId: z.string().trim().min(15).max(18).optional(),
+  lineItemId: z.string().trim().regex(SF_ID, "Not a Salesforce Id").optional(),
   /** The operator was shown that the line item's markup field is occupied and asked to
    *  replace it. Without this an occupied field is refused. */
   replaceExistingLink: z.boolean().default(false),
@@ -42,7 +47,7 @@ const requestSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  if (!(await isStaff("MARKUP_SYNC_ALLOW_UNAUTHED"))) {
+  if (!(await isStaffInAnyDepartment(MARKUP_SYNC_DEPARTMENTS, "MARKUP_SYNC_ALLOW_UNAUTHED"))) {
     return NextResponse.json({ ok: false, error: "Not authorised." }, { status: 401 });
   }
 
@@ -61,12 +66,24 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const destination = verifyDestination(parsed.data.destinationToken, {
+    kind: "site-markup",
+    recordId: parsed.data.quoteId,
+    folderId: parsed.data.folderId,
+  });
+  if (destination !== "ok") {
+    return NextResponse.json({ ok: false, error: destinationProblem(destination) }, { status: 403 });
+  }
+
   const bytes = Buffer.from(parsed.data.image, "base64");
   if (bytes.length === 0) {
     return NextResponse.json({ ok: false, error: "The image data was unreadable." }, { status: 400 });
   }
   if (bytes.length > MAX_IMAGE_BYTES) {
     return NextResponse.json({ ok: false, error: "That image is too large to sync." }, { status: 413 });
+  }
+  if (!isPng(bytes)) {
+    return NextResponse.json({ ok: false, error: "The image isn't a PNG." }, { status: 415 });
   }
 
   let sidecar: { filename: string; bytes: Uint8Array; contentType?: string } | undefined;
@@ -78,10 +95,11 @@ export async function POST(req: NextRequest) {
     if (sidecarBytes.length > MAX_SIDECAR_BYTES) {
       return NextResponse.json({ ok: false, error: "That save file is too large to sync." }, { status: 413 });
     }
+    // A sidecar is a save file: always .json, always application/json, whatever was sent.
     sidecar = {
-      filename: parsed.data.sidecar.filename,
+      filename: asJsonName(parsed.data.sidecar.filename),
       bytes: new Uint8Array(sidecarBytes),
-      contentType: parsed.data.sidecar.contentType,
+      contentType: "application/json",
     };
   }
 
@@ -89,7 +107,7 @@ export async function POST(req: NextRequest) {
     const result = await uploadMarkup({
       quoteId: parsed.data.quoteId,
       folderId: parsed.data.folderId,
-      filename: parsed.data.filename,
+      filename: asPngName(parsed.data.filename),
       bytes: new Uint8Array(bytes),
       linkToQuote: parsed.data.linkToQuote,
       lineItemId: parsed.data.lineItemId,

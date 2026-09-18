@@ -4,7 +4,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { isStaff } from "@/lib/auth/is-staff";
+import { isStaffInAnyDepartment } from "@/lib/auth/is-staff";
+import { signDestination } from "@/lib/box-destination";
+import { MARKUP_SYNC_DEPARTMENTS } from "@/lib/sync-departments";
 import { isConfigError, MarkupSyncError, resolveQuoteTarget } from "@/lib/markup-sync";
 
 export const runtime = "nodejs";
@@ -18,7 +20,7 @@ const requestSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  if (!(await isStaff("MARKUP_SYNC_ALLOW_UNAUTHED"))) {
+  if (!(await isStaffInAnyDepartment(MARKUP_SYNC_DEPARTMENTS, "MARKUP_SYNC_ALLOW_UNAUTHED"))) {
     return NextResponse.json({ ok: false, error: "Not authorised." }, { status: 401 });
   }
 
@@ -42,7 +44,12 @@ export async function POST(req: NextRequest) {
       quoteInput: parsed.data.quoteInput,
       boxFolderOverrideUrl: parsed.data.boxFolderUrl,
     });
-    return NextResponse.json({ ok: true, target });
+    // The upload step will only file into THIS folder for THIS Quote — the pair the operator
+    // is about to look at and confirm.
+    const destinationToken = target.folder
+      ? signDestination({ kind: "site-markup", recordId: target.quoteId, folderId: target.folder.id })
+      : undefined;
+    return NextResponse.json({ ok: true, target: { ...target, destinationToken } });
   } catch (e) {
     // 501 for "not set up yet" matches how the markup routes report a missing Google key —
     // it's a deployment gap, not a bad request.

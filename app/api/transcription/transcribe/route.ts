@@ -14,6 +14,7 @@ import { deepgramConfigured, transcribeUrl } from "@/lib/transcription/deepgram"
 import { keytermsForFile } from "@/lib/transcription/keyterms";
 import { formatTranscript } from "@/lib/transcription/format";
 import { cleanTranscript } from "@/lib/transcription/cleanup";
+import { linesRemoved, trimForTyping } from "@/lib/transcription/trim";
 
 export const runtime = "nodejs";
 // Deepgram answers a 15-minute file in ~10-20 s and the clean-up pass in ~20-40 s; the
@@ -64,10 +65,15 @@ export async function POST(req: NextRequest) {
     const result = await transcribeUrl(audioUrl, keytermsForFile(name));
     const raw = formatTranscript({ name, utterances: result.utterances });
     const cleaned = await cleanTranscript({ raw, filename: name });
+    // Cleaned first (it needs every line for its timestamp invariant), then the deterministic
+    // strip of everything the typing skill does not read — greeting, weather, sign-off, fillers.
+    const typing = trimForTyping(cleaned.text);
     return NextResponse.json({
       ok: true,
       raw,
       cleaned: cleaned.text,
+      typing,
+      typingRemoved: linesRemoved(cleaned.text, typing),
       cleanedChanged: cleaned.changed,
       cleanupNote: cleaned.note ?? null,
       durationSeconds: result.durationSeconds,

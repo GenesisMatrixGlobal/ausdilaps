@@ -10,6 +10,7 @@
 
 import { formatBatch, formatTranscript, splitHeader, timestamp, timestampLines } from "@/lib/transcription/format";
 import { DICTATION_KEYTERMS, STAFF_NAMES, keytermsFor, keytermsForFile } from "@/lib/transcription/keyterms";
+import { linesRemoved, trimForTyping, trimLine } from "@/lib/transcription/trim";
 
 let failures = 0;
 function fail(msg: string) {
@@ -77,6 +78,72 @@ eq(timestampLines("00:00:01\nnot 00:00:02 a timestamp\n00:00:03").join(","), "00
   eq(body.startsWith("00:00:01\nHi, this is Ram."), true, "body starts at the first timestamp");
   eq(`${header}\n${body}`, full, "header + body round-trips");
   eq(splitHeader("00:00:01\nno header here").header, "", "text without a header has an empty header");
+}
+
+// ── "for typing": the report team's strip list, on lines out of real dictations ──
+const DROPPED = [
+  "Hi, this is Rayam.",
+  "Hi. This is Ram.",
+  "Today I'm going to do the pre-inspection at 11 Emerald Hood Street, Funville.",
+  "Today I'm going to do the print inspection at 13 Emerald Hood Street, Fernville.",
+  "The temperature is around 21 degrees Celsius.",
+  "The weather is sunny.",
+  "The temperature is around 21 degrees Celsius, the weather is sunny.",
+  "Since there is no one responding to my door knock, so I'm going to do just the external inspection as per the work order.",
+  "Now, similarly, there is no access inside the house, so I'm just going to do the external inspection as per the work order.",
+  "So I will be just doing the external photos whichever I can from the safe distance as per the work order.",
+  "So as per the resident requested, I'm going to do the external inspection first.",
+  "That is the only photo I could capture.",
+  "And that's all for today.",
+  "Thank you.",
+  "and that's all for today thank you",
+];
+for (const line of DROPPED) eq(trimLine(line), "", `dropped: ${line}`);
+
+const KEPT: [string, string][] = [
+  ["The first photo is the cover photo of the address.", "The first photo is the cover photo of the address."],
+  ["So the next photo, which is photo number two, is the west wall of the house.", "The next photo, photo number two, is the west wall of the house."],
+  ["So the next photo which is the photo number two is the general view of the west yard of the house.", "The next photo, the photo number two is the general view of the west yard of the house."],
+  ["Now the next photo is again the west wall of the house.", "The next photo is again the west wall of the house."],
+  ["Next photo is again the closer shot of the east wall of the house along with the boundary fence.", "Next photo is again the closer shot of the east wall of the house and the boundary fence."],
+  ["And next photo is the overall view of the house from the East Yard, and thank you so much.", "And next photo is the overall view of the house from the East Yard."],
+  ["Now the next couple of photos will be on the entrance hallway outside of the house.", "The next couple of photos will be on the entrance hallway outside of the house."],
+  ["Minor damage in the flooring in hallway, just outside the pool room.", "Minor damage in the flooring in hallway, outside the pool room."],
+  ["So, now the next photo photo number 12 is the retaining wall on the rear of the house.", "The next photo photo number 12 is the retaining wall on the rear of the house."],
+  ["Next photo is the boundary fence on the west yacht", "Next photo is the boundary fence on the west yacht."],
+];
+for (const [inp, want] of KEPT) eq(trimLine(inp), want, `kept: ${inp}`);
+
+{
+  const full = formatTranscript({
+    name: "11 Emeraldwood st.mp3",
+    utterances: [
+      { start: 1, end: 2, text: "Hi, this is Rayam." },
+      { start: 2, end: 8, text: "Today I'm going to do the pre-inspection at 11 Emerald Hood Street, Funville." },
+      { start: 8, end: 13, text: "The temperature is around 21 degrees Celsius." },
+      { start: 16, end: 19, text: "The first photo is the cover photo of the address." },
+      { start: 29, end: 36, text: "So the next photo, which is photo number two, is the west wall of the house." },
+      { start: 114, end: 118, text: "And next photo is the overall view of the house from the East Yard, and thank you so much." },
+    ],
+  });
+  const typing = trimForTyping(full);
+  eq(
+    typing,
+    [
+      "Audio file",
+      "11 Emeraldwood st.mp3",
+      "Transcript",
+      "00:00:16",
+      "The first photo is the cover photo of the address.",
+      "00:00:29",
+      "The next photo, photo number two, is the west wall of the house.",
+      "00:01:54",
+      "And next photo is the overall view of the house from the East Yard.",
+    ].join("\n"),
+    "for-typing keeps the header, drops the preamble with its timestamps, edits the rest"
+  );
+  eq(linesRemoved(full, typing), 3, "three lines removed");
+  eq(trimForTyping(typing), typing, "trimming twice changes nothing");
 }
 
 // ── file-name keyterms ──────────────────────────────────────────────────

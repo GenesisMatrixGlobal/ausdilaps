@@ -4,10 +4,14 @@
 //
 // The transcript comes back in the SAME layout Word's Transcribe feature produces (Audio file /
 // name / Transcript / hh:mm:ss lines), because that is what the report team's typing skill
-// reads today. Shown cleaned by default — a Claude pass fixes plain mis-hearings only, never
-// the inspector's wording — with a Show raw toggle so any fix can be checked against what was
-// actually said. Several files can be dropped; they run one after another and Copy all hands
-// back the whole batch the way the Word document laid it out.
+// reads today. Three views of the same recording, and Copy takes whichever is showing:
+//   For typing — the default. The greeting, weather, sign-off, door-knock preamble and fillers
+//                stripped by a deterministic rule set (lib/transcription/trim.ts); what is
+//                left is the figures, which is all the typing skill reads.
+//   Cleaned    — every line, with a Claude pass fixing plain mis-hearings only.
+//   Raw        — exactly what the transcriber heard, for checking either of the above.
+// Several files can be dropped; they run three at a time and Copy all hands back the whole
+// batch the way the Word document laid it out.
 //
 // The audio never passes through our own routes: Vercel caps a function body at 4.5 MB and a
 // ten-minute phone recording is twice that. The browser asks for a signed upload URL, PUTs the
@@ -31,6 +35,14 @@ import { formatBatch } from "@/lib/transcription/format";
 
 type Status = "queued" | "uploading" | "transcribing" | "done" | "failed";
 
+type View = "typing" | "cleaned" | "raw";
+
+const VIEWS: { key: View; label: string }[] = [
+  { key: "typing", label: "For typing" },
+  { key: "cleaned", label: "Cleaned" },
+  { key: "raw", label: "Raw" },
+];
+
 type Item = {
   id: string;
   file: File;
@@ -38,6 +50,9 @@ type Item = {
   status: Status;
   raw?: string;
   cleaned?: string;
+  /** The cleaned transcript with the non-figure lines stripped — see lib/transcription/trim.ts. */
+  typing?: string;
+  typingRemoved?: number;
   cleanedChanged?: boolean;
   cleanupNote?: string | null;
   durationSeconds?: number;
@@ -52,6 +67,8 @@ type TranscribeResponse = {
   error?: string;
   raw?: string;
   cleaned?: string;
+  typing?: string;
+  typingRemoved?: number;
   cleanedChanged?: boolean;
   cleanupNote?: string | null;
   durationSeconds?: number;
@@ -112,7 +129,7 @@ async function readJson<T>(res: Response, fallback: string): Promise<T> {
 
 export function TranscriptionBuddyTool({ isAdmin }: ToolProps) {
   const [items, setItems] = useState<Item[]>([]);
-  const [view, setView] = useState<"cleaned" | "raw">("cleaned");
+  const [view, setView] = useState<View>("typing");
   const [dragActive, setDragActive] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -176,6 +193,8 @@ export function TranscriptionBuddyTool({ isAdmin }: ToolProps) {
           status: "done",
           raw: json.raw ?? "",
           cleaned: json.cleaned ?? json.raw ?? "",
+          typing: json.typing ?? json.cleaned ?? json.raw ?? "",
+          typingRemoved: json.typingRemoved ?? 0,
           cleanedChanged: json.cleanedChanged ?? false,
           cleanupNote: json.cleanupNote ?? null,
           durationSeconds: json.durationSeconds ?? 0,
@@ -280,7 +299,8 @@ export function TranscriptionBuddyTool({ isAdmin }: ToolProps) {
 
   const sessionCents = done.reduce((s, it) => s + (it.costCents ?? 0), 0);
 
-  const textFor = (it: Item) => (view === "raw" ? it.raw : it.cleaned) ?? "";
+  const textFor = (it: Item) => (view === "raw" ? it.raw : view === "cleaned" ? it.cleaned : it.typing) ?? "";
+  const removed = done.reduce((s, it) => s + (it.typingRemoved ?? 0), 0);
   // ⚠️ DROP ORDER, not finish order. With several workers a short file routinely lands before a
   // long one dropped ahead of it, but the transcript is built by filtering `items` — which patch()
   // only ever maps over, so positions never move. The typing skill reads a batch top to bottom
@@ -358,14 +378,26 @@ export function TranscriptionBuddyTool({ isAdmin }: ToolProps) {
             >
               {copied ? "Copied" : failed ? "Copy failed" : done.length > 1 ? "Copy all" : "Copy"}
             </button>
-            <button
-              type="button"
-              className={cn(buttonVariants({ variant: "outline", size: "md" }))}
-              disabled={!done.length}
-              onClick={() => setView((v) => (v === "raw" ? "cleaned" : "raw"))}
-            >
-              {view === "raw" ? "Show cleaned" : "Show raw"}
-            </button>
+            {/* Three views of one recording. Segmented rather than a cycling button: the operator
+                picks the one they want to copy, and needs to see which one is showing. */}
+            <div className="inline-flex overflow-hidden rounded-full border border-ad-border text-sm" role="tablist" aria-label="Transcript view">
+              {VIEWS.map((v) => (
+                <button
+                  key={v.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === v.key}
+                  disabled={!done.length}
+                  onClick={() => setView(v.key)}
+                  className={cn(
+                    "h-11 px-4 font-medium transition-colors disabled:opacity-50",
+                    view === v.key ? "bg-ad-navy text-white" : "text-ad-ink hover:bg-ad-surface"
+                  )}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
             <button
               type="button"
               className={cn(buttonVariants({ variant: "outline", size: "md" }))}
@@ -404,15 +436,17 @@ export function TranscriptionBuddyTool({ isAdmin }: ToolProps) {
           </div>
 
           <p className="mt-2 text-sm text-ad-muted">
-            {cleanupNote
-              ? cleanupNote
+            {view === "typing"
+              ? `For typing: greeting, weather, sign-off and fillers removed${done.length ? ` — ${removed} line${removed === 1 ? "" : "s"} taken out` : ""}. Just the figures. Switch to Cleaned to see everything that was said.`
               : view === "raw"
                 ? "Raw: exactly what the transcriber heard."
-                : anyCleaned
-                  ? "Cleaned: obvious mis-hearings fixed (yard, tile floors, room numbers). Switch to raw to check a fix."
-                  : done.length
-                    ? "Cleaned: nothing needed fixing."
-                    : "Cleaned view fixes obvious mis-hearings; switch to raw to check a fix."}
+                : cleanupNote
+                  ? cleanupNote
+                  : anyCleaned
+                    ? "Cleaned: every line, with obvious mis-hearings fixed (yard, tile floors, room numbers). Switch to Raw to check a fix."
+                    : done.length
+                      ? "Cleaned: every line; nothing needed fixing."
+                      : "Cleaned: every line, with obvious mis-hearings fixed."}
           </p>
 
           {/* The queue */}

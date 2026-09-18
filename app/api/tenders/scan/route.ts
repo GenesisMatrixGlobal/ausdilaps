@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireBearerSecret } from "@/lib/auth/shared-secret";
 import { isApiAdmin } from "@/lib/auth/is-staff";
 import { runScan } from "@/lib/tenders/scan";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { STALLED_RUN_MS } from "@/lib/tenders/config";
 
 /**
  * The nightly scan.
@@ -13,11 +15,17 @@ import { runScan } from "@/lib/tenders/scan";
  * One route, two entry points, one runScan(). The manual path costs nothing extra and
  * satisfies the repo convention that tool components always POST.
  *
+ * ⚠️ The admin SESSION is honoured on POST only. Supabase's cookies are SameSite=Lax,
+ * which browsers DO send on a top-level GET navigation — so with the session accepted on
+ * GET, any link an admin clicked (`/api/tenders/scan?days=60` in an email) started a
+ * 60-day re-read. GET is the cron's entry point and takes the bearer alone.
+ *
  * Replay honesty: Vercel Cron sends a STATIC bearer, so a captured header is replayable by
  * definition. Rather than pretend otherwise, the compensating controls are: every write in
- * the scan is idempotent, a cron start is refused if a run began in the last 10 minutes,
- * and TENDER_MAX_CLASSIFY_PER_RUN caps spend per invocation. Someone holding the secret can
- * make the scan run; they cannot make it cost unbounded money or send unbounded email.
+ * the scan is idempotent, a start is refused while a run is already in progress (below),
+ * and TENDER_MAX_CLASSIFY_PER_RUN / the 24h budget cap spend per invocation and per day.
+ * Someone holding the secret can make the scan run; they cannot make it cost unbounded
+ * money or send unbounded email.
  */
 
 export const runtime = "nodejs";
@@ -33,10 +41,27 @@ async function handle(req: NextRequest, triggeredBy: "cron" | "manual") {
     if (gate.status === 503) {
       return NextResponse.json({ ok: false, error: gate.reason }, { status: 503 });
     }
-    // A 401 on the bearer path can still be a signed-in admin pressing the button.
-    if (!(await isApiAdmin())) {
+    // A 401 on the bearer path can still be a signed-in admin pressing the button — but
+    // only on POST (see the header comment for why a GET must never read the cookie).
+    if (triggeredBy !== "manual" || !(await isApiAdmin())) {
       return NextResponse.json({ ok: false, error: "Not authorised." }, { status: 401 });
     }
+  }
+
+  // One scan at a time. A run row is per source and sits at `running` until Phase A closes
+  // it; anything younger than the stall threshold is a scan still in progress (older ones
+  // are reaped by runScan itself). Two scans interleaving would classify the same queue
+  // twice — the guard the header comment promised for months without it existing.
+  const inProgress = await createAdminClient()
+    .from("tender_scan_runs")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "running")
+    .gte("started_at", new Date(Date.now() - STALLED_RUN_MS).toISOString());
+  if ((inProgress.count ?? 0) > 0) {
+    return NextResponse.json(
+      { ok: false, error: "A scan is already running. Try again in a few minutes." },
+      { status: 409 }
+    );
   }
 
   // ?days=N widens the window for a one-off backfill. Costs nothing beyond the extra

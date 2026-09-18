@@ -97,7 +97,13 @@ export type Room = {
   y: number;
   w: number;
   h: number;
-  /** Continuous centre of the interior, in tile units — the spot you must shoot from. */
+  /**
+   * Continuous centre of the interior, in tile units.
+   *
+   * NOT where you shoot from any more — that is STAND_POINTS, one per wall. This is still a
+   * useful handle on "the room" for routing and for framing, so it stays; it just stopped
+   * being a rule.
+   */
   cx: number;
   cy: number;
 };
@@ -197,6 +203,130 @@ export const WALLS: Wall[] = ROOMS.flatMap((r) =>
 );
 
 export const TOTAL_WALLS = WALLS.length;
+
+// ── Where you stand to photograph a wall ────────────────────────────────
+//
+// The rule this replaced was "stand on the crosshair in the middle of the room". That is not
+// what an inspector does, and mechanically it collapsed 28 captures into 7 decisions: once you
+// had walked to the centre, all four walls were four key presses from the same spot.
+//
+// You now shoot each wall from in FRONT of it — roughly on its midline, and at a standoff that
+// is neither too close nor too far. The standoff is not a hand-picked constant per wall. It
+// falls out of the camera:
+//
+//   the cone of a FOV_HALF_ANGLE lens is exactly `length` wide at `length/2 / tan(FOV_HALF)`
+//
+// so the ideal distance is the one where the wall exactly fills the frame. That is what makes
+// the field-of-view cone the renderer draws a genuine READOUT rather than an ornament: when the
+// cone's edges land on the wall's corners, you are standing in the right place. There is no
+// second set of numbers for the player to learn.
+//
+// 50° is a wide-angle lens, which is what building inspectors actually carry — and it is also
+// the value that makes every wall in this house reachable. Narrower, and the ideal standoff for
+// a long wall falls outside the room it is in.
+
+/** Half-angle of the camera's field of view. The whole standoff model hangs off this. */
+export const FOV_HALF_ANGLE = (50 * Math.PI) / 180;
+export const FOV_TAN = Math.tan(FOV_HALF_ANGLE);
+
+/** Never stand closer than this, however short the wall. Binds on nothing in this house; it is
+ *  here so house #2 cannot produce a zero standoff. */
+const MIN_STANDOFF = 1.2;
+/**
+ * Keep the stand point this far off the wall BEHIND you.
+ *
+ * ⚠️ Must exceed the player's half-width (0.3) or the point is physically unreachable — and an
+ * unreachable stand point fails silently: the bot's settle loop spins out and then shoots from
+ * wherever it stalled, producing a plausible-looking score. checkStandPoints() asserts it.
+ */
+const STANDOFF_MARGIN = 0.8;
+/** How far past the frame edge you can drift sideways before the shot is worth nothing. */
+const LATERAL_PAD = 1.5;
+
+export type WallShot = {
+  /** Midpoint of the wall face, in tile units — where the cone should be centred. */
+  mx: number;
+  my: number;
+  /** The axis you slide along to stay in front of this wall. */
+  axis: "x" | "y";
+  /** Length of the wall face. */
+  length: number;
+  /** Ideal perpendicular standoff, and the stand point that follows from it. */
+  ideal: number;
+  sx: number;
+  sy: number;
+  /**
+   * Distance off the midline at which the shot scores zero.
+   *
+   * ⚠️ Derived from what the CAMERA covers (`ideal * FOV_TAN`), NOT from the wall's length. For
+   * every wall whose ideal standoff is not clamped the two are identical, so this is a no-op on
+   * 24 of the 28. It matters for the hall: its 23-tile walls clamp to a 2.2 standoff, and on
+   * wall length they would be shootable from 98% of the corridor — you could photograph the
+   * north wall from the far west end and score full marks. On frame width it is 31%.
+   */
+  lateralZero: number;
+};
+
+function buildWallShot(r: Room, side: Side): WallShot {
+  const alongX = side === "n" || side === "s";
+  const length = alongX ? r.w : r.h;
+  const depth = alongX ? r.h : r.w;
+
+  // Math.max(lo, Math.min(hi, v)) returns `lo` when lo > hi, i.e. a standoff OUTSIDE the room.
+  // Safe in this house (min depth 3, so hi = 2.2 > lo = 1.2) and asserted by the check script.
+  const ideal = Math.max(MIN_STANDOFF, Math.min(length / 2 / FOV_TAN, depth - STANDOFF_MARGIN));
+
+  const mx = alongX ? r.x + r.w / 2 : side === "w" ? r.x : r.x + r.w;
+  const my = alongX ? (side === "n" ? r.y : r.y + r.h) : r.y + r.h / 2;
+
+  return {
+    mx,
+    my,
+    axis: alongX ? "x" : "y",
+    length,
+    ideal,
+    sx: alongX ? mx : side === "w" ? mx + ideal : mx - ideal,
+    sy: alongX ? (side === "n" ? my + ideal : my - ideal) : my,
+    lateralZero: ideal * FOV_TAN + LATERAL_PAD,
+  };
+}
+
+/**
+ * Every wall's shot geometry, keyed exactly like WALLS (`${roomId}:${side}`).
+ *
+ * ONE definition with three consumers — the engine scores against it, the renderer draws the
+ * cone and the lit wall slice from it, and the balance harness routes to it. Three separate
+ * re-derivations of the clamp above is precisely how a harness and the game it is meant to
+ * measure drift apart.
+ */
+export const STAND_POINTS: Record<string, WallShot> = Object.fromEntries(
+  WALLS.map((w) => [w.id, buildWallShot(room(w.roomId), w.side)])
+);
+
+export function standPoint(roomId: string, side: Side): WallShot {
+  const found = STAND_POINTS[`${roomId}:${side}`];
+  if (!found) throw new Error(`Unknown wall: ${roomId}:${side}`);
+  return found;
+}
+
+/**
+ * Where a point stands relative to a wall: how far back, and how far off its midline.
+ *
+ * Pure geometry, no scoring — the curve that turns these into a quality factor lives in
+ * engine.ts, because that is a balance decision and this is not.
+ */
+export function shotGeometry(
+  roomId: string,
+  side: Side,
+  x: number,
+  y: number
+): { standoff: number; lateral: number } {
+  const s = standPoint(roomId, side);
+  if (s.axis === "x") {
+    return { standoff: Math.abs(y - s.my), lateral: x - s.mx };
+  }
+  return { standoff: Math.abs(x - s.mx), lateral: y - s.my };
+}
 
 /** Where the player starts — the middle of the hall. */
 export const SPAWN = { x: 13.5, y: 10.5 } as const;

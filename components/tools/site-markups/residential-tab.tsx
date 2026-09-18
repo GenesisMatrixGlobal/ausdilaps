@@ -198,6 +198,15 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   const [picking, setPicking] = useState(false);
   const [pickBusy, setPickBusy] = useState(false);
   const [pickMessage, setPickMessage] = useState<string | null>(null);
+  /** How many lots this run of pick mode has added, for the "3 added" note. */
+  const [pickedCount, setPickedCount] = useState(0);
+  /** The live result, for handlePick. Pick mode STAYS ON, so two lots can be in flight at
+   *  once and a handler closing over `result` would add the second to a list that predates
+   *  the first — dropping it silently. */
+  const resultRef = useRef(result);
+  useEffect(() => {
+    resultRef.current = result;
+  });
   const shapes = useShapes();
   const fileInput = useRef<HTMLInputElement>(null);
   // The sheet's cells. Sparse — see lib/markup-layers/line-items.ts.
@@ -931,18 +940,21 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
     return id;
   }
 
+  /** Pick mode STAYS ON until the operator presses Done — a survey adds lots in a run, and
+   *  re-arming between each one was the whole complaint (Rhys, 2026-09-18). Everything below
+   *  therefore reads `resultRef`, never the render's `result`. */
   async function handlePick(point: LatLng) {
-    if (!result) return;
-    setPicking(false);
+    const current = resultRef.current;
+    if (!current) return;
     setPickMessage(null);
 
     // Both of these are answered locally — no point paying for a cadastre round trip to
     // be told about a lot we already have.
-    if (pointInRing(point, result.subjectRing)) {
+    if (pointInRing(point, current.subjectRing)) {
       setPickMessage("That's the project site — it's already on the map.");
       return;
     }
-    const existing = result.neighbours.find((n) => pointInRing(point, n.ring));
+    const existing = current.neighbours.find((n) => pointInRing(point, n.ring));
     if (existing) {
       setPickMessage(`${existing.street ?? "That lot"} is already in the list.`);
       return;
@@ -988,15 +1000,26 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
         );
         return;
       }
-      const added: Neighbour = {
-        id: uniqueLotId(json.parcel.idKey, result.neighbours),
-        ring: json.parcel.ring,
-        areaSqm: json.parcel.areaSqm,
-        street: json.parcel.street ?? null,
-        suburb: json.parcel.suburb ?? null,
-      };
-      // No render needed — the overlay draws the new lot and its bubble straight away.
-      setResult({ ...result, neighbours: [...result.neighbours, added] });
+      const parcel = json.parcel;
+      // Functional, and the id is made unique against the list as it stands INSIDE the
+      // update — with pick mode left on, the previous click's lot may have landed since
+      // this one's fetch started.
+      setResult((prev) => {
+        if (!prev) return prev;
+        if (prev.neighbours.some((n) => n.id.replace(/#\d+$/, "") === parcel.idKey && pointInRing(point, n.ring))) {
+          return prev;
+        }
+        const added: Neighbour = {
+          id: uniqueLotId(parcel.idKey, prev.neighbours),
+          ring: parcel.ring,
+          areaSqm: parcel.areaSqm,
+          street: parcel.street ?? null,
+          suburb: parcel.suburb ?? null,
+        };
+        // No render needed — the overlay draws the new lot and its bubble straight away.
+        return { ...prev, neighbours: [...prev.neighbours, added] };
+      });
+      setPickedCount((n) => n + 1);
     } catch (e) {
       setPickMessage((e as Error).message);
     } finally {
@@ -1608,22 +1631,38 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
                 type="button"
                 onClick={() => {
                   setPickMessage(null);
+                  setPickedCount(0);
                   setPicking((p) => !p);
                 }}
-                disabled={pickBusy}
+                // NOT disabled while a lookup is in flight: pick mode stays on, so this is
+                // the only way out and it has to stay pressable.
                 aria-pressed={picking}
                 className={cn(
                   buttonVariants({ variant: "outline", size: "sm" }),
                   "mt-3 w-full",
-                  picking && "border-ad-steel bg-ad-steel/10 text-ad-ink",
-                  pickBusy && "opacity-60"
+                  picking && "border-ad-steel bg-ad-steel/10 text-ad-ink"
                 )}
               >
-                {pickBusy ? "Looking up…" : picking ? "Cancel" : "+ Add lot from map"}
+                {picking
+                  ? `Done${pickedCount > 0 ? ` — ${pickedCount} added` : ""}`
+                  : "+ Add lot from map"}
               </button>
 
-              {pickMessage && !picking && !pickBusy && (
-                <p className="mt-2 text-xs text-ad-orange">{pickMessage}</p>
+              {/* While picking, this is the running feedback — it says what the last click
+                  did, which is the only signal that a click on a road or an existing lot
+                  was heard at all. */}
+              {picking ? (
+                <p className="mt-2 text-xs text-ad-muted">
+                  {pickBusy ? (
+                    "Looking that lot up…"
+                  ) : pickMessage ? (
+                    <span className="text-ad-orange">{pickMessage}</span>
+                  ) : (
+                    "Keep clicking properties to add them. Press Done when finished."
+                  )}
+                </p>
+              ) : (
+                pickMessage && !pickBusy && <p className="mt-2 text-xs text-ad-orange">{pickMessage}</p>
               )}
             </div>
             <ShapePanel shapes={shapes} commands={mapRef} />

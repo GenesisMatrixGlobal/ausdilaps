@@ -17,24 +17,37 @@
 //   1. The time term was free. A full route is ~90 tiles of walking; at 5.5 tiles/sec that
 //      is ~16s, and captures added ~10s. Every real run came in around 25s, which sat at the
 //      multiplier's 1.5 ceiling, so the clock never mattered.
-//   2. Quality was free. All four walls of a room share ONE optimal stand-point — the
+//   2. Quality was free. All four walls of a room shared ONE stand-point — the room's
 //      centre — so once you had walked there, four perfect shots cost nothing more than four
-//      key presses. Twenty-four captures were really six decisions.
-//
-// The FOCUS METER is the fix for (2) and it is the heart of the game. Standing still, the
-// camera steadies from FOCUS_FLOOR to full over FOCUS_TIME. Fire whenever you like. That
-// makes every one of the 24 shots its own speed-versus-quality decision instead of a
-// formality, and it does it while keeping the brief's rule — you still shoot from the centre
-// of the room — completely intact.
+//      key presses. Twenty-eight captures were really seven decisions.
 //
 // The FIXED CLOCK plus a completion-only bonus is the fix for (1): time is only worth
 // something if you actually finish the survey, which is also true of the real job.
+//
+// There are now TWO answers to (2), and they work on different axes.
+//
+// POSITION is the spatial one. Every wall has its own stand point (house.ts STAND_POINTS):
+// in front of the middle of that wall, at the standoff where the camera's cone exactly fills
+// with it. So the seven decisions became twenty-eight, and the route roughly doubled. It is
+// also simply what the job is — you photograph a wall from in front of that wall.
+//
+//   ⚠️ For a player who parks exactly on the mark this changes quality by NOTHING: the
+//   position factor is 1.0 there, exactly as the centre factor was 1.0 at the centre. The
+//   whole balance effect of the per-wall rule is the extra WALKING. Keep that in mind before
+//   reaching for the quality curve to fix a balance problem.
+//
+// FOCUS is the temporal one, and it is still the heart of the game. Standing still, the camera
+// steadies from FOCUS_FLOOR to full with a time constant. Fire whenever you like. That is what
+// makes each shot a speed-versus-quality decision rather than a formality — position decides
+// WHERE you may shoot from, focus decides WHEN, and only the second one is a trade.
 
 import {
+  FOV_TAN,
   isSolid,
   pathCells,
-  room,
   roomAt,
+  shotGeometry,
+  standPoint,
   SPAWN,
   TOTAL_WALLS,
   WALLS,
@@ -52,10 +65,30 @@ const WALKABLE = walkableCells();
 const PLAYER_SPEED = 5.5; // tiles/sec
 const PLAYER_HALF = 0.3; // half-width; must stay under 1.0 or a 2-tile doorway won't fit
 
-/** Quality is 1.0 inside this radius of the room centre... */
-const PERFECT_RADIUS = 0.6;
-/** ...decaying to 0 here, beyond which the shot is refused outright. */
-const MAX_RADIUS = 2.6;
+// ── Position: how forgiving the stand point is ──────────────────────────
+//
+// Full marks inside the plateau, then a linear ramp to nothing. The RAMP is what makes this
+// forgiving rather than the plateau being wide: a wide flat top (±1.5) would leave 18 of the
+// 28 walls still scoring a full 100 from the old room-centre spot, which is a rule that
+// changes and a game that doesn't. As set, the room centre still scores ~100 in the bedrooms
+// and bathroom, 40-66% in the kitchen, and is REFUSED on six walls in the hall, living room
+// and yard. Small rooms stay forgiving; big rooms make you walk.
+//
+// ⚠️ The plateau is an ABSOLUTE tolerance, not a fraction of the ideal standoff. Scaling it
+// (0.25 * ideal) evens out the perfect region as a proportion of each room, but that is the
+// wrong denominator — what a player feels is how much slop their feet are allowed, and that
+// should not change room to room. It also undoes the change exactly where it matters: it
+// would take the living room's north wall from 17% to 63% when shot from the room centre.
+
+/** Full marks within this much of the wall's ideal standoff... */
+const STANDOFF_PLATEAU = 0.8;
+/** ...decaying to nothing this far off it, too close or too far back. */
+const STANDOFF_ZERO = 2.8;
+/** Full marks within this much of the wall's midline. Zero at WallShot.lateralZero, which is
+ *  derived per wall from the frame width rather than from the wall's length. */
+const LATERAL_PLATEAU = 1.2;
+/** Below this the shot is refused outright, with a message naming the fix. */
+const POSITION_FLOOR = 0.15;
 
 /**
  * Time constant for the camera steadying, in seconds. Focus approaches 1 exponentially:
@@ -79,12 +112,28 @@ const FOCUS_FLOOR = 0.2;
 /** Below this speed the camera counts as steady and focus builds. */
 const STILL_SPEED = 0.25;
 
-/** Pivoting on the spot does NOT cost focus — that is what makes taking all four walls from
- *  one tripod spot the intended play. Only actually travelling resets it. */
+/**
+ * Pivoting on the spot costs a beat but no ground, and does NOT cost focus.
+ *
+ * It used to be justified as "what makes taking all four walls from one tripod spot the
+ * intended play". That premise died with the room-centre rule — but the constant earns its
+ * place twice over now. It still matters where two walls share a stand point (the bathroom's
+ * east and west marks are 0.03 tiles apart), and more importantly it is a RUSH TAX: turnLock
+ * zeroes `speed`, so focus builds through the pivot. A patient player gets the 0.12s back as
+ * brace time; someone spinning and spraying pays it in full, 28 times over.
+ */
 const TURN_TIME = 0.12;
 
-/** One run, fixed. Ends here or on completion, whichever comes first. */
-export const RUN_SECONDS = 75;
+/**
+ * One run, fixed. Ends here or on completion, whichever comes first.
+ *
+ * ⚠️ 90 rather than 75 is REQUIRED, not generosity. Per-wall stand points took the route from
+ * ~93 tiles to ~165 (17s to 30s of pure walking), which put the careful strategies within
+ * 9-11s of a 75-second wall. Seeds would start timing out, the completion bonus would drop to
+ * zero, and the balance assertions would then pass for entirely the wrong reason —
+ * "perfectionism loses by 50%" because it never finished, not because it is balanced.
+ */
+export const RUN_SECONDS = 90;
 /**
  * Points per whole second left on the clock — paid ONLY on a complete survey.
  *
@@ -144,7 +193,7 @@ const CAT_FRAME_HALF_WIDTH = 1.2;
  */
 const CAT_IN_SHOT_FACTOR = 0.4;
 
-const TODDLER_COUNT = 2;
+const TODDLER_COUNT = 1;
 /** Toddlers are slow — they get you by being underfoot, not by outrunning you. Slower than
  *  the first pass, where two of them converging could hound you across a room. */
 const TODDLER_SPEED = 1.55;
@@ -260,8 +309,13 @@ export function newGame(rand: () => number = Math.random): GameState {
     defects: pickDefects(rand),
     shots: 0,
     cat: chaser(23, 14.5),
-    // Spawned in rooms away from the hall, so nobody is standing on the player at t=0.
-    toddlers: [chaser(4, 3.5), chaser(26, 14.5)].slice(0, TODDLER_COUNT),
+    // Spawned away from the hall, so nobody is standing on the player at t=0.
+    //
+    // ⚠️ ORDER MATTERS — the slice keeps index 0. The living room is deliberately first: the
+    // old index 0 was (4, 3.5), inside bed1, which is the first room on the natural route, so
+    // the lone toddler would be underfoot within seconds of every run starting and then retreat
+    // to a far corner for the rest of it. From the living room it arrives partway through.
+    toddlers: [chaser(20, 16.5), chaser(4, 3.5)].slice(0, TODDLER_COUNT),
     stun: 0,
     grace: 0,
     tangles: 0,
@@ -496,22 +550,26 @@ export function catOnAnkles(state: GameState): boolean {
   return Math.hypot(state.cat.x - state.x, state.cat.y - state.y) < CAT_CATCH_RADIUS;
 }
 
-/** Is the cat between the player and the wall being photographed? */
+/**
+ * Is the cat in frame — i.e. inside the same cone the renderer draws?
+ *
+ * ⚠️ This used to be a fixed half-plane, |sideways| < CAT_FRAME_HALF_WIDTH, unbounded in depth.
+ * That was consistent while every wall was 2-3 tiles away from a player standing at the room
+ * centre. It is not now: photographing the yard's east fence from its 5.45-tile standoff, the
+ * real frame is 6.5 tiles wide at the fence, so a cat sitting plainly inside the drawn cone
+ * cost nothing at all. With the cone on screen, that mismatch does not read as a design
+ * decision — it reads as a bug. The frame widens with depth, exactly as the drawing says.
+ */
 function catInShot(state: GameState, side: Side): boolean {
   if (roomAt(state.cat.x, state.cat.y) !== roomAt(state.x, state.y)) return false;
   const dx = state.cat.x - state.x;
   const dy = state.cat.y - state.y;
 
-  switch (side) {
-    case "n":
-      return dy < 0 && Math.abs(dx) < CAT_FRAME_HALF_WIDTH;
-    case "s":
-      return dy > 0 && Math.abs(dx) < CAT_FRAME_HALF_WIDTH;
-    case "w":
-      return dx < 0 && Math.abs(dy) < CAT_FRAME_HALF_WIDTH;
-    case "e":
-      return dx > 0 && Math.abs(dy) < CAT_FRAME_HALF_WIDTH;
-  }
+  const depth = side === "n" ? -dy : side === "s" ? dy : side === "w" ? -dx : dx;
+  if (depth <= 0) return false; // behind the camera
+  const sideways = side === "n" || side === "s" ? dx : dy;
+
+  return Math.abs(sideways) < CAT_FRAME_HALF_WIDTH + depth * FOV_TAN;
 }
 
 // ── Step ────────────────────────────────────────────────────────────────
@@ -642,11 +700,67 @@ export function step(
 
 // ── Capture ─────────────────────────────────────────────────────────────
 
-/** Quality from how close to the room centre the shot was taken. */
-export function centreFactor(distance: number): number {
-  if (distance <= PERFECT_RADIUS) return 1;
-  if (distance >= MAX_RADIUS) return 0;
-  return 1 - (distance - PERFECT_RADIUS) / (MAX_RADIUS - PERFECT_RADIUS);
+/** Quality from how far back you stood, against this wall's ideal standoff. */
+export function standoffFactor(standoff: number, ideal: number): number {
+  const off = Math.abs(standoff - ideal);
+  if (off <= STANDOFF_PLATEAU) return 1;
+  if (off >= STANDOFF_ZERO) return 0;
+  return 1 - (off - STANDOFF_PLATEAU) / (STANDOFF_ZERO - STANDOFF_PLATEAU);
+}
+
+/** Quality from how far off the wall's midline you stood. */
+export function lateralFactor(lateral: number, lateralZero: number): number {
+  const off = Math.abs(lateral);
+  if (off <= LATERAL_PLATEAU) return 1;
+  const zero = Math.max(lateralZero, LATERAL_PLATEAU + 0.1);
+  if (off >= zero) return 0;
+  return 1 - (off - LATERAL_PLATEAU) / (zero - LATERAL_PLATEAU);
+}
+
+/** Why a shot cannot be taken from here. Machine-readable so the balance bot can branch on it
+ *  — it has to know that WAITING will never fix a position problem (see check-site-snap.ts). */
+export type RefusalCode = "outside" | "stunned" | "too_close" | "too_far" | "off_centre";
+
+export type PositionVerdict = {
+  /** 0-1. Multiplied into quality alongside focus. */
+  factor: number;
+  /** Set only when the shot would be refused. */
+  code?: RefusalCode;
+  reason?: string;
+};
+
+/**
+ * How good a shot of `side` would be from (x, y), on position alone.
+ *
+ * Exported and pure, because three callers need the same answer and must not each derive it:
+ * attemptCapture scores with it, the renderer tints the field-of-view cone with it, and the
+ * balance bot walks until it clears a threshold.
+ */
+export function positionVerdict(
+  roomId: string,
+  side: Side,
+  x: number,
+  y: number
+): PositionVerdict {
+  const wall = standPoint(roomId, side);
+  const { standoff, lateral } = shotGeometry(roomId, side, x, y);
+  const factor =
+    standoffFactor(standoff, wall.ideal) * lateralFactor(lateral, wall.lateralZero);
+
+  if (factor >= POSITION_FLOOR) return { factor };
+
+  // Name the fix. "Too far from the centre" told the player nothing they could act on.
+  if (lateralFactor(lateral, wall.lateralZero) < standoffFactor(standoff, wall.ideal)) {
+    return { factor, code: "off_centre", reason: "line up with the middle of the wall" };
+  }
+  return standoff < wall.ideal
+    ? { factor, code: "too_close", reason: "too close — step back" }
+    : { factor, code: "too_far", reason: "too far back — move in" };
+}
+
+/** Just the number, for the renderer's per-frame tint. */
+export function positionFactor(roomId: string, side: Side, x: number, y: number): number {
+  return positionVerdict(roomId, side, x, y).factor;
 }
 
 /** What the camera's steadiness is worth right now, 0.2 to 1.0. */

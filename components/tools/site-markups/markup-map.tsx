@@ -856,7 +856,7 @@ export function MarkupMap({
       )}
       {pickMode && (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 bg-ad-ink/85 px-3 py-2 text-xs text-white">
-          Click the lot you want to add.
+          Click each lot you want to add — pick mode stays on until you press Done.
         </div>
       )}
     </div>

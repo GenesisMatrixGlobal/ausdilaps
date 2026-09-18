@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TabBar } from "@/components/ui/tab-bar";
 import { EmptyState } from "@/components/staff/empty-state";
 import { StatTiles, type Stat } from "@/components/staff/stat-tiles";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { salesforceRecordUrl, salesforceSearchUrl } from "@/lib/tenders/salesforce-urls";
 import type { TenderSummary } from "@/lib/tenders/summary";
 
 /**
@@ -16,6 +17,17 @@ import type { TenderSummary } from "@/lib/tenders/summary";
  * timestamp below is measured from that single instant rather than calling Date.now()
  * during render, which would be impure and produce values that drift on re-render.
  */
+
+/** One Salesforce opportunity near a tender, as /api/tenders/duplicates returns it. */
+type MatchedOpportunity = {
+  id: string;
+  name: string;
+  stage: string;
+  open: boolean;
+  street: string | null;
+  createdAt: string;
+};
+type DuplicateResult = { suburb: string; state: string; opportunities: MatchedOpportunity[] };
 
 type Item = TenderSummary["items"][number];
 type Group = TenderSummary["groups"][number];
@@ -112,6 +124,16 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
 
+  /**
+   * "Have we already quoted in this suburb?", keyed by the location string on the card.
+   *
+   * Fetched AFTER the queue paints rather than with it: the summary is also read by the
+   * nightly health check and by the server render, and neither should wait on Salesforce.
+   * Undefined means "not checked yet", which the badge shows as nothing rather than as a
+   * clear — silence must never read as "this one is new".
+   */
+  const [dupes, setDupes] = useState<Record<string, DuplicateResult> | null>(null);
+
   function toggle(key: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -165,6 +187,41 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
    * they were so the same button press retries them — re-ticking twelve rows after a
    * transient Resend error is how someone gives up on a tool.
    */
+  /**
+   * Check the whole queue against Salesforce in ONE request.
+   *
+   * Keyed on `data.groups`, so it re-runs after a scan or a send — a queue that changed
+   * under a stale set of badges is the failure worth avoiding here.
+   */
+  useEffect(() => {
+    const locations = [...new Set(data.groups.map((g) => g.siteLocation).filter((l): l is string => !!l))];
+    if (locations.length === 0) {
+      setDupes({});
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/tenders/duplicates", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ locations }),
+        });
+        const json = (await res.json()) as { ok: boolean; results?: Record<string, DuplicateResult> };
+        // Salesforce being unreachable leaves the badges off. It is not an error worth
+        // putting in front of someone triaging tenders.
+        if (!cancelled && res.ok && json.ok) setDupes(json.results ?? {});
+      } catch {
+        /* badges stay off */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [data.groups]);
+
   async function act(action: "send" | "dismiss", toSelf = false) {
     const chosen = data.groups.filter((g) => selected.has(g.key));
     const itemIds = chosen.flatMap((g) => g.members.map((m) => m.id));
@@ -438,6 +495,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
                   selectable={filter === "queue"}
                   selected={selected.has(g.key)}
                   onToggle={() => toggle(g.key)}
+                  duplicates={g.siteLocation ? dupes?.[g.siteLocation] : undefined}
                 />
               ))}
             </div>
@@ -679,18 +737,85 @@ function Toggle({
  * rather than only on a 16px square. The tender link is the one exception: it stops
  * propagation, because clicking through to read a notice must not silently tick it.
  */
+/**
+ * What Salesforce already has near this tender.
+ *
+ * ⚠️ It reports a SHORTLIST, never a verdict. The two sides describe a place differently — a
+ * notice gives a locality, an Opportunity gives a street address — so a suburb match is
+ * evidence, not proof, and the wording says so ("worth checking", not "duplicate"). Deciding
+ * automatically would produce the confident-but-wrong call that costs more than the check saves.
+ *
+ * OPEN opportunities are what matter: a Closed Lost from 2023 is background, an open Follow Up
+ * is a reason to ring someone before quoting. So an open match is orange and expanded by
+ * default, closed-only is muted and folded, and nothing found is a plain green line.
+ */
+function DuplicateBadge({ result }: { result: DuplicateResult }) {
+  const open = result.opportunities.filter((o) => o.open);
+  const closed = result.opportunities.filter((o) => !o.open);
+  const where = `${result.suburb} ${result.state}`;
+
+  if (result.opportunities.length === 0) {
+    return (
+      <p className="mt-2 text-xs text-ad-steel">
+        Nothing in Salesforce for {where} — looks new.{" "}
+        <a
+          href={salesforceSearchUrl(where)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline underline-offset-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          Search anyway
+        </a>
+      </p>
+    );
+  }
+
+  return (
+    <details className={cn("mt-2 rounded border px-2.5 py-1.5", open.length > 0 ? "border-ad-orange/40 bg-ad-orange/5" : "border-ad-border bg-ad-surface")} open={open.length > 0}>
+      <summary className={cn("cursor-pointer text-xs font-medium", open.length > 0 ? "text-ad-orange" : "text-ad-muted")}>
+        {open.length > 0
+          ? `${open.length} open opportunit${open.length === 1 ? "y" : "ies"} in ${where} — worth checking`
+          : `${closed.length} past opportunit${closed.length === 1 ? "y" : "ies"} in ${where}`}
+      </summary>
+      <ul className="mt-1.5 space-y-1">
+        {[...open, ...closed].slice(0, 6).map((o) => (
+          <li key={o.id} className="text-xs text-ad-muted">
+            <a
+              href={salesforceRecordUrl(o.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-ad-steel hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {o.name}
+            </a>
+            <span className="ml-1.5">
+              {o.stage}
+              {o.street ? ` · ${o.street}` : ""} · {o.createdAt.slice(0, 10)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 function GroupCard({
   group,
   now,
   selectable,
   selected,
   onToggle,
+  duplicates,
 }: {
   group: Group;
   now: number;
   selectable: boolean;
   selected: boolean;
   onToggle: () => void;
+  /** undefined = not checked yet. An empty list is a real answer; undefined is not. */
+  duplicates?: DuplicateResult;
 }) {
   const lead = group.lead;
   const closes = closesLabel(lead.closesAt, now);
@@ -771,6 +896,8 @@ function GroupCard({
               <span className="font-medium text-ad-ink">Contact:</span> {group.contact}
             </p>
           )}
+
+          {duplicates && <DuplicateBadge result={duplicates} />}
 
           {(lead.services.length > 0 || !isMatch || group.members.some((m) => m.injectionSuspected)) && (
             <div className="mt-2 flex flex-wrap gap-1.5">

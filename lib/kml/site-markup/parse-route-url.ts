@@ -25,7 +25,8 @@ import { CoordinateParseError, normaliseAuPoint, parseLatLng } from "./parse-lat
 
 /** Hosts we'll follow a redirect from. Anything else is refused rather than fetched. */
 const SHORTLINK_HOSTS = new Set(["maps.app.goo.gl", "goo.gl", "www.goo.gl"]);
-const GOOGLE_MAPS_HOSTS = /(^|\.)google\.[a-z.]+$/i;
+// Same shape as /api/maps/resolve-link: a bounded TLD, so google.com.evil.tld is refused.
+const GOOGLE_MAPS_HOSTS = /(^|\.)google\.(com|com\.[a-z]{2}|co\.[a-z]{2}|[a-z]{2})$/i;
 
 /** Directions API takes an origin, a destination and up to 23 stops in between. */
 const MAX_WAYPOINTS = 25;

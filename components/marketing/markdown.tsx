@@ -30,11 +30,15 @@ function renderInline(text: string): ReactNode[] {
         </strong>
       );
     } else if (m[3]) {
+      // Uploaded knowledge documents render through here, so an href is untrusted text.
+      // React 19 already neuters javascript: — this keeps the door shut if the renderer
+      // ever changes, and drops data:/vbscript:/anything else on the floor.
+      const href = /^(https?:\/\/|mailto:|#|\/(?![\/\\]))/i.test(m[5]) ? m[5] : undefined;
       const external = /^https?:\/\//.test(m[5]);
       nodes.push(
         <a
           key={key++}
-          href={m[5]}
+          href={href}
           className="font-medium text-ad-accent underline hover:brightness-90"
           {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
         >

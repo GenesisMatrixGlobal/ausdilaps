@@ -50,3 +50,6 @@ next-env.d.ts
 
 # MCP server config — contains a Supabase access token
 .mcp.json
+
+# gstack security reports and checkpoints — local only
+/.gstack/

@@ -32,7 +32,7 @@ const DROP_LINE: readonly RegExp[] = [
   /\bonly (photo|shot|picture) i could (capture|take|get)\b/i,
   /\bfrom (a|the) safe distance\b/i,
   // a correction left standing on its own after the clean-up resolved the line it belonged to
-  /^(sorry|oops|no,? sorry|scratch that|my mistake)[.!,]?$/i,
+  /^(sorry|oops|no,? sorry|scratch that|my mistake|please)[.!,]?$/i,
 ];
 
 /** Phrases removed or replaced inside a line that otherwise stays. Order matters. */
@@ -46,6 +46,8 @@ const EDIT: readonly [RegExp, string][] = [
   [/,?\s*\bwhich is\s+(?=(the |a )?(photo|figure|picture|number|#)\b)/gi, ", "],
   // "just" as filler, wherever it lands
   [/\bjust\s+/gi, ""],
+  // "please" carries nothing the report needs — "south wall here, please." (the team, 2026-09-18)
+  [/[,\s]*\bplease\b[,]?/gi, ""],
 ];
 
 /** Leading fillers, peeled repeatedly: "So, now the next photo…" → "The next photo…". */

@@ -116,6 +116,10 @@ for (const [inp, want] of KEPT) eq(trimLine(inp), want, `kept: ${inp}`);
 
 // ── flags: corrections and garbled numbers are kept and marked, never cut ──
 eq(trimLine("Sorry."), "", "a stranded 'Sorry.' goes");
+eq(trimLine("Please."), "", "a stranded 'Please.' goes");
+eq(trimLine("Sorry. West wall, south wall here, please."), "West wall, south wall here.", "'please' is ignored wherever it lands");
+eq(trimLine("Please note the crack on the east wall."), "Note the crack on the east wall.", "leading 'please' goes too");
+eq(trimLine("Next photo, please, is the ceiling."), "Next photo is the ceiling.", "mid-sentence 'please' goes with its commas");
 eq(trimLine("Sorry, south wall of the house."), "South wall of the house.", "a leading 'sorry' is a filler");
 eq(
   trimLine("The fine gap on the south wall of the house. [CHECK: west or south wall?]"),

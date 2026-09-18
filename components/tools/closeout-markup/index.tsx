@@ -41,6 +41,8 @@ import { CannotDraw } from "./cannot-draw";
 import { OpportunityCard } from "./opportunity-card";
 import { StatusTable } from "./status-table";
 import { FileToSalesforce } from "./file-to-salesforce";
+import { ToolSpend } from "@/components/tools/shared/tool-spend";
+import type { ToolProps } from "@/lib/tools/registry";
 
 interface ResolvedParcel {
   key: string;
@@ -81,7 +83,7 @@ function slugify(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "closeout";
 }
 
-export function CloseoutMarkupTool() {
+export function CloseoutMarkupTool({ isAdmin }: ToolProps) {
   const [opportunity, setOpportunity] = useState<CloseoutOpportunity | null>(null);
   const [properties, setProperties] = useState<CloseoutProperty[]>([]);
   const [unmapped, setUnmapped] = useState<UnmappedWorkOrder[]>([]);
@@ -103,6 +105,9 @@ export function CloseoutMarkupTool() {
   const [generated, setGenerated] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  /** Paid actions this session (a resolve = the site's geocodes; a render = Static Maps
+   *  tiles). Bumped so the cost line refetches the month figure that now includes them. */
+  const [paidActions, setPaidActions] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [fitRequest, setFitRequest] = useState<
     { key: string; rings: LatLng[][]; padding?: "tight" | "context" } | null
@@ -279,6 +284,7 @@ export function CloseoutMarkupTool() {
       setSiteLots(site.lots);
       setSiteNote(siteNoteFor(site));
       setGenerated(true);
+      setPaidActions((n) => n + 1);
       // The site is framed WITH the properties: it is usually in the middle of them, but on a
       // job where the works sit at one end, leaving it out would frame it off the edge.
       frameFrom([...json.parcels, ...site.lots.map((l) => ({ ring: l.ring, point: l.point }))], `${opportunity.id}:${++fitSeq.current}`);
@@ -408,6 +414,7 @@ export function CloseoutMarkupTool() {
     setDownloading(true);
     try {
       const base64 = await renderImageBase64();
+      setPaidActions((n) => n + 1);
       downloadBlob(Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)), `${filenameStem}.png`, "image/png");
     } catch (e) {
       setError((e as Error).message);
@@ -579,6 +586,8 @@ export function CloseoutMarkupTool() {
             {error && <span className="text-sm text-ad-orange">{error}</span>}
             {!error && blockedReason && <span className="text-sm text-ad-orange">{blockedReason}</span>}
           </div>
+          {/* Month to date only: the resolve and render routes don't hand back a per-action cost. */}
+          <ToolSpend slug="closeout-markup" refreshKey={paidActions} isAdmin={isAdmin} />
 
           {/* What came out of Salesforce, and what it collapsed to. The collapse is the whole
               point of the tool — work orders are raised per unit, so 257 of them being 39

@@ -21,6 +21,8 @@ import { coverViewFor } from "@/lib/cover-photo/frame";
 import { COVER_ASPECT, COVER_HEIGHT_PX, COVER_WIDTH_PX } from "@/lib/cover-photo/style";
 import { CoverMap, type CoverMapCommands } from "./cover-map";
 import { SyncCoverPhoto } from "./sync-cover-photo";
+import { ToolSpend } from "@/components/tools/shared/tool-spend";
+import type { ToolProps } from "@/lib/tools/registry";
 
 /** The states with a cadastre adapter. Anywhere else the tool still works — the operator
  *  draws the boundary by hand — so this decides whether to ASK, not whether to proceed. */
@@ -48,7 +50,7 @@ function slug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
-export function CoverPhotoTool() {
+export function CoverPhotoTool({ isAdmin }: ToolProps) {
   const mapRef = useRef<CoverMapCommands>(null);
 
   const [place, setPlace] = useState<PlaceSelection | null>(null);
@@ -63,6 +65,9 @@ export function CoverPhotoTool() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [generated, setGenerated] = useState(false);
+  /** Paid actions this session (a generate = one geocode; a render = Static Maps tiles).
+   *  Bumped so the cost line refetches the month figure that now includes them. */
+  const [paidActions, setPaidActions] = useState(0);
   /** The toolbar's Zoom control: positive is tighter, negative is wider. Re-frames around the
    *  boundary rather than the current centre, so it can't walk off the property.
    *
@@ -123,6 +128,7 @@ export function CoverPhotoTool() {
 
       loadRing(resolved);
       setGenerated(true);
+      setPaidActions((n) => n + 1);
       zoomStepRef.current = 0;
       // A resolved parcel frames itself with its own margin; without one, fall back to the
       // geocoded point so the operator at least lands on the property.
@@ -218,6 +224,8 @@ export function CoverPhotoTool() {
 
       {error && <p className="text-sm text-ad-orange">{error}</p>}
       {note && <p className="text-sm text-ad-muted">{note}</p>}
+      {/* Month to date only: the parcel and render routes don't hand back a per-action cost. */}
+      <ToolSpend slug="cover-photo" refreshKey={paidActions} isAdmin={isAdmin} />
 
       {/* Above the map, not below it (Rhys, 2026-09-16). The map is the tall element on the
           page, so a toolbar under it sits off the bottom of the screen on a laptop by the

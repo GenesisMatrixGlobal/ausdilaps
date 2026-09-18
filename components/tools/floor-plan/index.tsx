@@ -46,6 +46,8 @@ import { renderPlan } from "@/lib/floor-plan/render";
 import { a4Pixels, floorPlanSchema, OUTSIDE, type FloorPlan, type Level } from "@/lib/floor-plan/types";
 import { fractionAt, pointAt, type Bounds, type Frame } from "@/lib/floor-plan/frame";
 import { FramePicker } from "./frame-picker";
+import { ToolSpend } from "@/components/tools/shared/tool-spend";
+import type { ToolProps } from "@/lib/tools/registry";
 import { DRAW_KINDS, FloorPlanEditor, type DrawKind, type Selection, type Tool } from "./editor";
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -165,7 +167,7 @@ const COMPASS = [
   { deg: 270, label: "Left" },
 ] as const;
 
-export function FloorPlanTool() {
+export function FloorPlanTool({ isAdmin }: ToolProps) {
   const [plan, setPlan] = useState<FloorPlan | null>(null);
   const [history, setHistory] = useState<FloorPlan[]>([]);
   const [view, setView] = useState<"edit" | "sheet">("edit");
@@ -178,6 +180,9 @@ export function FloorPlanTool() {
   const [selection, setSelection] = useState<Selection>(null);
   const [sketchUrl, setSketchUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState<"extract" | "export" | "aerial" | null>(null);
+  /** Paid actions this session (a sketch read = one Opus call; an aerial = Static Maps tiles +
+   *  a geocode). Bumped so the cost line refetches the month figure that now includes them. */
+  const [paidActions, setPaidActions] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -423,6 +428,7 @@ export function FloorPlanTool() {
       if (!json) throw new Error(`The server returned an unexpected response (HTTP ${res.status}).`);
       if (!json.ok || !json.aerial) throw new Error(json.error ?? "Could not fetch that image.");
       const a = json.aerial;
+      setPaidActions((n) => n + 1);
       setPicker(null);
 
       const backdrop = plan?.backdrop;
@@ -597,6 +603,7 @@ export function FloorPlanTool() {
       setHistory([]);
       setLevelIndex(0);
       setSelection(null);
+      setPaidActions((n) => n + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not read that sketch.");
     } finally {
@@ -885,6 +892,11 @@ export function FloorPlanTool() {
           {error}
         </div>
       )}
+
+      {/* Month to date only: the extract and aerial routes don't hand back a per-action cost. */}
+      <div className="mt-3">
+        <ToolSpend slug="floor-plan" refreshKey={paidActions} isAdmin={isAdmin} />
+      </div>
 
       {plan && level && (
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">

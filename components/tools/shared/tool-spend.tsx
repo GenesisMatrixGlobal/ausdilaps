@@ -17,21 +17,26 @@ type MonthUsage = { ok: boolean; monthLabel?: string; calls?: number; costCents?
 export function ToolSpend({
   slug,
   sessionCents,
-  sessionCount,
+  sessionCount = 0,
   /** What one unit of `sessionCount` is — "file", "markup", "lookup". */
-  unit,
+  unit = "item",
+  /** For a tool whose routes don't hand back a per-action cost: bump this after each paid
+   *  action and the month figure refetches. With `sessionCents` given it is not needed. */
+  refreshKey = 0,
   isAdmin,
 }: {
   slug: string;
-  sessionCents: number;
-  sessionCount: number;
-  unit: string;
+  /** Omit when the tool cannot price its own session; the line then shows the month only. */
+  sessionCents?: number;
+  sessionCount?: number;
+  unit?: string;
+  refreshKey?: number;
   isAdmin?: boolean;
 }) {
   const [month, setMonth] = useState<MonthUsage | null>(null);
 
-  // Fetched once on mount and again whenever the session total moves — a finished file has
-  // just added a row, and the month figure should include it.
+  // Fetched once on mount and again whenever the session total (or refreshKey) moves — a
+  // finished action has just added a row, and the month figure should include it.
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/tools/usage?tool=${encodeURIComponent(slug)}`)
@@ -45,11 +50,11 @@ export function ToolSpend({
     return () => {
       cancelled = true;
     };
-  }, [slug, sessionCents]);
+  }, [slug, sessionCents, refreshKey]);
 
   const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
   const parts: string[] = [];
-  if (sessionCount > 0) parts.push(`This session: ${formatCents(sessionCents)} · ${plural(sessionCount, unit)}`);
+  if (sessionCents !== undefined && sessionCount > 0) parts.push(`This session: ${formatCents(sessionCents)} · ${plural(sessionCount, unit)}`);
   if (month?.ok && month.monthLabel) {
     parts.push(`${month.monthLabel}: ${formatCents(month.costCents ?? 0)} · ${plural(month.calls ?? 0, "API call")}`);
   }

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import { getStaffUser } from "@/lib/auth/session";
+import { safeNext } from "@/lib/auth/safe-next";
 import { LoginForm } from "./login-form";
 
 export const metadata = {
@@ -13,13 +14,6 @@ const ERRORS: Record<string, string> = {
   link_expired: "That sign-in link has expired. Request a new one below.",
   no_account: "There's no staff account for that email. Ask an admin to invite you.",
 };
-
-/** Only ever redirect within the site, and never back to a login route. */
-function safeNext(next?: string): string {
-  if (!next || !next.startsWith("/")) return "/staff";
-  if (next.startsWith("/staff/login") || next.startsWith("/admin/login")) return "/staff";
-  return next;
-}
 
 export default async function StaffLoginPage({
   searchParams,

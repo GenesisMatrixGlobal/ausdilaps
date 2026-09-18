@@ -195,9 +195,13 @@ export async function addKnowledge(fd: FormData): Promise<ActionResult> {
   if ("error" in dept) return { ok: false, error: dept.error };
 
   const url = str(fd, "url");
-  if (mode === "video") {
-    if (!url) return { ok: false, error: "A video needs its link — that's what a citation opens." };
-    if (!/^https:\/\//i.test(url)) return { ok: false, error: "The video link must start with https://" };
+  if (mode === "video" && !url) {
+    return { ok: false, error: "A video needs its link — that's what a citation opens." };
+  }
+  // Checked for EVERY mode, not just video: the field is rendered as an href on the source
+  // page, the manage table and search results, and the form's mode is a client value.
+  if (url && !/^https:\/\//i.test(url)) {
+    return { ok: false, error: "The link must start with https://" };
   }
 
   const content = await readContent(fd, "file", "text");

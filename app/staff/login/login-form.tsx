@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { safeNext } from "@/lib/auth/safe-next";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 
@@ -16,7 +17,10 @@ export function LoginForm({ next }: { next?: string }) {
     setState("sending");
 
     const params = new URLSearchParams();
-    if (next && next.startsWith("/")) params.set("next", next);
+    // The page already ran safeNext(); running it again here costs nothing and means a
+    // future caller of this form cannot reintroduce an off-site redirect.
+    const target = safeNext(next);
+    if (target !== "/staff") params.set("next", target);
     const redirectTo = `${window.location.origin}/staff/auth/callback${
       params.size ? `?${params}` : ""
     }`;

@@ -165,8 +165,16 @@ export async function indexSource(
     //
     // Reads the bytes back from Storage rather than taking them as an argument, so a
     // re-index gets the same treatment without anyone re-uploading.
+    //
+    // ONCE, though. A PDF's first extraction lands as `plain` (unpdf text); the vision
+    // pass replaces it and stamps the row `markdown`. A row already stamped markdown has
+    // been transcribed, so a re-index (the button, a context save, a chunker change)
+    // re-chunks the stored body and pays nothing — which is the contract CLAUDE.md
+    // promised and this code broke until 2026-09-18: every re-index re-sent the whole PDF
+    // to Opus. A failed first pass leaves the row `plain`, so it IS retried next time.
     const storagePath = source?.storage_path as string | null;
-    if (storagePath && storagePath.toLowerCase().endsWith(".pdf")) {
+    const alreadyTranscribed = format === "markdown" && body.trim().length > 0;
+    if (!alreadyTranscribed && storagePath && storagePath.toLowerCase().endsWith(".pdf")) {
       const rendered = await renderPdfFromStorage(storagePath);
       if (rendered) {
         body = rendered;

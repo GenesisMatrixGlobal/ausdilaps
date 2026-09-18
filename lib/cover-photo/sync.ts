@@ -130,6 +130,9 @@ export interface ResolvedSurvey {
   boxFolderLink: string | null;
   /** Destination folder. Null when the chain couldn't be walked — see needsManualFolder. */
   folder: { id: string; path: string } | null;
+  /** Signed {surveyId, folderId} from the resolve route; the upload route accepts no other
+   *  destination. Absent when no folder was resolved. See lib/box-destination.ts. */
+  destinationToken?: string;
   /** The operator is asked to paste a Box folder link instead. */
   needsManualFolder: boolean;
   /** Which link in the chain was missing, for the message shown alongside the paste box. */

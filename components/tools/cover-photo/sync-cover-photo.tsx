@@ -21,6 +21,8 @@ interface ResolvedSurvey {
   opportunityName: string | null;
   boxFolderLink: string | null;
   folder: { id: string; path: string } | null;
+  /** Signed by /resolve for this record + folder; /upload accepts no other destination. */
+  destinationToken?: string;
   needsManualFolder: boolean;
   missingStep?: string;
   suggestedFilename: string;
@@ -103,6 +105,7 @@ export function SyncCoverPhoto({
         body: JSON.stringify({
           surveyId: target.surveyId,
           folderId: target.folder.id,
+          destinationToken: target.destinationToken,
           filename: filename.trim(),
           image,
           linkToSurvey,

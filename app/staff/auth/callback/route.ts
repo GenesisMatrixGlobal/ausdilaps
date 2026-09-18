@@ -10,6 +10,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { safeNext } from "@/lib/auth/safe-next";
 
 export const runtime = "nodejs";
 
@@ -19,9 +20,9 @@ export async function GET(req: NextRequest) {
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
 
-  // Only ever redirect to our own paths — never trust ?next off the wire.
-  const nextParam = searchParams.get("next");
-  const next = nextParam && nextParam.startsWith("/") ? nextParam : "/staff";
+  // Only ever redirect to our own paths — never trust ?next off the wire. See safeNext()
+  // for why "starts with a slash" was not enough.
+  const next = safeNext(searchParams.get("next"));
 
   const supabase = await createClient();
 

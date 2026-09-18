@@ -137,6 +137,9 @@ export interface ResolvedTarget {
   needsManualFolder: boolean;
   /** Which link in the chain was missing, for the message shown alongside the paste box. */
   missingStep?: string;
+  /** Signed {quoteId, folderId} from the resolve route; the upload route accepts no other
+   *  destination. Absent when no folder was resolved. See lib/box-destination.ts. */
+  destinationToken?: string;
   suggestedFilename: string;
   /** 1-based slot the link would be written to, or null when all five are taken. Only
    *  meaningful when `lineItem` is null. */

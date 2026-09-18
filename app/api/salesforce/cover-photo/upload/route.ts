@@ -3,7 +3,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { isStaff } from "@/lib/auth/is-staff";
+import { isStaffInAnyDepartment } from "@/lib/auth/is-staff";
+import { asPngName, destinationProblem, isPng, verifyDestination } from "@/lib/box-destination";
+import { COVER_PHOTO_DEPARTMENTS } from "@/lib/sync-departments";
 import { BoxNameConflictError } from "@/lib/box";
 import { CoverPhotoSyncError, isConfigError, uploadCoverPhoto } from "@/lib/cover-photo/sync";
 
@@ -20,6 +22,8 @@ const requestSchema = z.object({
   surveyId: z.string().trim().regex(/^[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?$/, "Not a Salesforce Id"),
   /** Box folder ids are numeric strings. */
   folderId: z.string().trim().regex(/^\d+$/, "Invalid Box folder id"),
+  /** Issued by /resolve for exactly this surveyId + folderId — see lib/box-destination.ts. */
+  destinationToken: z.string().min(1, "Press Find first"),
   filename: z.string().trim().min(1, "The file needs a name").max(240),
   /** Base64 PNG, rendered by the browser so the image isn't re-rendered (and re-billed). */
   image: z.string().min(1, "Missing image data"),
@@ -28,7 +32,7 @@ const requestSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  if (!(await isStaff("COVER_PHOTO_ALLOW_UNAUTHED"))) {
+  if (!(await isStaffInAnyDepartment(COVER_PHOTO_DEPARTMENTS, "COVER_PHOTO_ALLOW_UNAUTHED"))) {
     return NextResponse.json({ ok: false, error: "Not authorised." }, { status: 401 });
   }
 
@@ -47,6 +51,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const destination = verifyDestination(parsed.data.destinationToken, {
+    kind: "cover-photo",
+    recordId: parsed.data.surveyId,
+    folderId: parsed.data.folderId,
+  });
+  if (destination !== "ok") {
+    return NextResponse.json({ ok: false, error: destinationProblem(destination) }, { status: 403 });
+  }
+
   let bytes: Buffer;
   try {
     bytes = Buffer.from(parsed.data.image, "base64");
@@ -59,12 +72,15 @@ export async function POST(req: NextRequest) {
   if (bytes.byteLength > MAX_IMAGE_BYTES) {
     return NextResponse.json({ ok: false, error: "That image is too large to sync." }, { status: 413 });
   }
+  if (!isPng(bytes)) {
+    return NextResponse.json({ ok: false, error: "The image isn't a PNG." }, { status: 415 });
+  }
 
   try {
     const result = await uploadCoverPhoto({
       surveyId: parsed.data.surveyId,
       folderId: parsed.data.folderId,
-      filename: parsed.data.filename,
+      filename: asPngName(parsed.data.filename, "Cover Photo"),
       bytes,
       linkToSurvey: parsed.data.linkToSurvey,
       replaceExistingLink: parsed.data.replaceExistingLink,

@@ -30,6 +30,7 @@ import dynamic from "next/dynamic";
 import type { ComponentType } from "react";
 import { DEPARTMENT_SLUGS, type DepartmentSlug } from "@/lib/departments";
 import { TRANSCRIPTION_DEPARTMENTS } from "@/lib/transcription/config";
+import { COVER_PHOTO_DEPARTMENTS, MARKUP_SYNC_DEPARTMENTS } from "@/lib/sync-departments";
 
 /** `title` is a display label and can be changed freely — it is renamed from time to time as
  *  the team's language for a tool settles. `slug` and `code` cannot: the slug is a live route
@@ -96,7 +97,7 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "Snapshot a road segment, or one address with its surrounding lots highlighted and a whole list of them, or measure lengths and areas straight off a live aerial map.",
     // Unassigned from projects 2026-09-16 (Rhys) — Closeout Markup is what that department uses.
-    departments: ["estimators"],
+    departments: [...MARKUP_SYNC_DEPARTMENTS],
     Component: dynamic(() =>
       import("@/components/tools/site-markups").then((m) => m.SiteMarkupsTool)
     ),
@@ -157,7 +158,7 @@ export const TOOLS: ToolDefinition[] = [
     title: "Cover Photo Generator",
     description:
       "Aerial of the property with its boundary in green, sized for the front of a report and filed straight onto the Survey.",
-    departments: ["reports"],
+    departments: [...COVER_PHOTO_DEPARTMENTS],
     Component: dynamic(() =>
       import("@/components/tools/cover-photo").then((m) => m.CoverPhotoTool)
     ),

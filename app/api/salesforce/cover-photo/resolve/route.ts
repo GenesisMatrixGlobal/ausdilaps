@@ -3,7 +3,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { isStaff } from "@/lib/auth/is-staff";
+import { isStaffInAnyDepartment } from "@/lib/auth/is-staff";
+import { signDestination } from "@/lib/box-destination";
+import { COVER_PHOTO_DEPARTMENTS } from "@/lib/sync-departments";
 import { CoverPhotoSyncError, isConfigError, resolveSurveyTarget } from "@/lib/cover-photo/sync";
 
 export const runtime = "nodejs";
@@ -15,7 +17,7 @@ const requestSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  if (!(await isStaff("COVER_PHOTO_ALLOW_UNAUTHED"))) {
+  if (!(await isStaffInAnyDepartment(COVER_PHOTO_DEPARTMENTS, "COVER_PHOTO_ALLOW_UNAUTHED"))) {
     return NextResponse.json({ ok: false, error: "Not authorised." }, { status: 401 });
   }
 
@@ -39,7 +41,10 @@ export async function POST(req: NextRequest) {
       surveyInput: parsed.data.surveyInput,
       boxFolderOverrideUrl: parsed.data.boxFolderUrl,
     });
-    return NextResponse.json({ ok: true, target });
+    const destinationToken = target.folder
+      ? signDestination({ kind: "cover-photo", recordId: target.surveyId, folderId: target.folder.id })
+      : undefined;
+    return NextResponse.json({ ok: true, target: { ...target, destinationToken } });
   } catch (e) {
     if (isConfigError(e)) {
       return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 501 });

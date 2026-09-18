@@ -23,8 +23,12 @@ export const maxDuration = 15;
 const SHORT_HOSTS = new Set(["maps.app.goo.gl", "goo.gl", "www.goo.gl"]);
 const MAX_HOPS = 4;
 
+/** google.com, google.com.au, google.co.nz, maps.google.com… — and NOT google.com.evil.tld,
+ *  which the old `google\.[a-z.]+$` accepted (the dot inside the class let any suffix through). */
+const GOOGLE_HOST = /(^|\.)google\.(com|com\.[a-z]{2}|co\.[a-z]{2}|[a-z]{2})$/i;
+
 function isGoogleHost(hostname: string): boolean {
-  return /(^|\.)google\.[a-z.]+$/i.test(hostname) || SHORT_HOSTS.has(hostname);
+  return GOOGLE_HOST.test(hostname) || SHORT_HOSTS.has(hostname);
 }
 
 export async function POST(req: NextRequest) {

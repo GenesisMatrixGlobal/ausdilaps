@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isStaff } from "@/lib/auth/is-staff";
+import { asJsonName, asPngName, isPng, SF_ID } from "@/lib/box-destination";
 import { BoxNameConflictError } from "@/lib/box";
 import { isCloseoutConfigError, uploadCloseoutMarkup } from "@/lib/closeout-markup/sync";
 import { MarkupSyncError } from "@/lib/markup-sync";
@@ -15,7 +16,7 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_SIDECAR_BYTES = 2 * 1024 * 1024;
 
 const requestSchema = z.object({
-  opportunityId: z.string().trim().min(15).max(18),
+  opportunityId: z.string().trim().regex(SF_ID, "Not a Salesforce Id"),
   boxFolderUrl: z.string().trim().min(1).max(1000),
   filename: z.string().trim().min(1, "The file needs a name").max(240),
   /** Base64 PNG from the browser, so the image isn't re-rendered (and re-billed) server-side. */
@@ -58,6 +59,9 @@ export async function POST(req: NextRequest) {
   if (bytes.byteLength > MAX_IMAGE_BYTES) {
     return NextResponse.json({ ok: false, error: "That image is too large to file." }, { status: 413 });
   }
+  if (!isPng(bytes)) {
+    return NextResponse.json({ ok: false, error: "The image isn't a PNG." }, { status: 415 });
+  }
 
   let sidecar: { filename: string; bytes: Uint8Array; contentType?: string } | undefined;
   if (parsed.data.sidecar) {
@@ -66,9 +70,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "That save file is too large to file." }, { status: 413 });
     }
     sidecar = {
-      filename: parsed.data.sidecar.filename,
+      filename: asJsonName(parsed.data.sidecar.filename),
       bytes: sidecarBytes,
-      contentType: parsed.data.sidecar.contentType,
+      contentType: "application/json",
     };
   }
 
@@ -76,7 +80,7 @@ export async function POST(req: NextRequest) {
     const result = await uploadCloseoutMarkup({
       opportunityId: parsed.data.opportunityId,
       boxFolderUrl: parsed.data.boxFolderUrl,
-      filename: parsed.data.filename,
+      filename: asPngName(parsed.data.filename),
       bytes,
       linkToOpportunity: parsed.data.linkToOpportunity,
       replaceExistingLink: parsed.data.replaceExistingLink,

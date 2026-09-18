@@ -19,13 +19,16 @@ export const maxDuration = 60;
 
 type Check = { level: "critical" | "warning"; title: string; detail: string };
 
-export async function GET(req: NextRequest) {
+/** Bearer only. Nothing in the UI calls this, and honouring the admin cookie on a GET meant
+ *  any link an admin clicked could fire an alert email — SameSite=Lax cookies ride along
+ *  on top-level navigations. An admin who wants a manual check can POST. */
+async function handle(req: NextRequest, allowSession: boolean) {
   const gate = requireBearerSecret(req, "CRON_SECRET");
   if (!gate.ok) {
     if (gate.status === 503) {
       return NextResponse.json({ ok: false, error: gate.reason }, { status: 503 });
     }
-    if (!(await isApiAdmin())) {
+    if (!allowSession || !(await isApiAdmin())) {
       return NextResponse.json({ ok: false, error: "Not authorised." }, { status: 401 });
     }
   }
@@ -232,4 +235,12 @@ async function sendHealthEmail(
     console.error("[tenders] health email failed:", e);
     return false;
   }
+}
+
+export async function GET(req: NextRequest) {
+  return handle(req, false);
+}
+
+export async function POST(req: NextRequest) {
+  return handle(req, true);
 }

@@ -429,12 +429,14 @@ export function SiteSnapTool() {
                 </p>
                 <p>
                   Stand in front of the middle of a wall — not too close, not too far back.
-                  The <b className="text-white">cone</b> is what your camera can see: fill the
-                  brackets on the wall with it and the whole strip lights up green.
+                  Fill the brackets with the <b className="text-white">cone</b> and its outline
+                  turns green: you&rsquo;re in the right place.
                 </p>
                 <p>
-                  Then hold still. The camera steadies, and a steady shot scores. Cracked walls
-                  are worth double, and the clock only pays out if you photograph every wall.
+                  Then hold still. The <b className="text-white">bar on the wall</b> ripens red
+                  to green as the camera steadies — shoot it green and it stays green. Cracked
+                  walls are worth double, and the clock only pays out if you photograph every
+                  wall.
                 </p>
                 <p className="text-white/60">
                   Watch out: the <b className="text-white">cat</b> hunts you while you stand

@@ -26,7 +26,7 @@ import {
   type Room,
   type Side,
 } from "./house";
-import { catOnAnkles, shotPreview, type GameState } from "./engine";
+import { shotPreview, type GameState } from "./engine";
 import {
   CAT_H_PX,
   CAT_W_PX,
@@ -583,22 +583,6 @@ export function draw(ctx: CanvasRenderingContext2D, state: GameState): void {
     }
   }
 
-  // Focus ring — the mechanic made visible. It closes as the camera steadies.
-  if (state.focus < 0.995) {
-    const cx = Math.round(state.x * TILE);
-    const cy = Math.round(state.y * TILE - spriteH / 2 - 4);
-    ctx.strokeStyle = "#23272b";
-    ctx.globalAlpha = 0.25;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 5, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = catOnAnkles(state) ? C.bad : state.focus > 0.75 ? C.good : C.mid;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * state.focus);
-    ctx.stroke();
-  }
 
   // Floating results
   ctx.font = "bold 9px ui-monospace, monospace";
@@ -699,11 +683,28 @@ function drawFieldOfView(ctx: CanvasRenderingContext2D, state: GameState): void 
   const spillLo = Math.max(lo, wallLo - 1);
   const spillHi = Math.min(hi, wallHi + 1);
 
-  // ⚠️ FRAMING, not quality. The cone answers "am I standing in the right place" and nothing
-  // else; the focus ring over the player's head answers "am I steady yet". Tinting this by the
-  // full shot quality meant a cone that plainly filled the brackets still showed amber while
-  // focus rebuilt — which reads as the game ignoring a correct position.
-  const colour = qualityColour(shot.framing);
+  // ⚠️ TWO COLOURS, and which one goes where is the whole readout. This has now been wrong in
+  // both directions, so the reasoning is worth keeping.
+  //
+  //   Tinted entirely by QUALITY (position x focus), a cone that plainly filled the brackets
+  //   still showed amber while focus rebuilt — "it looks like you've got the full width ready,
+  //   but it still doesn't go green".
+  //
+  //   Tinted entirely by FRAMING, it went green the moment you were in position, you fired,
+  //   and the wall you walked away from was red — "it was actually red because it was low
+  //   quality".
+  //
+  // Both complaints are right, because they are about different questions. So the OUTLINE of
+  // the cone answers "am I in the right place" and snaps green as soon as you are, while
+  // everything that predicts the photo — the cone's fill and the lit slice on the wall — is
+  // tinted by quality and RIPENS red to green as the camera steadies.
+  //
+  // The lit slice is the important half: that bar is drawn over the wall's status strip, in
+  // the same palette, so it is literally a preview of the colour the wall will keep. Shoot it
+  // green and it stays green. That is also why the focus ring over the player's head is gone —
+  // the wall bar is the same gauge, reading out in the place you are already looking.
+  const framingColour = qualityColour(shot.framing);
+  const qualityColourNow = qualityColour(shot.quality);
   const apexX = px(state.x);
   const apexY = px(state.y);
   const faceX = alongX ? px(along) : px(face);
@@ -714,7 +715,7 @@ function drawFieldOfView(ctx: CanvasRenderingContext2D, state: GameState): void 
   // Fade out towards the wall, so the cone reads as light falling off rather than a flat wedge
   // sitting on top of the floor.
   const fade = ctx.createLinearGradient(apexX, apexY, faceX, faceY);
-  fade.addColorStop(0, colour);
+  fade.addColorStop(0, qualityColourNow);
   fade.addColorStop(1, "rgba(255,255,255,0)");
   ctx.globalAlpha = 0.26;
   ctx.fillStyle = fade;
@@ -730,8 +731,10 @@ function drawFieldOfView(ctx: CanvasRenderingContext2D, state: GameState): void 
   ctx.closePath();
   ctx.fill();
 
-  ctx.globalAlpha = 0.45;
-  ctx.strokeStyle = colour;
+  // The outline is the FRAMING answer, and it is drawn hard so it reads as a separate
+  // statement from the fill rather than a lighter version of it.
+  ctx.globalAlpha = 0.8;
+  ctx.strokeStyle = framingColour;
   ctx.lineWidth = 1;
   ctx.stroke();
 
@@ -740,8 +743,8 @@ function drawFieldOfView(ctx: CanvasRenderingContext2D, state: GameState): void 
   const litHi = Math.min(hi, wallHi);
   if (litHi > litLo) {
     const strip = wallStrip(r, aimed.side);
-    ctx.globalAlpha = 0.85;
-    ctx.fillStyle = colour;
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = qualityColourNow;
     if (alongX) {
       ctx.fillRect(px(litLo), px(strip.y) - 1, px(litHi) - px(litLo), px(strip.h) + 2);
     } else {

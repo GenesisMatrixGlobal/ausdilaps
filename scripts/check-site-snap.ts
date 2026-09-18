@@ -35,8 +35,10 @@ import {
 } from "@/components/tools/site-snap/house";
 import {
   RUN_SECONDS,
+  attemptCapture,
   newGame,
   positionVerdict,
+  shotPreview,
   step,
   summarise,
   type GameState,
@@ -337,6 +339,67 @@ const spawnHall = (["n", "s"] as Side[]).every(
   (s) => positionVerdict("hall", s, SPAWN.x, SPAWN.y).factor === 1
 );
 check("spawn is a valid mark for the hall's long walls (onboarding)", spawnHall);
+
+// ── The readout must not lie about the photo ────────────────────────────
+//
+// ⚠️ This got shipped wrong in BOTH directions inside one afternoon, so it is pinned here.
+// The cone's OUTLINE is tinted by `framing` and its fill and the lit wall slice by `quality`;
+// the captured wall strip is `qualityColour(state.captured[id])`. Those last two must agree,
+// or the bar you aimed with is not the colour the wall keeps — "it goes green, I snap a photo,
+// I walk away, it was actually red". Anything that reintroduces a gap between them breaks a
+// promise the player can see.
+
+const BAND = (q: number) => (q >= 80 ? "green" : q >= 50 ? "amber" : "red");
+
+{
+  const probe = newGame(() => 0.5);
+  const mark = NODES[1];
+  const w = standPoint(mark.roomId, mark.side!);
+  probe.x = w.sx;
+  probe.y = w.sy;
+  probe.facing = mark.side!;
+  // Hazards parked, so focus is the only thing moving.
+  probe.cat.x = 33;
+  probe.cat.y = 16;
+  probe.cat.backoff = 999;
+  for (const t of probe.toddlers) {
+    t.x = 33;
+    t.y = 5;
+    t.backoff = 999;
+  }
+  probe.focus = 0;
+
+  const framings: number[] = [];
+  const qualities: number[] = [];
+  for (let i = 0; i < 100; i++) {
+    const shot = shotPreview(probe)!;
+    framings.push(shot.framing);
+    qualities.push(shot.quality);
+    step(probe, 1 / 60, () => 0.5);
+  }
+
+  check(
+    "framing is settled the moment you are on the mark",
+    framings.every((f) => f === 100),
+    `saw ${Math.min(...framings)}..${Math.max(...framings)}`
+  );
+  check(
+    "the wall bar ripens red -> green as the camera steadies",
+    BAND(qualities[0]) === "red" && BAND(qualities[qualities.length - 1]) === "green",
+    `${qualities[0]}% (${BAND(qualities[0])}) -> ${qualities[qualities.length - 1]}% (${BAND(qualities[qualities.length - 1])})`
+  );
+
+  // The promise: shoot it green and the wall STAYS green. Both sides of this go through
+  // qualityColour(), so it holds only while the bar reads `quality` and not `framing`.
+  probe.focus = 1;
+  const preview = shotPreview(probe)!;
+  const taken = attemptCapture(probe);
+  check(
+    "the bar's colour is the colour the wall keeps",
+    taken.ok && BAND(preview.quality) === BAND(taken.quality),
+    taken.ok ? `bar ${BAND(preview.quality)} vs wall ${BAND(taken.quality)}` : "shot refused"
+  );
+}
 
 console.log(`\n  planned route: ${PLAN.cost} tiles over ${PLAN.route.length} stand points`);
 

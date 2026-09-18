@@ -75,6 +75,31 @@ export async function unlockCookieValue(): Promise<string | null> {
   return first ? cookieValueFor(first) : null;
 }
 
+/**
+ * A random id for the BROWSER, so /admin/samples can read one visitor's views and clicks as
+ * one history (migration 0021). Set on the first hit to the samples page, before any
+ * unlock, so the locked-page views and the eventual unlock join up. Same options as the
+ * access cookie — httpOnly, six months, scoped to /dilapidation-reports, which is also
+ * where the click route lives so the beacon carries both cookies.
+ *
+ * It says nothing about who the person is. A name only ever attaches through the email
+ * unlock (lead_id); the code is shared across every quote, so a code unlock stays anonymous.
+ */
+export const SAMPLES_VISITOR_COOKIE = "ad_samples_v";
+
+/** Where the library posts "this file was opened". Under the samples path on purpose: the
+ *  cookies above are scoped to /dilapidation-reports and would not reach /api/*. */
+export const SAMPLES_CLICK_PATH = "/dilapidation-reports/samples/click";
+
+export function newVisitorId(): string {
+  return crypto.randomUUID();
+}
+
+/** A cookie value is untrusted input; only a UUID-shaped one is ever written to a row. */
+export function isVisitorId(value: string | null | undefined): value is string {
+  return !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
 export const SAMPLES_COOKIE_OPTIONS = {
   httpOnly: true,
   sameSite: "lax" as const,

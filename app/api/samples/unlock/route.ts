@@ -9,7 +9,10 @@ import {
   SAMPLES_COOKIE,
   SAMPLES_COOKIE_OPTIONS,
   SAMPLES_PATH,
+  SAMPLES_VISITOR_COOKIE,
   gateEnabled,
+  isVisitorId,
+  newVisitorId,
   unlockCookieValue,
 } from "@/lib/samples-access";
 import { recordPageView } from "@/lib/page-views";
@@ -84,14 +87,23 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // The one row that gives a visitor a NAME: the browser's visitor id (minted by the gate on
+  // the locked page they just came from — or here, if that cookie was blocked) joined to
+  // the lead they just created. Everything else this browser does on the samples page reads
+  // back as that person on /admin/samples.
+  const existing = req.cookies.get(SAMPLES_VISITOR_COOKIE)?.value;
+  const visitorId = isVisitorId(existing) ? existing : newVisitorId();
   after(() =>
     recordPageView("unlock_email", {
       referrer: req.headers.get("referer"),
       userAgent,
+      visitorId,
+      leadId,
     })
   );
 
   const res = NextResponse.redirect(back, 303);
+  if (visitorId !== existing) res.cookies.set(SAMPLES_VISITOR_COOKIE, visitorId, SAMPLES_COOKIE_OPTIONS);
   if (gateEnabled()) {
     const value = await unlockCookieValue();
     if (value) res.cookies.set(SAMPLES_COOKIE, value, SAMPLES_COOKIE_OPTIONS);

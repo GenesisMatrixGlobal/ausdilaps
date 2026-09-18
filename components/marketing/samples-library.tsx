@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { SampleCategory, SampleItem, SampleKind } from "@/lib/samples";
+import { SAMPLES_CLICK_PATH } from "@/lib/samples-access";
 
 /**
  * The sample-report library: category chips over a compact list. A client island in the
@@ -77,6 +78,22 @@ export function SamplesLibrary({ categories }: { categories: SampleCategory[] })
   );
 }
 
+/** Tells /admin/samples which file was opened. A beacon, so it survives the tab that fires
+ *  it being backgrounded by the new one Box opens in; the link itself is untouched — if
+ *  the beacon fails the file still opens, and nothing here ever blocks it. */
+function recordOpen(item: SampleItem) {
+  try {
+    const body = JSON.stringify({ item: item.title, category: item.category });
+    if (typeof navigator !== "undefined" && "sendBeacon" in navigator) {
+      navigator.sendBeacon(SAMPLES_CLICK_PATH, body);
+    } else {
+      void fetch(SAMPLES_CLICK_PATH, { method: "POST", body, keepalive: true });
+    }
+  } catch {
+    // Analytics only.
+  }
+}
+
 function SampleRow({ item }: { item: SampleItem }) {
   const meta = [KIND_LABEL[item.kind], item.size, item.year].filter(Boolean).join(" · ");
   return (
@@ -84,6 +101,8 @@ function SampleRow({ item }: { item: SampleItem }) {
       href={item.url}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={() => recordOpen(item)}
+      onAuxClick={(e) => e.button === 1 && recordOpen(item)}
       className="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-ad-surface/70 sm:gap-4 sm:px-5"
     >
       <KindIcon kind={item.kind} />

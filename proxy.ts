@@ -19,10 +19,13 @@ import {
   SAMPLES_COOKIE_OPTIONS,
   SAMPLES_LIBRARY_PATH,
   SAMPLES_PATH,
+  SAMPLES_VISITOR_COOKIE,
   cookieValueFor,
   gateEnabled,
   isValidCode,
   isValidCookie,
+  isVisitorId,
+  newVisitorId,
 } from "@/lib/samples-access";
 import { looksLikeBot, recordPageView, type PageViewEvent } from "@/lib/page-views";
 
@@ -134,17 +137,33 @@ async function samplesGate(req: NextRequest): Promise<NextResponse> {
     req.headers.get("sec-fetch-dest") === "document" &&
     !req.headers.get("next-router-prefetch") &&
     !looksLikeBot(ua);
+
+  // The visitor id (migration 0021): reuse the browser's, or mint one on its first countable
+  // hit. Minted BEFORE any unlock so the locked-page views and the eventual unlock read as
+  // one history on /admin/samples. Bots never get one — a cookie on a crawler is a row it
+  // will keep writing. `finish()` puts a new id on whichever response this function returns.
+  const existing = req.cookies.get(SAMPLES_VISITOR_COOKIE)?.value;
+  const visitorId = isVisitorId(existing) ? existing : countable ? newVisitorId() : null;
+  const finish = (res: NextResponse) => {
+    if (visitorId && visitorId !== existing) {
+      res.cookies.set(SAMPLES_VISITOR_COOKIE, visitorId, SAMPLES_COOKIE_OPTIONS);
+    }
+    return res;
+  };
+
   const count = (event: PageViewEvent) => {
     if (!countable) return;
     const referrer = req.headers.get("referer");
-    after(() => recordPageView(event, { referrer, userAgent: ua }));
+    after(() => recordPageView(event, { referrer, userAgent: ua, visitorId }));
   };
 
   if (!gateEnabled()) {
     count("view_library");
-    return url.pathname === SAMPLES_LIBRARY_PATH
-      ? NextResponse.next()
-      : NextResponse.rewrite(new URL(SAMPLES_LIBRARY_PATH, req.url));
+    return finish(
+      url.pathname === SAMPLES_LIBRARY_PATH
+        ? NextResponse.next()
+        : NextResponse.rewrite(new URL(SAMPLES_LIBRARY_PATH, req.url))
+    );
   }
 
   const code = url.searchParams.get("code");
@@ -153,24 +172,24 @@ async function samplesGate(req: NextRequest): Promise<NextResponse> {
       count("unlock_code");
       const res = NextResponse.redirect(clean, 303);
       res.cookies.set(SAMPLES_COOKIE, await cookieValueFor(code), SAMPLES_COOKIE_OPTIONS);
-      return res;
+      return finish(res);
     }
     count("unlock_code_failed");
     clean.searchParams.set("error", "code");
-    return NextResponse.redirect(clean, 303);
+    return finish(NextResponse.redirect(clean, 303));
   }
 
   const unlocked = await isValidCookie(req.cookies.get(SAMPLES_COOKIE)?.value);
 
   if (url.pathname === SAMPLES_LIBRARY_PATH) {
     if (unlocked) count("view_library");
-    return unlocked ? NextResponse.next() : NextResponse.redirect(clean, 303);
+    return finish(unlocked ? NextResponse.next() : NextResponse.redirect(clean, 303));
   }
   if (url.pathname === SAMPLES_PATH) {
     count(unlocked ? "view_library" : "view_locked");
-    if (unlocked) return NextResponse.rewrite(new URL(SAMPLES_LIBRARY_PATH, req.url));
+    if (unlocked) return finish(NextResponse.rewrite(new URL(SAMPLES_LIBRARY_PATH, req.url)));
   }
-  return NextResponse.next();
+  return finish(NextResponse.next());
 }
 
 function loginUrl(req: NextRequest, next: string): URL {

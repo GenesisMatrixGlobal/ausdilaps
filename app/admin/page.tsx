@@ -193,7 +193,7 @@ function apiSpendTile(u: ApiUsage): Stat {
  *  this is people. Unlocks are the code-from-a-quote and the email fallback combined. */
 function samplesTile(s: SamplesStats): Stat {
   if (s.unavailable) {
-    return { label: "Samples viewed · 7d", value: "—", sub: s.unavailable, tone: "warn" };
+    return { label: "Samples viewed · 7d", value: "—", sub: s.unavailable, tone: "warn", href: "/admin/samples" };
   }
   const unlocks = s.unlocksCode7d + s.unlocksEmail7d;
   const delta = s.views7d - s.viewsPrev7d;
@@ -206,6 +206,8 @@ function samplesTile(s: SamplesStats): Stat {
     value: s.views7d,
     sub: parts.join(" · "),
     tone: delta > 0 ? "ok" : delta < 0 ? "warn" : "default",
+    // The people behind the number — who came, how they got in, what they opened.
+    href: "/admin/samples",
   };
 }
 

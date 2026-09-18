@@ -13,7 +13,21 @@ export type PageViewEvent =
   | "view_library"
   | "unlock_code"
   | "unlock_code_failed"
-  | "unlock_email";
+  | "unlock_email"
+  /** A file in the library was opened. `item` carries its title (migration 0021). */
+  | "click_item";
+
+/** What a row may carry beyond the event itself. The three 0021 fields are what let
+ *  /admin/samples read the rows as people rather than a count — see that migration for
+ *  what each one is and is not. */
+export type PageViewMeta = {
+  path?: string;
+  referrer?: string | null;
+  userAgent?: string | null;
+  visitorId?: string | null;
+  leadId?: string | null;
+  item?: string | null;
+};
 
 export const SAMPLES_VIEW_PATH = "/dilapidation-reports/samples";
 
@@ -52,23 +66,35 @@ export function looksLikeBot(userAgent: string | null | undefined): boolean {
 /** Records one event. Errors are logged and swallowed — analytics must never break the
  *  page, and before migration 0015 is applied the table does not exist, which is the
  *  most likely error and not one a visitor should feel. */
-export async function recordPageView(
-  event: PageViewEvent,
-  meta: { path?: string; referrer?: string | null; userAgent?: string | null } = {}
-): Promise<void> {
+export async function recordPageView(event: PageViewEvent, meta: PageViewMeta = {}): Promise<void> {
   if (!isProductionRuntime()) return;
   try {
+    const db = createAdminClient();
+    const base = {
+      path: meta.path ?? SAMPLES_VIEW_PATH,
+      event,
+      referrer: meta.referrer?.slice(0, 500) ?? null,
+      user_agent: meta.userAgent?.slice(0, 300) ?? null,
+    };
+    // Only sent when set, so a row before 0021 and a row after it differ only where they
+    // should.
+    const extra: Record<string, string> = {};
+    if (meta.visitorId) extra.visitor_id = meta.visitorId;
+    if (meta.leadId) extra.lead_id = meta.leadId;
+    if (meta.item) extra.item = meta.item.slice(0, 200);
+
     // ⚠️ Supabase RETURNS errors rather than throwing, so an unchecked insert swallows
     // every failure silently. This one hid a missing table for the whole gap between
     // deploying the gate and applying migration 0015.
-    const { error } = await createAdminClient()
-      .from("page_views")
-      .insert({
-        path: meta.path ?? SAMPLES_VIEW_PATH,
-        event,
-        referrer: meta.referrer?.slice(0, 500) ?? null,
-        user_agent: meta.userAgent?.slice(0, 300) ?? null,
-      });
+    let { error } = await db.from("page_views").insert({ ...base, ...extra });
+
+    // The 0021 columns are pasted in by hand, so a deploy can land before them. A failed
+    // insert here would stop EVERY samples view being counted for that window — fall back
+    // to the 0015 shape and say so.
+    if (error && Object.keys(extra).length > 0 && /visitor_id|lead_id|'item'/.test(error.message)) {
+      console.warn("[page-views] 0021 columns missing — apply migration 0021_samples_visitors.sql.");
+      ({ error } = await db.from("page_views").insert(base));
+    }
     if (error) throw error;
   } catch (e) {
     console.error("[page-views] failed to record:", event, (e as Error).message);

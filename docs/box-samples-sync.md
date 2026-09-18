@@ -171,3 +171,13 @@ keep that from being a real risk:
 If the env vars are missing entirely, `getAccessToken()` throws `BoxConfigError`
 and the page 404s — deliberately loud, because a silently empty samples page on a
 ranking URL is worse than an obvious break.
+
+## Who viewed what (2026-09-18)
+
+`/admin/samples` lists the people behind the "Samples viewed" tile. A browser gets a random
+`ad_samples_v` cookie on its first countable hit to the samples page; every view, unlock and
+file click after that carries it (`page_views.visitor_id`, migration 0021). A visitor has a
+name only if they unlocked with their email (`lead_id` on the `unlock_email` row) — the
+access code is shared across every quote, so a code unlock is anonymous. File clicks are a
+`sendBeacon` from the library row to `/dilapidation-reports/samples/click`, which requires
+both cookies and writes a `click_item` row with the file's category and title.

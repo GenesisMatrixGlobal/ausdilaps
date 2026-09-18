@@ -18,10 +18,14 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { useCopied } from "@/components/tools/shared/copy-text";
+import { ToolSpend } from "@/components/tools/shared/tool-spend";
+import type { ToolProps } from "@/lib/tools/registry";
+import { formatCents } from "@/lib/format-cents";
 import {
   ACCEPTED_AUDIO_EXTENSIONS,
   DICTATION_BUCKET,
   MAX_AUDIO_BYTES,
+  TRANSCRIPTION_TOOL_SLUG,
 } from "@/lib/transcription/config";
 import { formatBatch } from "@/lib/transcription/format";
 
@@ -37,6 +41,9 @@ type Item = {
   cleanedChanged?: boolean;
   cleanupNote?: string | null;
   durationSeconds?: number;
+  /** What this file cost at list (Deepgram + the clean-up), from the route — the same figure
+   *  its api_calls rows carry. */
+  costCents?: number;
   error?: string;
 };
 
@@ -48,6 +55,7 @@ type TranscribeResponse = {
   cleanedChanged?: boolean;
   cleanupNote?: string | null;
   durationSeconds?: number;
+  costCents?: number;
 };
 
 /**
@@ -102,7 +110,7 @@ async function readJson<T>(res: Response, fallback: string): Promise<T> {
   return json;
 }
 
-export function TranscriptionBuddyTool() {
+export function TranscriptionBuddyTool({ isAdmin }: ToolProps) {
   const [items, setItems] = useState<Item[]>([]);
   const [view, setView] = useState<"cleaned" | "raw">("cleaned");
   const [dragActive, setDragActive] = useState(false);
@@ -171,6 +179,7 @@ export function TranscriptionBuddyTool() {
           cleanedChanged: json.cleanedChanged ?? false,
           cleanupNote: json.cleanupNote ?? null,
           durationSeconds: json.durationSeconds ?? 0,
+          costCents: json.costCents ?? 0,
         });
         consecutiveFailures.current = 0;
       } catch (e) {
@@ -268,6 +277,8 @@ export function TranscriptionBuddyTool() {
       document.title = original.replace(/^\(\d+\/\d+\)\s*/, "");
     };
   }, [busy, settled, items.length]);
+
+  const sessionCents = done.reduce((s, it) => s + (it.costCents ?? 0), 0);
 
   const textFor = (it: Item) => (view === "raw" ? it.raw : it.cleaned) ?? "";
   // ⚠️ DROP ORDER, not finish order. With several workers a short file routinely lands before a
@@ -388,6 +399,10 @@ export function TranscriptionBuddyTool() {
 
           {halted && <p className="mt-2 text-sm text-ad-orange">{halted}</p>}
 
+          <div className="mt-2">
+            <ToolSpend slug={TRANSCRIPTION_TOOL_SLUG} sessionCents={sessionCents} sessionCount={done.length} unit="file" isAdmin={isAdmin} />
+          </div>
+
           <p className="mt-2 text-sm text-ad-muted">
             {cleanupNote
               ? cleanupNote
@@ -411,6 +426,11 @@ export function TranscriptionBuddyTool() {
                 {it.status === "done" && it.durationSeconds ? (
                   <span className="text-ad-muted">{minutes(it.durationSeconds)}</span>
                 ) : null}
+                {it.status === "done" && it.costCents !== undefined && (
+                  <span className="tabular-nums text-ad-muted" title="API cost of this file at list price: Deepgram plus the clean-up pass">
+                    {formatCents(it.costCents)}
+                  </span>
+                )}
                 <span
                   className={cn(
                     it.status === "failed" ? "text-ad-orange" : it.status === "done" ? "text-ad-steel" : "text-ad-muted"

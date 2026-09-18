@@ -6,12 +6,12 @@
 // Degrades, never blocks: any failure hands the raw transcript back unchanged with
 // `changed: false`, and the UI says so. Same rule as the knowledge base's AI path.
 
-import { recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
+import { anthropicCostCents, recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
 import { CLEANUP_MODEL } from "./config";
 import { splitHeader, timestampLines } from "./format";
 import { DICTATION_KEYTERMS, keytermsFor } from "./keyterms";
 
-export type CleanupResult = { text: string; changed: boolean; note?: string };
+export type CleanupResult = { text: string; changed: boolean; note?: string; costCents: number };
 
 const SYSTEM = `You tidy speech-to-text transcripts of an Australian building inspector dictating a dilapidation (building condition) inspection on site. The inspector walks a property photo by photo, saying what each photo shows: walls by compass direction, ceilings, floors, yards, fences, retaining walls, cracks and gaps.
 
@@ -27,9 +27,11 @@ Rules:
 
 export async function cleanTranscript(input: { raw: string; filename: string }): Promise<CleanupResult> {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return { text: input.raw, changed: false, note: "Clean-up not configured" };
+  if (!key) return { text: input.raw, changed: false, note: "Clean-up not configured", costCents: 0 };
 
   const { header, body } = splitHeader(input.raw);
+  // Billed the moment the response lands — a pass that is then discarded still cost this.
+  let costCents = 0;
   try {
     const hint = keytermsFor(input.filename);
     const userText = [
@@ -68,6 +70,7 @@ export async function cleanTranscript(input: { raw: string; filename: string }):
       usage?: AnthropicUsage;
     };
     void recordApiCall({ provider: "anthropic", api: "messages", model: CLEANUP_MODEL, usage: data.usage });
+    costCents = anthropicCostCents(CLEANUP_MODEL, data.usage) ?? 0;
 
     if (data.stop_reason === "refusal") throw new Error("declined");
     if (data.stop_reason === "max_tokens") throw new Error("ran out of room");
@@ -88,9 +91,9 @@ export async function cleanTranscript(input: { raw: string; filename: string }):
     }
 
     const full = header ? `${header}\n${text}` : text;
-    return { text: full, changed: text !== body.trim() };
+    return { text: full, changed: text !== body.trim(), costCents };
   } catch (e) {
     console.warn(`[transcription] clean-up skipped: ${(e as Error).message}`);
-    return { text: input.raw, changed: false, note: "Clean-up unavailable — showing the raw transcript" };
+    return { text: input.raw, changed: false, note: "Clean-up unavailable — showing the raw transcript", costCents };
   }
 }

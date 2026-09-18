@@ -68,6 +68,10 @@ export async function POST(req: NextRequest) {
       cleanedChanged: cleaned.changed,
       cleanupNote: cleaned.note ?? null,
       durationSeconds: result.durationSeconds,
+      // What this file cost, at list — the same figures the api_calls rows carry, so the
+      // number on the queue row and the number on /admin/usage can never disagree.
+      costCents: Math.round((result.costCents + cleaned.costCents) * 100) / 100,
+      costBreakdown: { deepgramCents: result.costCents, anthropicCents: cleaned.costCents },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Transcription failed.";

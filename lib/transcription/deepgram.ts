@@ -4,7 +4,7 @@
 // Storage link itself, so nothing bigger than a few KB of JSON ever passes through a Vercel
 // function. A 15-minute dictation comes back in ~10-20 s.
 
-import { recordApiCall } from "@/lib/api-usage";
+import { deepgramCostCents, recordApiCall } from "@/lib/api-usage";
 import { DEEPGRAM_LANGUAGE, DEEPGRAM_MODEL } from "./config";
 import type { Utterance } from "./format";
 
@@ -17,6 +17,8 @@ export type DeepgramResult = {
   transcript: string;
   utterances: Utterance[];
   durationSeconds: number;
+  /** List price of this one call, the same figure the api_calls row carries. */
+  costCents: number;
 };
 
 type Sentence = { text: string; start: number; end: number };
@@ -90,5 +92,5 @@ export async function transcribeUrl(audioUrl: string, keyterms: readonly string[
   // block at 00:00:00 still gives the operator the words.
   if (utterances.length === 0) utterances.push({ start: 0, end: durationSeconds, text: transcript });
 
-  return { transcript, utterances, durationSeconds };
+  return { transcript, utterances, durationSeconds, costCents: deepgramCostCents(durationSeconds, keyterms.length > 0) };
 }

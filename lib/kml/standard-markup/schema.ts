@@ -148,6 +148,17 @@ export const standardMarkupRenderRequestSchema = z.object({
     .max(120)
     .default([]),
   scheduleTitle: z.string().max(120).optional(),
+  /**
+   * Put the colour key in the BAND below the drawing rather than over the imagery.
+   *
+   * ⚠️ Independent of `schedule` on purpose. The band used to be inferred from "is there a
+   * schedule", which meant turning the summary off silently moved the key back onto the
+   * drawing — reintroducing, through a new door, the very collision that moved it off
+   * (2026-09-18). A tool that never wants chrome over its imagery says so once, here.
+   *
+   * Defaults FALSE, so Building Markup and Measure are unchanged.
+   */
+  keyInBand: z.boolean().default(false),
   legend: z
     .array(
       z.object({

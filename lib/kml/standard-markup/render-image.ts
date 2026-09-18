@@ -155,8 +155,18 @@ export interface RenderMapInput {
    * this; see the note on MarkupShapeInput.name.
    */
   schedule?: ScheduleRow[];
-  /** Heading above the schedule. Defaults to "Properties". */
+  /** Heading above the schedule. Defaults to "Properties". Not drawn when there is no schedule —
+   *  see planSchedule. */
   scheduleTitle?: string;
+  /**
+   * Draw the colour key in the BAND below the image instead of over the imagery.
+   *
+   * ⚠️ Separate from `schedule` deliberately. It was inferred from "is there a schedule", so
+   * turning the summary off put the key back on the drawing and could cover a property again —
+   * the collision the band exists to prevent. A tool that never wants chrome over its imagery
+   * sets this once and keeps it set, summary or no summary.
+   */
+  keyInBand?: boolean;
   /** ⚠️ NOT DRAWN, same as `name` above — these fed the legend's project-site row. Retained
    *  rather than removed so the item schedule can come back without a schema change. */
   subjectStreet?: string | null;
@@ -632,12 +642,27 @@ function keyRowSvg(keys: LegendRow[], x: number, baseline: number): string {
  * Reading order is down each column then across — how a numbered list is read.
  */
 function planSchedule(rows: ScheduleRow[], widthPx: number, title: string, keys: LegendRow[]) {
+  const usableWidth = widthPx - SCHEDULE_PAD * 2;
+
+  // ⚠️ NO LIST = a key-only strip, with NO TITLE. The operator turned the summary off; a heading
+  // reading "Inspection summary" above nothing at all is worse than no band. The key still goes
+  // here rather than back onto the imagery — that is the whole point of `keyInBand`.
+  if (rows.length === 0) {
+    const lines = keys.length > 0 ? keyLines(keys, usableWidth) : [];
+    const height = Math.ceil(
+      SCHEDULE_PAD * 2 + SCHEDULE_FONT + Math.max(0, lines.length - 1) * KEY_LINE_HEIGHT
+    );
+    const parts = lines.map((line, i) =>
+      keyRowSvg(line, SCHEDULE_PAD, SCHEDULE_PAD + SCHEDULE_FONT + i * KEY_LINE_HEIGHT)
+    );
+    return { height, svg: bandSvg(widthPx, height, parts) };
+  }
+
   const textWidths = rows.map((r) => textWidth(asciiish(r.street), SCHEDULE_FONT));
   const textW = Math.min(SCHEDULE_MAX_TEXT, Math.max(150, ...textWidths));
   const columnW = SCHEDULE_NUM_W + SCHEDULE_GAP + SCHEDULE_SWATCH + SCHEDULE_GAP + textW;
 
-  const usable = widthPx - SCHEDULE_PAD * 2;
-  const columns = Math.max(1, Math.min(rows.length, Math.floor((usable + SCHEDULE_COL_GAP) / (columnW + SCHEDULE_COL_GAP))));
+  const columns = Math.max(1, Math.min(rows.length, Math.floor((usableWidth + SCHEDULE_COL_GAP) / (columnW + SCHEDULE_COL_GAP))));
   const perColumn = Math.ceil(rows.length / columns);
 
   // The key sits beside the title when the band is wide enough, and wraps onto its own line(s)
@@ -647,7 +672,7 @@ function planSchedule(rows: ScheduleRow[], widthPx: number, title: string, keys:
   const titleW = textWidth(asciiish(title), SCHEDULE_TITLE_FONT);
   const keyW = keys.length > 0 ? keyItemWidths(keys).reduce((a, b) => a + b, (keys.length - 1) * KEY_ITEM_GAP) : 0;
   const keyInline = keyW > 0 && SCHEDULE_PAD + titleW + KEY_INLINE_GAP + keyW <= widthPx - SCHEDULE_PAD;
-  const wrapped = keyW > 0 && !keyInline ? keyLines(keys, usable) : [];
+  const wrapped = keyW > 0 && !keyInline ? keyLines(keys, usableWidth) : [];
 
   const titleBaseline = SCHEDULE_PAD + SCHEDULE_TITLE_FONT;
   const listTop = titleBaseline + wrapped.length * KEY_LINE_HEIGHT + SCHEDULE_TITLE_GAP;
@@ -710,16 +735,20 @@ function planSchedule(rows: ScheduleRow[], widthPx: number, title: string, keys:
     );
   });
 
-  const svg =
+  return { height, svg: bandSvg(widthPx, height, parts) };
+}
+
+/** The band's own chrome, shared by the key-only strip and the full schedule. */
+function bandSvg(widthPx: number, height: number, parts: string[]): string {
+  return (
     `<svg width="${widthPx}" height="${height}" xmlns="http://www.w3.org/2000/svg">` +
     `<rect width="${widthPx}" height="${height}" fill="#ffffff" />` +
     // A hairline where the band meets the drawing, so the two read as one sheet rather than an
     // image that happens to have white under it.
     `<line x1="0" y1="0.5" x2="${widthPx}" y2="0.5" stroke="${HAIRLINE}" stroke-width="1" />` +
     parts.join("\n    ") +
-    `</svg>`;
-
-  return { height, svg };
+    `</svg>`
+  );
 }
 
 export async function renderStandardMarkupImage(input: RenderMapInput): Promise<RenderMapResult> {
@@ -835,7 +864,12 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
   // and Measure send no schedule, so they keep the on-image key exactly as before — verified
   // byte-identical.
   const schedule = input.schedule ?? [];
-  const keyOnImage = schedule.length === 0;
+  // ⚠️ `keyInBand` is asked for, not inferred. Deriving it from "is there a schedule" meant that
+  // switching the summary off silently put the key back over the imagery — the exact collision
+  // that moved it into the band (Rhys, 2026-09-18, turning the summary and its pins off).
+  const keyInBand = input.keyInBand ?? false;
+  const keyOnImage = !keyInBand;
+  const wantsBand = schedule.length > 0 || keyInBand;
 
   // Chrome at fixed pixel size, composited over the stitched frame in one sharp call.
   const overlay = Buffer.from(
@@ -863,13 +897,15 @@ export async function renderStandardMarkupImage(input: RenderMapInput): Promise<
     .png()
     .toBuffer();
 
-  if (schedule.length === 0) {
+  if (!wantsBand) {
     return { imageBase64: drawing.toString("base64"), flags, widthPx: pxWidth, heightPx: pxHeight };
   }
 
   // The band is ADDED below the drawing, never drawn over it — the map stays whole, which is
   // the point of a client summary. Two sharp passes: the map has to be flattened before it can
   // be extended and have the band placed at its old bottom edge.
+  // ⚠️ No schedule + keyInBand = a key-only strip, and it carries NO TITLE: "Inspection summary"
+  // over an empty space is a heading for a list that was deliberately turned off.
   const band = planSchedule(schedule, pxWidth, input.scheduleTitle ?? "Properties", keys);
   const withSchedule = await sharp(drawing)
     .extend({ bottom: band.height, background: { r: 255, g: 255, b: 255, alpha: 1 } })

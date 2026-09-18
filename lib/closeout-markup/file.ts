@@ -49,6 +49,9 @@ export interface CloseoutMarkupFile {
    *  on open: re-resolving would re-spend a geocode AND could hand back a different parcel from
    *  the one that was signed off. */
   siteLots: CloseoutSiteLot[];
+  /** Whether the export carries the summary band and the numbered pins. Absent in every file
+   *  saved before 2026-09-18, which is why it reads as TRUE — that is what those exported. */
+  includeSummary: boolean;
   workOrderCount: number;
   mapType: MarkupMapType;
   /** ⚠️ Validated, not `unknown[]`. They were stored and then silently dropped on open, because
@@ -223,6 +226,9 @@ export function parseCloseoutFile(
             }))
             .filter((l) => l.ring.length >= 3)
         : [],
+      // ⚠️ `!== false`, not `=== true`: an older file has no such field and must reopen the way
+      // it was exported, which was with the summary on.
+      includeSummary: doc.includeSummary !== false,
       workOrderCount: isFiniteNumber(doc.workOrderCount) ? doc.workOrderCount : properties.length,
       mapType: MAP_TYPES.includes(doc.mapType as MarkupMapType) ? (doc.mapType as MarkupMapType) : "hybrid",
       shapes: parseSavedShapes(doc.shapes, shapeLimits).shapes,

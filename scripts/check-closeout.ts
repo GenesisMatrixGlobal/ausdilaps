@@ -19,6 +19,8 @@ import {
   looksLikeAddress,
 } from "../lib/closeout-markup/group";
 import { diagnoseCloseout, generateBlockedReason } from "../lib/closeout-markup/diagnose";
+import { parseCloseoutFile } from "../lib/closeout-markup/file";
+import { standardMarkupRenderRequestSchema } from "../lib/kml/standard-markup/schema";
 import { siteAddressSegments } from "../lib/closeout-markup/site";
 import type { WorkOrderRow } from "../lib/closeout-markup/types";
 
@@ -370,6 +372,66 @@ check("nothing ticked, many", generateBlockedReason(0, 39, 60)?.includes("Nothin
 check("nothing ticked, one", generateBlockedReason(0, 1, 60), "Tick the property in the sheet below to put it on the drawing.");
 check("over the cap says how many to untick", generateBlockedReason(698, 698, 60)?.includes("Untick 638"), true);
 check("a sendable selection has no reason", generateBlockedReason(6, 39, 60), null);
+
+// ── The summary switch ──────────────────────────────────────────────────────────────────────
+//
+// One toggle turns off the summary band AND the numbered pins, because a pin's number is only
+// readable against the list it indexes. Two things about it are load-bearing enough to pin.
+
+// 1. `keyInBand` must DEFAULT FALSE. Building Markup and Measure send no such field, and their
+//    exports are byte-identical only while the colour key stays on the imagery for them.
+const bare = standardMarkupRenderRequestSchema.parse({
+  subjectRing: [{ lat: -33.79, lng: 151.04 }, { lat: -33.79, lng: 151.05 }, { lat: -33.8, lng: 151.05 }],
+  neighbours: [],
+  bounds: { south: -33.8, west: 151.04, north: -33.79, east: 151.05 },
+});
+check("keyInBand defaults false", bare.keyInBand, false);
+check("no schedule by default", bare.schedule, []);
+
+// 2. keyInBand with an EMPTY schedule is the summary-off combination, and must be accepted —
+//    it is what produces the key-only strip instead of putting the key back over a property.
+const off = standardMarkupRenderRequestSchema.parse({
+  subjectRing: [],
+  hideSubject: true,
+  neighbours: [],
+  bounds: { south: -33.8, west: 151.04, north: -33.79, east: 151.05 },
+  keyInBand: true,
+  schedule: [],
+});
+check("summary-off payload is valid", off.keyInBand && off.schedule.length === 0, true);
+
+// 3. The save file. ⚠️ An older file has no `includeSummary` and must reopen the way it was
+//    exported, which was WITH the summary — so absent reads TRUE, not false.
+function fileWith(extra: Record<string, unknown>): string {
+  return JSON.stringify({
+    kind: "ausdilaps.closeout-markup",
+    version: 1,
+    savedAt: "2026-09-18T00:00:00.000Z",
+    opportunity: { id: "006x", name: "Job", url: null },
+    properties: [
+      {
+        property: {
+          key: "-33.79,151.04",
+          street: "5 Manson Street",
+          suburb: "Telopea",
+          point: { lat: -33.79, lng: 151.04 },
+          color: "green",
+          counts: { green: 1, red: 0, orange: 0 },
+          workOrders: 1,
+        },
+        selected: true,
+        point: { lat: -33.79, lng: 151.04 },
+      },
+    ],
+    ...extra,
+  });
+}
+const older = parseCloseoutFile(fileWith({}));
+check("a file saved before the toggle reopens with the summary ON", older.ok && older.file.includeSummary, true);
+const withOff = parseCloseoutFile(fileWith({ includeSummary: false }));
+check("the summary-off choice survives a round trip", withOff.ok && withOff.file.includeSummary, false);
+const withOn = parseCloseoutFile(fileWith({ includeSummary: true }));
+check("and so does summary-on", withOn.ok && withOn.file.includeSummary, true);
 
 const colours = properties.reduce<Record<string, number>>((acc, p) => {
   acc[p.color] = (acc[p.color] ?? 0) + 1;

@@ -95,6 +95,11 @@ export function CloseoutMarkupTool() {
   // project name rather than an address on 25% of them).
   const [siteLots, setSiteLots] = useState<CloseoutSiteLot[]>([]);
   const [siteNote, setSiteNote] = useState<string | null>(null);
+  // The inspection summary below the drawing, and with it the numbered pins ON the drawing.
+  // ⚠️ ONE switch for both, because a pin's number means nothing without the list it indexes —
+  // a client handed a drawing of numbered teardrops and no summary has no way to read it
+  // (Rhys, 2026-09-18). Rides in the save file so a reopened drawing exports the same way.
+  const [includeSummary, setIncludeSummary] = useState(true);
   const [generated, setGenerated] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -136,6 +141,12 @@ export function CloseoutMarkupTool() {
   }, [properties, parcels, deselected]);
 
   const numbers = useMemo(() => rowNumbers(rows), [rows]);
+  // What the DRAWING shows — the live map and the export read this, the sheet keeps its own
+  // numbering either way (it is the operator's index, not the client's cross-reference).
+  const drawnNumbers = useMemo(
+    () => (includeSummary ? numbers : new Map<string, number>()),
+    [includeSummary, numbers]
+  );
   const selectedRows = rows.filter((r) => r.selected);
   const overCap = selectedRows.length > MAX_CLOSEOUT_LOTS;
 
@@ -309,7 +320,7 @@ export function CloseoutMarkupTool() {
               id: r.property.key,
               ring: r.ring!,
               areaSqm: r.areaSqm,
-              label: String(numbers.get(r.property.key) ?? ""),
+              label: String(drawnNumbers.get(r.property.key) ?? ""),
               street: r.property.street,
               suburb: r.property.suburb,
               color: r.property.color,
@@ -320,25 +331,33 @@ export function CloseoutMarkupTool() {
           .map((r) => ({
             id: r.property.key,
             at: r.point,
-            label: String(numbers.get(r.property.key) ?? ""),
+            label: String(drawnNumbers.get(r.property.key) ?? ""),
             color: r.property.color,
           })),
         // The site row is added only when a site is actually drawn — the renderer filters the
         // key to colours on the drawing anyway, but keeping the caller honest costs nothing.
         legend: siteLots.length > 0 ? [...CLOSEOUT_LEGEND, SITE_LEGEND_ROW] : CLOSEOUT_LEGEND,
-        // The schedule beside the drawing: what a client needs to read it. Numbers come from the
-        // SAME `numbers` map the pins and the sheet use, and the colour is the property's own, so
-        // a row, a pin and an outline can never disagree about which property is item 12.
+        // ⚠️ TRUE whether or not there is a summary. The key belongs below the drawing either
+        // way; inferring the band from the schedule is what let it drift back over a property.
+        keyInBand: true,
+        // The summary below the drawing: what a client needs to read it. Numbers come from the
+        // SAME derivation as the pins and the sheet, and the colour is the property's own, so a
+        // row, a pin and an outline can never disagree about which property is item 12.
         //
         // Row order, which is the sheet's order (suburb then street, numeric-aware), so the list
         // reads like a walk down the job rather than like Salesforce's record order.
-        schedule: rows
-          .filter((r) => r.selected)
-          .map((r) => ({
-            label: String(numbers.get(r.property.key) ?? ""),
-            street: r.property.suburb ? `${r.property.street}, ${r.property.suburb}` : r.property.street,
-            color: r.property.color,
-          })),
+        //
+        // Empty when the operator turned it off — and `drawnNumbers` is empty in step, so the
+        // pins go with it.
+        schedule: includeSummary
+          ? rows
+              .filter((r) => r.selected)
+              .map((r) => ({
+                label: String(numbers.get(r.property.key) ?? ""),
+                street: r.property.suburb ? `${r.property.street}, ${r.property.suburb}` : r.property.street,
+                color: r.property.color,
+              }))
+          : [],
         scheduleTitle: "Inspection summary",
         mapType: camera.mapType,
         bounds: camera.bounds,
@@ -370,6 +389,7 @@ export function CloseoutMarkupTool() {
         })),
         unmapped,
         siteLots,
+        includeSummary,
         workOrderCount,
         mapType: mapRef.current?.getCamera()?.mapType ?? "hybrid",
         shapes: shapes.shapes
@@ -426,6 +446,7 @@ export function CloseoutMarkupTool() {
     // existed simply have none, and open exactly as they did.
     setSiteLots(parsed.file.siteLots);
     setSiteNote(null);
+    setIncludeSummary(parsed.file.includeSummary);
     // The hand-drawn shapes. ⚠️ They were saved and then dropped here — nothing restored them —
     // so a council asset or a hand-drawn project site vanished on reopen.
     shapes.replaceAll(parsed.file.shapes);
@@ -501,6 +522,17 @@ export function CloseoutMarkupTool() {
             >
               Save .json
             </button>
+            {/* One switch, two things — the numbered pins are only readable against this list, so
+                they come off with it. Said on the label so nobody has to discover it. */}
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ad-ink">
+              <input
+                type="checkbox"
+                checked={includeSummary}
+                onChange={(e) => setIncludeSummary(e.target.checked)}
+                className="size-4 shrink-0 accent-ad-steel"
+              />
+              Inspection summary <span className="text-ad-muted">(and numbered pins)</span>
+            </label>
             <button
               type="button"
               onClick={() => fileInput.current?.click()}
@@ -633,7 +665,12 @@ export function CloseoutMarkupTool() {
                   hideSubject
                   lots={lots}
                   points={points}
-                  numbers={numbers}
+                  numbers={
+                    // ⚠️ drawnNumbers, not numbers. With the summary off the export carries no
+                    // pins, so the preview must not show any either — an operator who frames a
+                    // drawing with pins visible and downloads one without them has been misled.
+                    drawnNumbers
+                  }
                   pickMode={false}
                   onPick={() => {}}
                   fitRequest={fitRequest}

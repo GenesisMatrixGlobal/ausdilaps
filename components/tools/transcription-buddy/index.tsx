@@ -50,6 +50,23 @@ type TranscribeResponse = {
   durationSeconds?: number;
 };
 
+/**
+ * How many files are transcribed at once.
+ *
+ * It was strictly one at a time, which for a single dictation is the right answer and for a real
+ * batch is not: 27 recordings at ~20 s each is nine minutes of staring at a queue. Deepgram's
+ * pre-recorded API takes concurrent jobs happily, and the work is all waiting on somebody else's
+ * server — the same reasoning as the parcel pool (5) and the bulk address pages (3) elsewhere.
+ *
+ * ⚠️ Three, not thirty. Each one in flight holds a Vercel function (`maxDuration = 290`), a
+ * Deepgram job and an Anthropic cleanup pass, and the ceiling that matters is somebody else's
+ * rate limit, not our patience.
+ */
+const BATCH_CONCURRENCY = 3;
+
+/** Failures in a row before the batch stops itself — see the note in `worker`. */
+const MAX_CONSECUTIVE_FAILURES = 3;
+
 const STATUS_LABEL: Record<Status, string> = {
   queued: "Queued",
   uploading: "Uploading…",
@@ -94,16 +111,22 @@ export function TranscriptionBuddyTool() {
   const fileInput = useRef<HTMLInputElement>(null);
   const { copied, failed, copy } = useCopied();
 
-  // The processing loop reads the queue through a ref so files dropped mid-run join the end
-  // of the same run rather than starting a second one beside it.
+  // ⚠️ The REF is the queue; `items` only mirrors it for rendering. Every mutation writes the
+  // ref synchronously and then hands the same array to setItems.
+  //
+  // That used to be the other way round — setItems with a functional update, and an effect
+  // copying `items` back into the ref. Fine for one worker, a DOUBLE-TRANSCRIBE with several:
+  // React had not re-rendered yet, so two workers calling find() in the same tick both saw the
+  // same file still "queued" and both paid for it.
   const itemsRef = useRef<Item[]>([]);
   const running = useRef(false);
-  useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
+  /** Trips the circuit breaker below. Reset by any success. */
+  const consecutiveFailures = useRef(0);
+  const [halted, setHalted] = useState<string | null>(null);
 
   const patch = useCallback((id: string, changes: Partial<Item>) => {
-    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...changes } : it)));
+    itemsRef.current = itemsRef.current.map((it) => (it.id === id ? { ...it, ...changes } : it));
+    setItems(itemsRef.current);
   }, []);
 
   const busy = items.some((it) => it.status === "uploading" || it.status === "transcribing");
@@ -121,7 +144,6 @@ export function TranscriptionBuddyTool() {
   const processOne = useCallback(
     async (item: Item) => {
       try {
-        patch(item.id, { status: "uploading", error: undefined });
         const prep = await fetch("/api/transcription/upload-url", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -150,8 +172,10 @@ export function TranscriptionBuddyTool() {
           cleanupNote: json.cleanupNote ?? null,
           durationSeconds: json.durationSeconds ?? 0,
         });
+        consecutiveFailures.current = 0;
       } catch (e) {
         patch(item.id, { status: "failed", error: (e as Error).message });
+        consecutiveFailures.current += 1;
       }
     },
     [patch]
@@ -160,16 +184,43 @@ export function TranscriptionBuddyTool() {
   const runQueue = useCallback(async () => {
     if (running.current) return;
     running.current = true;
+    consecutiveFailures.current = 0;
+    setHalted(null);
     try {
-      for (;;) {
+      /** Take the next queued file and mark it taken IN THE SAME TICK — see the ref note above. */
+      const claim = (): Item | null => {
         const next = itemsRef.current.find((it) => it.status === "queued");
-        if (!next) break;
-        await processOne(next);
+        if (!next) return null;
+        patch(next.id, { status: "uploading", error: undefined });
+        return next;
+      };
+
+      const worker = async () => {
+        for (;;) {
+          // ⚠️ A run of failures STOPS the batch. Without this, a wrong Deepgram key or an
+          // account out of credit fails all 27 files one at a time — and each one has already
+          // pushed its megabytes to Storage by the time the transcribe call answers. You would
+          // come back to 27 identical errors and a few hundred MB uploaded for nothing.
+          if (consecutiveFailures.current >= MAX_CONSECUTIVE_FAILURES) return;
+          const next = claim();
+          if (!next) return;
+          await processOne(next);
+        }
+      };
+
+      await Promise.all(Array.from({ length: BATCH_CONCURRENCY }, worker));
+
+      if (consecutiveFailures.current >= MAX_CONSECUTIVE_FAILURES) {
+        const stillQueued = itemsRef.current.filter((it) => it.status === "queued").length;
+        setHalted(
+          `Stopped after ${MAX_CONSECUTIVE_FAILURES} failures in a row${stillQueued ? `, with ${stillQueued} still to go` : ""}. ` +
+            `Read the error below — it is the same for all of them — then press Resume.`
+        );
       }
     } finally {
       running.current = false;
     }
-  }, [processOne]);
+  }, [patch, processOne]);
 
   const addFiles = useCallback(
     (files: FileList | File[]) => {
@@ -185,8 +236,7 @@ export function TranscriptionBuddyTool() {
         }
       }
       if (!fresh.length) return;
-      // Update the ref synchronously too: runQueue() reads it in the same tick, before the
-      // state above has rendered.
+      // Synchronous, because runQueue() reads the ref in this same tick.
       itemsRef.current = [...itemsRef.current, ...fresh];
       setItems(itemsRef.current);
       void runQueue();
@@ -204,7 +254,26 @@ export function TranscriptionBuddyTool() {
   );
 
   const done = items.filter((it) => it.status === "done");
+  const failedCount = items.filter((it) => it.status === "failed").length;
+  const settled = done.length + failedCount;
+
+  // ⚠️ The TAB TITLE carries the progress, because the whole point of a batch is that you walk
+  // away from it — and a spinner nobody is looking at tells nobody anything. Restored on the way
+  // out so the tab does not keep a stale count after the run.
+  useEffect(() => {
+    if (!busy || items.length < 2) return;
+    const original = document.title;
+    document.title = `(${settled}/${items.length}) ${original.replace(/^\(\d+\/\d+\)\s*/, "")}`;
+    return () => {
+      document.title = original.replace(/^\(\d+\/\d+\)\s*/, "");
+    };
+  }, [busy, settled, items.length]);
+
   const textFor = (it: Item) => (view === "raw" ? it.raw : it.cleaned) ?? "";
+  // ⚠️ DROP ORDER, not finish order. With several workers a short file routinely lands before a
+  // long one dropped ahead of it, but the transcript is built by filtering `items` — which patch()
+  // only ever maps over, so positions never move. The typing skill reads a batch top to bottom
+  // against the operator's own file list, so this has to be the order they dropped them in.
   const output = formatBatch(done.map(textFor));
   const anyCleaned = done.some((it) => it.cleanedChanged);
   const cleanupNote = done.find((it) => it.cleanupNote)?.cleanupNote ?? null;
@@ -260,7 +329,8 @@ export function TranscriptionBuddyTool() {
         </p>
         {!items.length && (
           <p className="max-w-md text-sm text-ad-muted">
-            Several files at once is fine — they run one after another. A 15-minute dictation takes about a minute.
+            Drop the whole job in — {BATCH_CONCURRENCY} transcribe at a time and the rest queue behind them. A
+            15-minute dictation takes about a minute.
           </p>
         )}
       </div>
@@ -296,12 +366,27 @@ export function TranscriptionBuddyTool() {
             >
               Clear
             </button>
-            {busy && (
+            {halted && (
+              <button
+                type="button"
+                className={cn(buttonVariants({ variant: "accent", size: "md" }))}
+                onClick={() => void runQueue()}
+              >
+                Resume
+              </button>
+            )}
+            {/* One line for the whole batch. "Working… 143s" on its own does not say how far
+                through 27 files it is, which is the only question worth answering here. */}
+            {(busy || settled > 0) && (
               <span className="text-sm text-ad-muted">
-                Working… {elapsed}s
+                {items.length > 1 ? `${settled} of ${items.length} done` : busy ? "Working" : "Done"}
+                {failedCount > 0 && <span className="text-ad-orange">{` · ${failedCount} failed`}</span>}
+                {busy && ` · ${elapsed}s`}
               </span>
             )}
           </div>
+
+          {halted && <p className="mt-2 text-sm text-ad-orange">{halted}</p>}
 
           <p className="mt-2 text-sm text-ad-muted">
             {cleanupNote
@@ -346,7 +431,9 @@ export function TranscriptionBuddyTool() {
                   <button
                     type="button"
                     className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-                    disabled={busy}
+                    // Not disabled while busy any more — with several workers there is one free
+                    // to pick a retry up, and on a 27-file run waiting for the whole batch to
+                    // finish before you can re-queue one file is the wrong trade.
                     onClick={() => retry(it.id)}
                   >
                     Retry

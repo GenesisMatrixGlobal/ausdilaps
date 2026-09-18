@@ -9,7 +9,7 @@
 // parsing that hands Deepgram the street name. Exits non-zero on any failure.
 
 import { formatBatch, formatTranscript, splitHeader, timestamp, timestampLines } from "@/lib/transcription/format";
-import { DICTATION_KEYTERMS, keytermsFor, keytermsForFile } from "@/lib/transcription/keyterms";
+import { DICTATION_KEYTERMS, STAFF_NAMES, keytermsFor, keytermsForFile } from "@/lib/transcription/keyterms";
 
 let failures = 0;
 function fail(msg: string) {
@@ -91,7 +91,17 @@ eq(keytermsFor(".mp3").length, 0, "no stem yields nothing");
 
 const full = keytermsForFile("11 Emeraldwood st.mp3");
 eq(full[0], "Emeraldwood Street", "the file's own street comes first");
-eq(full.length, DICTATION_KEYTERMS.length + 1, "vocabulary follows, nothing duplicated");
+// ⚠️ Was `DICTATION_KEYTERMS.length + 1`, which quietly asserted the list is the file's street
+// plus the trade vocabulary and nothing else. Staff NAMES joined it on 2026-09-18 after the first
+// live run transcribed "This is Rhys Morgan" as "This is Reese Morgan" — so the composition is
+// spelled out here rather than encoded as a magic +1.
+eq(
+  full.length,
+  1 + STAFF_NAMES.length + DICTATION_KEYTERMS.length,
+  "street, then names, then vocabulary — nothing duplicated"
+);
+// The opening sentence of every dictation says a name, so one has to be in the list.
+eq(full.includes("Rhys Morgan"), true, "staff names are prompted for");
 eq(new Set(full).size, full.length, "no duplicate keyterms");
 // Deepgram caps the list at 500 tokens; ~1.5 tokens a word is a safe planning figure.
 const words = full.join(" ").split(/\s+/).length;

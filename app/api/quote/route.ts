@@ -7,6 +7,9 @@ import { SITE } from "@/lib/site";
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+/** Once per cold start, not per submission. */
+let warnedUnprotected = false;
+
 async function verifyTurnstile(secret: string, token: string, ip: string | null) {
   try {
     const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
@@ -104,7 +107,11 @@ async function sendEmails(
   });
 
   // Acknowledgement (routed to admin in test mode)
-  const firstName = d.name.split(" ")[0];
+  // The ack goes to whatever address was typed, so anything reflected into it is a
+  // free DKIM-signed message from us to a stranger. A "first name" that is a URL or an
+  // email gets a neutral greeting instead of an autolinked one.
+  const firstName = d.name.split(/\s+/)[0] ?? "";
+  const greeting = /[/:@\\]/.test(firstName) || firstName.length > 30 ? "Hi there" : `Hi ${esc(firstName)}`;
   const ackSent = await send({
     from,
     to: [testMode ? adminEmail : d.email],
@@ -116,7 +123,7 @@ async function sendEmails(
         <p style="color:#ffffff;font-size:18px;font-weight:700;margin:0;">Quote request received.</p>
       </div>
       <div style="padding:36px;">
-        <p style="margin-top:0;">Hi ${esc(firstName)},</p>
+        <p style="margin-top:0;">${greeting},</p>
         <p style="line-height:1.7;">Thanks for your enquiry. We've received the details of your project and will scope it and come back to you shortly.</p>
         <p style="line-height:1.7;">If it's urgent, call us on <strong>${SITE.phone}</strong> or reply to this email.</p>
         <p style="color:#5b6570;font-size:14px;margin-bottom:0;">— The AusDilaps team</p>
@@ -154,9 +161,14 @@ export async function POST(req: NextRequest) {
   // Honeypot — silently accept and drop bots.
   if (d.company_website) return NextResponse.json({ ok: true });
 
-  // Turnstile (only enforced when configured).
+  // Turnstile. Enforced whenever the widget is on the form (site key set) — and then a
+  // missing secret FAILS CLOSED rather than quietly waving every submission through, which
+  // is what the 2026-09-10 sweep found production doing on the honeypot alone. With
+  // NEITHER key set the form still works, unprotected, and says so once per cold start:
+  // taking the enquiry form down over a missing env var is worse than spam.
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const tsSecret = process.env.TURNSTILE_SECRET_KEY;
+  const tsSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   if (tsSecret) {
     const ok = await verifyTurnstile(tsSecret, d.turnstileToken, ip);
     if (!ok) {
@@ -165,6 +177,15 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+  } else if (tsSiteKey) {
+    console.error("[quote] NEXT_PUBLIC_TURNSTILE_SITE_KEY is set but TURNSTILE_SECRET_KEY is not — refusing.");
+    return NextResponse.json(
+      { ok: false, error: "Verification is not configured. Please email us instead." },
+      { status: 503 }
+    );
+  } else if (!warnedUnprotected) {
+    warnedUnprotected = true;
+    console.warn("[quote] Turnstile is not configured — the enquiry form is running on the honeypot alone.");
   }
 
   const tier = classifyTier(d);

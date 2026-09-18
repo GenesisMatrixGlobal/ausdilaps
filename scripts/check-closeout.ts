@@ -18,6 +18,7 @@ import {
   isInspection,
   looksLikeAddress,
 } from "../lib/closeout-markup/group";
+import { diagnoseCloseout, generateBlockedReason } from "../lib/closeout-markup/diagnose";
 import { siteAddressSegments } from "../lib/closeout-markup/site";
 import type { WorkOrderRow } from "../lib/closeout-markup/types";
 
@@ -250,6 +251,125 @@ check("an intersection splits into two streets", siteAddressSegments("Corner Nis
 ]);
 check("empty in, empty out", siteAddressSegments(null), []);
 check("whitespace only", siteAddressSegments("   "), []);
+
+// ── Why it can't draw ───────────────────────────────────────────────────────────────────────
+//
+// The tool hides its whole toolbar, sheet and map behind "are there properties", so these are
+// the strings an operator sees INSTEAD of a drawing. Each has to name the records to go and fix,
+// which is the only thing that makes the message worth showing.
+const noWork = diagnoseCloseout({
+  opportunityName: "PRE OPT-99999 Somewhere",
+  workOrderCount: 0,
+  propertyCount: 0,
+  skipped: [],
+  unmapped: [],
+  councilAssets: [],
+});
+check("no work orders is explained", noWork !== null, true);
+check("names the opportunity", noWork?.headline.includes("PRE OPT-99999 Somewhere"), true);
+// The likeliest cause by a distance — this org runs a PRE and a POST per job.
+check("points at the PRE/POST twin", noWork?.next.includes("PRE and POST"), true);
+
+const billingOnly = diagnoseCloseout({
+  opportunityName: "X",
+  workOrderCount: 0,
+  propertyCount: 0,
+  skipped: [
+    { id: "0WO1", number: "00038436", street: "Access Letters", workType: "Billing Item" },
+    { id: "0WO2", number: "00038437", street: "Induction", workType: "Billing Item" },
+  ],
+  unmapped: [],
+  councilAssets: [],
+});
+check("all-billing is explained", billingOnly?.headline.includes("2 billing or admin work orders"), true);
+// ⚠️ The work order NUMBER is the thing staff search on in Salesforce, and the id is what the
+// panel links. A message naming neither is not actionable.
+check("lists the work order numbers", billingOnly?.items.map((i) => i.number), ["00038436", "00038437"]);
+check("carries the record id to link", billingOnly?.items.map((i) => i.id), ["0WO1", "0WO2"]);
+check("says what each one is", billingOnly?.items[0].reason, "Billing Item — not an inspection");
+check("tells them to fix the Work Type", billingOnly?.next.includes("Work Type"), true);
+
+const noGeocode = diagnoseCloseout({
+  opportunityName: "X",
+  workOrderCount: 3,
+  propertyCount: 0,
+  skipped: [],
+  unmapped: [1, 2, 3].map((n) => ({
+    id: `0WO${n}`,
+    number: `000384${n}0`,
+    street: `${n} Nowhere Street`,
+    reason: "No location on the work order",
+    coverPhotoUrl: null,
+    siteMarkupUrl: null,
+  })),
+  councilAssets: [],
+});
+check("all-ungeocoded is explained", noGeocode?.headline.includes("3 inspections"), true);
+// One cause, one instruction — this is a data fix in Salesforce, not the operator's mistake.
+check("names the fields to check", noGeocode?.next.includes("Street, City, State and Postcode"), true);
+
+// ⚠️ Must NOT promise a map to draw on: Generate needs a placeable property to frame, so a
+// council-asset-only job has no map at all. Saying otherwise sends the operator hunting for one.
+const councilOnly = diagnoseCloseout({
+  opportunityName: "X",
+  workOrderCount: 1,
+  propertyCount: 0,
+  skipped: [],
+  unmapped: [],
+  councilAssets: [
+    { workOrderId: "0WO9", number: "00038436", street: "Council assets, 1-5 Polding Place", suburb: "Telopea", workType: "Ext/CA GPS", color: "green", coverPhotoUrl: "https://x", siteMarkupUrl: null },
+  ],
+});
+check("council-only is explained", councilOnly?.headline.includes("external GPS or council asset"), true);
+check("does not promise a blank markup", councilOnly?.next.includes("blank markup"), false);
+check("says a map needs a placeable property", councilOnly?.next.includes("before a map will open"), true);
+
+// Mixed: every bucket named, every record listed.
+const mixed = diagnoseCloseout({
+  opportunityName: "X",
+  workOrderCount: 2,
+  propertyCount: 0,
+  skipped: [{ id: "0WOa", number: "1", street: "Training", workType: "Training" }],
+  unmapped: [{ id: "0WOb", number: "2", street: "Winter Street", reason: "Not a street address", coverPhotoUrl: null, siteMarkupUrl: null }],
+  councilAssets: [
+    { workOrderId: "0WOc", number: "3", street: "Kerb", suburb: null, workType: "Ext/CA GPS", color: "red", coverPhotoUrl: null, siteMarkupUrl: null },
+  ],
+});
+check("mixed names all three buckets", mixed?.headline, "Nothing on this opportunity can be drawn: 1 billing or admin work order, 1 external GPS or council asset and 1 inspection that couldn't be placed.");
+check("mixed lists every record", mixed?.total, 3);
+
+// The one case that must stay silent: there IS something to draw, so the sheet takes over.
+check(
+  "a drawable job is not blocked",
+  diagnoseCloseout({
+    opportunityName: "X",
+    workOrderCount: 25,
+    propertyCount: 6,
+    skipped: [{ id: "0WOz", number: "9", street: "Access Letters", workType: "Billing Item" }],
+    unmapped: [],
+    councilAssets: [],
+  }),
+  null
+);
+// And the real fixture job, which has 39 properties, must never show this panel.
+check(
+  "the fixture job is not blocked",
+  diagnoseCloseout({
+    opportunityName: "PRE OPT-34851",
+    workOrderCount: 252,
+    propertyCount: properties.length,
+    skipped,
+    unmapped,
+    councilAssets,
+  }),
+  null
+);
+
+// ── Why the Generate button is off ──────────────────────────────────────────────────────────
+check("nothing ticked, many", generateBlockedReason(0, 39, 60)?.includes("Nothing is ticked"), true);
+check("nothing ticked, one", generateBlockedReason(0, 1, 60), "Tick the property in the sheet below to put it on the drawing.");
+check("over the cap says how many to untick", generateBlockedReason(698, 698, 60)?.includes("Untick 638"), true);
+check("a sendable selection has no reason", generateBlockedReason(6, 39, 60), null);
 
 const colours = properties.reduce<Record<string, number>>((acc, p) => {
   acc[p.color] = (acc[p.color] ?? 0) + 1;

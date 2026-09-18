@@ -33,9 +33,11 @@ import {
 } from "@/lib/closeout-markup/types";
 import type { CloseoutProperty, CloseoutSiteLot, ResolvedCloseoutSite } from "@/lib/closeout-markup/types";
 import { buildCloseoutFile, parseCloseoutFile } from "@/lib/closeout-markup/file";
+import { diagnoseCloseout, generateBlockedReason } from "@/lib/closeout-markup/diagnose";
 import { MARKUP_STYLES } from "@/lib/kml/standard-markup/style";
 import type { LatLng } from "@/lib/kml/types";
 import { CLOSEOUT_SHAPE_PALETTE, DrawByHand } from "./draw-by-hand";
+import { CannotDraw } from "./cannot-draw";
 import { OpportunityCard } from "./opportunity-card";
 import { StatusTable } from "./status-table";
 import { FileToSalesforce } from "./file-to-salesforce";
@@ -107,6 +109,11 @@ export function CloseoutMarkupTool() {
   // Bumped by every resolve and open, so a slow parcel batch from a previous opportunity can
   // never write its results into the one now on screen.
   const runRef = useRef(0);
+  // ⚠️ A COUNTER, not the clock. A fit key only has to differ from the last one, and calling an
+  // impure function inside code the React compiler treats as render-reachable is something it
+  // rejects outright — it only began reporting once the diagnose useMemo below let it analyse
+  // this component further, but the smell was already there.
+  const fitSeq = useRef(0);
 
   // ONE derivation, feeding the sheet, the map badges and the export payload — so all three
   // agree about what item 4 is. Same rule as the quote sheet's: 1..N over the ticked rows in
@@ -263,7 +270,7 @@ export function CloseoutMarkupTool() {
       setGenerated(true);
       // The site is framed WITH the properties: it is usually in the middle of them, but on a
       // job where the works sit at one end, leaving it out would frame it off the edge.
-      frameFrom([...json.parcels, ...site.lots.map((l) => ({ ring: l.ring, point: l.point }))], `${opportunity.id}:${Date.now()}`);
+      frameFrom([...json.parcels, ...site.lots.map((l) => ({ ring: l.ring, point: l.point }))], `${opportunity.id}:${++fitSeq.current}`);
     } catch (e) {
       if (run === runRef.current) setError((e as Error).message);
     } finally {
@@ -425,7 +432,7 @@ export function CloseoutMarkupTool() {
     setGenerated(true);
     frameFrom(
       [...parsed.file.properties, ...parsed.file.siteLots.map((l) => ({ ring: l.ring, point: l.point }))],
-      `open:${Date.now()}`
+      `open:${++fitSeq.current}`
     );
     if (parsed.skipped > 0) {
       setError(`${parsed.skipped} propert${parsed.skipped === 1 ? "y" : "ies"} in that file couldn't be read and were skipped.`);
@@ -438,9 +445,31 @@ export function CloseoutMarkupTool() {
     return acc;
   }, [rows]);
 
+  // Why there is no drawing, when there is no drawing. Null the moment there is one property to
+  // draw — at which point the sheet and its own per-row notes take over.
+  const blocker = useMemo(
+    () =>
+      opportunity
+        ? diagnoseCloseout({
+            opportunityName: opportunity.name,
+            workOrderCount,
+            propertyCount: properties.length,
+            skipped,
+            unmapped,
+            councilAssets,
+          })
+        : null,
+    [opportunity, workOrderCount, properties.length, skipped, unmapped, councilAssets]
+  );
+
+  // A disabled button with no reason reads as a broken tool.
+  const blockedReason = generateBlockedReason(selectedRows.length, rows.length, MAX_CLOSEOUT_LOTS);
+
   return (
     <div>
       <OpportunityCard onResolved={onResolved} onReset={reset} opportunity={opportunity} workOrderCount={workOrderCount} />
+
+      {blocker && <CannotDraw blocker={blocker} opportunityUrl={opportunity?.url ?? null} />}
 
       {properties.length > 0 && (
         <>
@@ -509,6 +538,7 @@ export function CloseoutMarkupTool() {
               />
             )}
             {error && <span className="text-sm text-ad-orange">{error}</span>}
+            {!error && blockedReason && <span className="text-sm text-ad-orange">{blockedReason}</span>}
           </div>
 
           {/* What came out of Salesforce, and what it collapsed to. The collapse is the whole
@@ -591,7 +621,7 @@ export function CloseoutMarkupTool() {
                     a 39-row sheet would be worse — so this is how the frame catches up. */}
                 <button
                   type="button"
-                  onClick={() => frameFrom(rows.filter((r) => r.selected), `fit:${Date.now()}`)}
+                  onClick={() => frameFrom(rows.filter((r) => r.selected), `fit:${++fitSeq.current}`)}
                   className="absolute right-3 top-16 z-10 rounded-lg border border-ad-border bg-white/95 px-2.5 py-1.5 text-xs font-medium text-ad-ink shadow-sm backdrop-blur-sm hover:bg-white"
                 >
                   Fit to properties
@@ -615,42 +645,26 @@ export function CloseoutMarkupTool() {
             </div>
           )}
 
-          <StatusTableSection
+          <StatusTable
             rows={rows}
             onToggle={toggle}
             onToggleAll={toggleAll}
             onExport={() => downloadBlob(closeoutCsv(rows), `${filenameStem}.csv`, "text/csv;charset=utf-8")}
             capped={overCap}
             max={MAX_CLOSEOUT_LOTS}
-            unmapped={unmapped}
-            councilAssets={councilAssets}
           />
         </>
+      )}
+
+      {/* ⚠️ OUTSIDE the properties check. Everything the automatic pass could not draw, with the
+          reference image for each — and a job whose work orders are ALL council assets needs these
+          more than any other, while having no properties at all. They were behind the same gate as
+          the toolbar, so on exactly that job the links the operator was told to open did not
+          render. Never folded away either: hiding them would let a closeout look complete when it
+          is not. */}
+      {(councilAssets.length > 0 || unmapped.length > 0) && (
+        <DrawByHand councilAssets={councilAssets} unmapped={unmapped} />
       )}
     </div>
   );
 }
-
-// Split out only so the tool's own render stays readable.
-function StatusTableSection(props: {
-  rows: CloseoutRow[];
-  onToggle: (key: string) => void;
-  onToggleAll: (selected: boolean) => void;
-  onExport: () => void;
-  capped: boolean;
-  max: number;
-  unmapped: UnmappedWorkOrder[];
-  councilAssets: CouncilAsset[];
-}) {
-  const { unmapped, councilAssets, ...table } = props;
-  return (
-    <>
-      <StatusTable {...table} />
-      {/* Everything the automatic pass could not draw, directly under the sheet and never
-          folded away. These are real work orders with real statuses; hiding them behind a
-          disclosure would let a closeout look complete when it is not. */}
-      <DrawByHand councilAssets={councilAssets} unmapped={unmapped} />
-    </>
-  );
-}
-

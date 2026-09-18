@@ -141,8 +141,8 @@ export function CloseoutMarkupTool() {
   }, [properties, parcels, deselected]);
 
   const numbers = useMemo(() => rowNumbers(rows), [rows]);
-  // What the DRAWING shows — the live map and the export read this, the sheet keeps its own
-  // numbering either way (it is the operator's index, not the client's cross-reference).
+  // What the EXPORTED IMAGE shows. ⚠️ The export only — the live map reads `numbers` directly and
+  // always has badges, and the sheet keeps its own numbering. See the note on MarkupMap below.
   const drawnNumbers = useMemo(
     () => (includeSummary ? numbers : new Map<string, number>()),
     [includeSummary, numbers]
@@ -522,8 +522,12 @@ export function CloseoutMarkupTool() {
             >
               Save .json
             </button>
-            {/* One switch, two things — the numbered pins are only readable against this list, so
-                they come off with it. Said on the label so nobody has to discover it. */}
+            {/* ⚠️ The label names the EXPORTED IMAGE on purpose. Worded as just "Inspection
+                summary" it read as a change to what the tool draws or which properties are
+                ticked, which is the confusion it caused (Rhys, 2026-09-18). It governs the
+                export and nothing else — the map, the sheet and the tick state are untouched.
+                The pins are named too, because they go with the list: a number on a client's
+                drawing that indexes a list the drawing doesn't carry explains nothing. */}
             <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ad-ink">
               <input
                 type="checkbox"
@@ -531,7 +535,8 @@ export function CloseoutMarkupTool() {
                 onChange={(e) => setIncludeSummary(e.target.checked)}
                 className="size-4 shrink-0 accent-ad-steel"
               />
-              Inspection summary <span className="text-ad-muted">(and numbered pins)</span>
+              Summary list on the exported image
+              <span className="text-ad-muted">(and its pin numbers)</span>
             </label>
             <button
               type="button"
@@ -666,10 +671,17 @@ export function CloseoutMarkupTool() {
                   lots={lots}
                   points={points}
                   numbers={
-                    // ⚠️ drawnNumbers, not numbers. With the summary off the export carries no
-                    // pins, so the preview must not show any either — an operator who frames a
-                    // drawing with pins visible and downloads one without them has been misled.
-                    drawnNumbers
+                    // ⚠️ `numbers`, NOT `drawnNumbers` — the ONE place in this pipeline where the
+                    // preview deliberately shows more than the export, reversed on Rhys's
+                    // instruction (2026-09-18) after a first cut stripped these too.
+                    //
+                    // The badges on screen are how an operator checks property 4 on the map
+                    // against row 4 of the sheet; that job does not stop mattering because the
+                    // client's copy won't carry numbers. And the usual argument against drift
+                    // does not apply here: the operator ticked a checkbox that says "on the
+                    // exported image", so the export's contents are their own explicit choice
+                    // rather than something the tool quietly did differently.
+                    numbers
                   }
                   pickMode={false}
                   onPick={() => {}}

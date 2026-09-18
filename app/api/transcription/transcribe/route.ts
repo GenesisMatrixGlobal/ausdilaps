@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isStaffInAnyDepartment } from "@/lib/auth/is-staff";
+import { getStaffUser } from "@/lib/auth/session";
 import { recordToolUse } from "@/lib/tools/usage";
 import { after } from "next/server";
 import {
@@ -53,7 +54,9 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-  after(() => recordToolUse(TRANSCRIPTION_TOOL_SLUG));
+  // getStaffUser() is memoised per request, so this is the gate's own lookup, not a second one.
+  const user = await getStaffUser();
+  after(() => recordToolUse(TRANSCRIPTION_TOOL_SLUG, user?.id));
 
   const { path, name } = parsed.data;
   try {

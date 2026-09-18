@@ -21,6 +21,37 @@ function inviteAge(iso: string | null): string | null {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
+/** "just now" / "3 hours ago" / "5 days ago" / "12 Aug" — the resolution a manager glancing
+ *  down the list actually wants. Past a month the day is more useful than the count. */
+function relativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 60) return minutes < 2 ? "just now" : `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 31) return `${days} day${days === 1 ? "" : "s"} ago`;
+  return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+}
+
+/** Whichever is later: the last page they opened (profiles.last_seen_at, written every 15
+ *  minutes while they use the portal) or auth's last sign-in. A magic-link session lasts
+ *  weeks, so sign-in alone would call a daily user idle; last_seen_at alone misses anyone
+ *  who signed in before it started being written. */
+function lastActive(row: StaffRow): string | null {
+  const a = row.last_seen_at ? new Date(row.last_seen_at).getTime() : 0;
+  const b = row.last_sign_in_at ? new Date(row.last_sign_in_at).getTime() : 0;
+  const t = Math.max(a, b);
+  return t > 0 ? new Date(t).toISOString() : null;
+}
+
+/** Per-person tool use over the last 30 days, resolved to titles by the server. */
+export type StaffUsage = {
+  last30Days: number;
+  lastUsedAt: string | null;
+  byTool: { title: string; count: number }[];
+};
+
 /** Supabase invite links are short-lived, so an old unaccepted invite needs resending
  *  rather than chasing. Three days is comfortably past any sensible expiry. */
 function isStale(iso: string | null): boolean {
@@ -32,10 +63,12 @@ export function StaffTable({
   rows,
   departments,
   currentUserId,
+  usage,
 }: {
   rows: StaffRow[];
   departments: Department[];
   currentUserId: string;
+  usage: Record<string, StaffUsage>;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [result, setResult] = useState<ActionResult | null>(null);
@@ -77,6 +110,8 @@ export function StaffTable({
         {rows.map((row) => {
           const isSelf = row.id === currentUserId;
           const isAdminRole = row.role === "admin" || row.role === "superadmin";
+          const active = lastActive(row);
+          const use = usage[row.id];
 
           return (
             <div key={row.id} className="p-4 sm:p-5">
@@ -120,6 +155,29 @@ export function StaffTable({
                             .join(", ")
                         : "No departments assigned"}
                   </p>
+                  {/* Who is actually using the portal. One muted line: when they were last on
+                      it, then what they did with the tools this month. A pending invite has
+                      neither and gets the orange note below instead. */}
+                  {active && (
+                    <p className="mt-1.5 text-sm text-ad-muted">
+                      <span className="text-ad-ink">Last active {relativeTime(active)}</span>
+                      {" · "}
+                      {use && use.last30Days > 0 ? (
+                        <>
+                          <span className="font-semibold tabular-nums text-ad-ink">{use.last30Days}</span>{" "}
+                          tool {use.last30Days === 1 ? "use" : "uses"} · 30d
+                          {use.byTool.length > 0 && (
+                            <>
+                              {": "}
+                              {use.byTool.map((t) => `${t.title} ${t.count}`).join(", ")}
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        "no tool uses · 30d"
+                      )}
+                    </p>
+                  )}
                   {row.is_active && !row.last_sign_in_at && (
                     <p className="mt-1.5 text-sm text-ad-orange">
                       {inviteAge(row.invited_at) === null

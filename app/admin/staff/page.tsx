@@ -1,12 +1,28 @@
 import { requireAdmin } from "@/lib/auth/session";
 import { DEPARTMENTS } from "@/lib/departments";
+import { getTool } from "@/lib/tools/registry";
+import { loadToolUsageByUser } from "@/lib/tools/usage";
 import { listStaff } from "./actions";
 import { InviteStaff } from "./invite-staff";
-import { StaffTable } from "./staff-table";
+import { StaffTable, type StaffUsage } from "./staff-table";
 
 export default async function AdminStaffPage() {
   const admin = await requireAdmin("/admin/staff");
-  const { rows, error } = await listStaff();
+  const [{ rows, error }, usageByUser] = await Promise.all([listStaff(), loadToolUsageByUser()]);
+
+  // A Map does not cross the server→client boundary, and the client has no registry to turn
+  // a slug into a title — so both are resolved here and handed over as plain data.
+  const usage: Record<string, StaffUsage> = {};
+  for (const [userId, stat] of usageByUser) {
+    usage[userId] = {
+      last30Days: stat.last30Days,
+      lastUsedAt: stat.lastUsedAt,
+      byTool: stat.byTool.map((t) => ({
+        title: getTool(t.toolSlug)?.title ?? t.toolSlug,
+        count: t.count,
+      })),
+    };
+  }
 
   return (
     <div>
@@ -28,8 +44,14 @@ export default async function AdminStaffPage() {
       )}
 
       <div className="mt-8">
-        <StaffTable rows={rows} departments={DEPARTMENTS} currentUserId={admin.id} />
+        <StaffTable rows={rows} departments={DEPARTMENTS} currentUserId={admin.id} usage={usage} />
       </div>
+
+      <p className="mt-4 max-w-3xl text-xs leading-relaxed text-ad-muted">
+        &ldquo;Last active&rdquo; is the last time they opened any staff page, to the nearest 15 minutes.
+        Tool uses count the last 30 days and exclude games. Uses recorded before per-person tracking
+        was switched on aren&rsquo;t attributed to anyone.
+      </p>
     </div>
   );
 }

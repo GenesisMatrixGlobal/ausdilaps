@@ -95,8 +95,8 @@ error — that is on purpose. Read `departmentsFor(tool)` rather than `tool.depa
 anywhere both kinds are handled.
 
 **This costs no migration, and never will.** The tool-to-department mapping lives only in
-`lib/tools/registry.ts`; nothing in Postgres records it, and `tool_usage` stores a bare slug
-with no department column. The one database cost of a *game* specifically is its own
+`lib/tools/registry.ts`; nothing in Postgres records it, and `tool_usage` stores a slug and
+(since 0020) the user, with no department column. The one database cost of a *game* specifically is its own
 leaderboard table, if it keeps scores (decided 2026-09-08: a table per game, not a shared
 one).
 

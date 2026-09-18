@@ -2,7 +2,8 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/auth/session";
 import { DEPARTMENTS } from "@/lib/departments";
 import { TOOLS, departmentsFor, isArchived, isGame, type ToolDefinition } from "@/lib/tools/registry";
-import { loadToolUsage } from "@/lib/tools/usage";
+import { loadToolUsage, type ToolUsageStat } from "@/lib/tools/usage";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { Pill } from "@/components/staff/pill";
 
 export const metadata = {
@@ -18,11 +19,33 @@ function relative(iso: string | null): string {
   return `last used ${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-type UsageStat = { last30Days: number; lastUsedAt: string | null };
+type UsageStat = Pick<ToolUsageStat, "last30Days" | "lastUsedAt" | "byUser" | "unattributed">;
+
+/** "Rhys Morgan 9 · Kylie Crosson 3 · 4 unattributed" — who is behind the count. Names come
+ *  from profiles; a user whose profile is gone shows by id prefix rather than vanishing, so
+ *  the parts still add up to the total. */
+function usedBy(stat: UsageStat | undefined, names: Map<string, string>): string | null {
+  // Nobody named yet (every row pre-dates 0020) → no line. "Used by 73 unattributed" tells
+  // the reader nothing the count above didn't; the footnote covers what unattributed means.
+  if (!stat || stat.byUser.length === 0) return null;
+  const parts = stat.byUser.map(
+    (u) => `${names.get(u.userId) ?? u.userId.slice(0, 8)} ${u.count}`
+  );
+  if (stat.unattributed > 0) parts.push(`${stat.unattributed} unattributed`);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
 
 /** One row. Identical for a live tool and an archived one — a retired tool that rendered
  *  differently would be harder to compare against the ones that replaced it. */
-function ToolRow({ tool, stat }: { tool: ToolDefinition; stat: UsageStat | undefined }) {
+function ToolRow({
+  tool,
+  stat,
+  names,
+}: {
+  tool: ToolDefinition;
+  stat: UsageStat | undefined;
+  names: Map<string, string>;
+}) {
   // Any of a tool's departments resolves for an admin — canAccess() grants admins
   // every department — so the first one is as good a route as any. This is why
   // there are no per-tool /admin routes: they'd be a second path to one component.
@@ -30,6 +53,7 @@ function ToolRow({ tool, stat }: { tool: ToolDefinition; stat: UsageStat | undef
   // and reading index [0] off one would build "/staff/undefined/tools/<slug>".
   const href = `/staff/${departmentsFor(tool)[0]}/tools/${tool.slug}`;
   const count = stat?.last30Days ?? 0;
+  const by = usedBy(stat, names);
 
   return (
     <Link href={href} className="group block p-4 transition-colors hover:bg-ad-surface/50 sm:p-5">
@@ -49,6 +73,7 @@ function ToolRow({ tool, stat }: { tool: ToolDefinition; stat: UsageStat | undef
       </div>
 
       <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-ad-muted">{tool.description}</p>
+      {by && <p className="mt-1.5 text-xs text-ad-muted">Used by {by}</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         {/* A game is in every department, so listing all five labels is noise. */}
@@ -76,9 +101,25 @@ function ToolRow({ tool, stat }: { tool: ToolDefinition; stat: UsageStat | undef
   );
 }
 
+/** user id → display name, for the "Used by" line. Best-effort: without it the counts still
+ *  render, just by id prefix. */
+async function loadStaffNames(): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  try {
+    const { data, error } = await createAdminClient().from("profiles").select("id, full_name, email");
+    if (error) throw error;
+    for (const r of data ?? []) {
+      out.set(r.id as string, (r.full_name as string | null) || (r.email as string) || (r.id as string));
+    }
+  } catch (e) {
+    console.error("[admin] couldn't load staff names:", (e as Error).message);
+  }
+  return out;
+}
+
 export default async function AdminToolsPage() {
   await requireAdmin("/admin/tools");
-  const usage = await loadToolUsage();
+  const [usage, names] = await Promise.all([loadToolUsage(), loadStaffNames()]);
   const live = TOOLS.filter((t) => !isArchived(t));
   const archived = TOOLS.filter(isArchived);
 
@@ -93,7 +134,7 @@ export default async function AdminToolsPage() {
 
       <div className="mt-8 divide-y divide-ad-border overflow-hidden rounded-xl border border-ad-border bg-white">
         {live.map((tool) => (
-          <ToolRow key={tool.slug} tool={tool} stat={usage.get(tool.slug)} />
+          <ToolRow key={tool.slug} tool={tool} stat={usage.get(tool.slug)} names={names} />
         ))}
       </div>
 
@@ -106,7 +147,7 @@ export default async function AdminToolsPage() {
           </p>
           <div className="mt-3 divide-y divide-ad-border overflow-hidden rounded-xl border border-ad-border bg-white opacity-75">
             {archived.map((tool) => (
-              <ToolRow key={tool.slug} tool={tool} stat={usage.get(tool.slug)} />
+              <ToolRow key={tool.slug} tool={tool} stat={usage.get(tool.slug)} names={names} />
             ))}
           </div>
         </div>
@@ -115,7 +156,8 @@ export default async function AdminToolsPage() {
       <p className="mt-4 max-w-3xl text-xs leading-relaxed text-ad-muted">
         Counts one request to each tool&rsquo;s main endpoint — generating a markup, sizing a property, exporting a plan.
         Supporting calls like address autocomplete aren&rsquo;t counted, or a single search would register dozens of
-        uses. A request that failed still counts as an attempt, since the count is taken before the work runs.
+        uses. A request that failed still counts as an attempt, since the count is taken before the work runs. &ldquo;Unattributed&rdquo; uses were recorded before
+        per-person tracking was switched on.
       </p>
     </div>
   );

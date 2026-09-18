@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
   const user = await getStaffUser();
   if (!user) return NextResponse.json({ ok: false, error: "Not authorised." }, { status: 401 });
 
-  after(() => recordToolUse(TOOL_SLUG));
+  after(() => recordToolUse(TOOL_SLUG, user.id));
 
   let json: unknown;
   try {

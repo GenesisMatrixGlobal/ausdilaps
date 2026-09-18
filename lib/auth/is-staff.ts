@@ -24,12 +24,15 @@ export async function isStaff(
 ): Promise<boolean> {
   const devBypass =
     process.env.NODE_ENV !== "production" && process.env[allowUnauthedEnvVar] === "true";
-  const allowed = devBypass || (await getStaffUser()) !== null;
+  const user = devBypass ? null : await getStaffUser();
+  const allowed = devBypass || user !== null;
 
   // Count the use, never block on it. after() runs post-response but keeps the function
   // alive until it settles — a bare floating promise can be killed when the response ends.
+  // The user id is what puts the use on their card at /admin/staff (migration 0020); the dev
+  // bypass has no user and records none.
   if (allowed && toolSlug) {
-    after(() => recordToolUse(toolSlug));
+    after(() => recordToolUse(toolSlug, user?.id));
   }
 
   return allowed;

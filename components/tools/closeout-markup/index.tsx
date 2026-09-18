@@ -496,6 +496,11 @@ export function CloseoutMarkupTool({ isAdmin }: ToolProps) {
   return (
     <div>
       <OpportunityCard onResolved={onResolved} onReset={reset} opportunity={opportunity} workOrderCount={workOrderCount} />
+      {/* Month to date only, shown before anything is resolved so the figure is there while the
+          operator decides: the resolve and render routes hand back no per-action cost. */}
+      <div className="mt-2">
+        <ToolSpend slug="closeout-markup" refreshKey={paidActions} isAdmin={isAdmin} />
+      </div>
 
       {blocker && <CannotDraw blocker={blocker} opportunityUrl={opportunity?.url ?? null} />}
 
@@ -586,8 +591,6 @@ export function CloseoutMarkupTool({ isAdmin }: ToolProps) {
             {error && <span className="text-sm text-ad-orange">{error}</span>}
             {!error && blockedReason && <span className="text-sm text-ad-orange">{blockedReason}</span>}
           </div>
-          {/* Month to date only: the resolve and render routes don't hand back a per-action cost. */}
-          <ToolSpend slug="closeout-markup" refreshKey={paidActions} isAdmin={isAdmin} />
 
           {/* What came out of Salesforce, and what it collapsed to. The collapse is the whole
               point of the tool — work orders are raised per unit, so 257 of them being 39

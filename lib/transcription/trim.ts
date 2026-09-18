@@ -31,6 +31,8 @@ const DROP_LINE: readonly RegExp[] = [
   /\b(i'?m|i am|i will be|i'?ll be|i will|i'?ll) (just )?(going to |gonna )?(do|doing|be doing|start(ing)? with)( just)?( with)? the external\b/i,
   /\bonly (photo|shot|picture) i could (capture|take|get)\b/i,
   /\bfrom (a|the) safe distance\b/i,
+  // a correction left standing on its own after the clean-up resolved the line it belonged to
+  /^(sorry|oops|no,? sorry|scratch that|my mistake)[.!,]?$/i,
 ];
 
 /** Phrases removed or replaced inside a line that otherwise stays. Order matters. */
@@ -47,7 +49,36 @@ const EDIT: readonly [RegExp, string][] = [
 ];
 
 /** Leading fillers, peeled repeatedly: "So, now the next photo…" → "The next photo…". */
-const LEADING_FILLER = /^(so|now|okay|ok|alright|right|um|uh|yeah|yes)\b[,.]?\s+/i;
+const LEADING_FILLER = /^(so|now|okay|ok|alright|right|um|uh|yeah|yes|sorry)\b[,.]?\s+/i;
+
+/** Flags the clean-up pass appends — [CHECK: …] / [CHECK NUMBER: …]. Never stripped, and the
+ *  UI counts them so the operator knows how many lines want a second look. */
+export const CHECK_FLAG = /\[CHECK( NUMBER)?:[^\]]*\]/g;
+
+/**
+ * Safety net under the model's number flagging: a figure number that came through as digits
+ * glued to a word ("300And34") or a spelt-out hundred ("Hundred And 20") is a transcription
+ * error the typist has to resolve, and it must never pass unflagged even if the clean-up pass
+ * missed it. Adds a flag only when the line has none.
+ */
+const GARBLED_NUMBER = /\b(\d+\s*and\s*\d+|\d+[a-z]+\d+|hundred and \d+|(one|two|three|four|five|six|seven|eight|nine)\s+(hundred|thirty|forty|fifty|sixty|seventy|eighty|ninety)\s+\w+)\b/i;
+
+export function flagGarbledNumber(line: string): string {
+  if (CHECK_FLAG.test(line)) {
+    CHECK_FLAG.lastIndex = 0;
+    return line;
+  }
+  CHECK_FLAG.lastIndex = 0;
+  const m = GARBLED_NUMBER.exec(line);
+  if (!m || !/\b(photo|figure|picture|number|no\.?|#)\b/i.test(line)) return line;
+  return `${line.replace(/\s*$/, "")} [CHECK NUMBER: ${m[1].trim()}]`;
+}
+
+export function countFlags(text: string): number {
+  const n = (text.match(CHECK_FLAG) || []).length;
+  CHECK_FLAG.lastIndex = 0;
+  return n;
+}
 
 const TIMESTAMP = /^\d{2}:\d{2}:\d{2}$/;
 
@@ -65,8 +96,9 @@ export function trimLine(text: string): string {
     .trim();
   if (!t || !/[a-z0-9]/i.test(t)) return "";
   t = t[0].toUpperCase() + t.slice(1);
-  if (!/[.!?]$/.test(t)) t += ".";
-  return t;
+  // A flag sits after the sentence's own full stop; don't add another after the bracket.
+  if (!/[.!?\]]$/.test(t)) t += ".";
+  return flagGarbledNumber(t);
 }
 
 /** The whole formatted transcript (header + timestamped lines) with the non-figure content

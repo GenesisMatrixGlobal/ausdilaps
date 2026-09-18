@@ -10,7 +10,7 @@
 
 import { formatBatch, formatTranscript, splitHeader, timestamp, timestampLines } from "@/lib/transcription/format";
 import { DICTATION_KEYTERMS, STAFF_NAMES, keytermsFor, keytermsForFile } from "@/lib/transcription/keyterms";
-import { linesRemoved, trimForTyping, trimLine } from "@/lib/transcription/trim";
+import { countFlags, flagGarbledNumber, linesRemoved, trimForTyping, trimLine } from "@/lib/transcription/trim";
 
 let failures = 0;
 function fail(msg: string) {
@@ -113,6 +113,23 @@ const KEPT: [string, string][] = [
   ["Next photo is the boundary fence on the west yacht", "Next photo is the boundary fence on the west yacht."],
 ];
 for (const [inp, want] of KEPT) eq(trimLine(inp), want, `kept: ${inp}`);
+
+// ── flags: corrections and garbled numbers are kept and marked, never cut ──
+eq(trimLine("Sorry."), "", "a stranded 'Sorry.' goes");
+eq(trimLine("Sorry, south wall of the house."), "South wall of the house.", "a leading 'sorry' is a filler");
+eq(
+  trimLine("The fine gap on the south wall of the house. [CHECK: west or south wall?]"),
+  "The fine gap on the south wall of the house. [CHECK: west or south wall?]",
+  "a model flag survives the trim untouched, no second full stop"
+);
+eq(flagGarbledNumber("Photo 300And34 is the north wall of the house."), "Photo 300And34 is the north wall of the house. [CHECK NUMBER: 300And34]", "digits glued to a word are flagged");
+eq(flagGarbledNumber("Next photo, photo number Hundred And 20, is the ceiling."), "Next photo, photo number Hundred And 20, is the ceiling. [CHECK NUMBER: Hundred And 20]", "spelt-out hundred is flagged");
+eq(flagGarbledNumber("Photo two thirty five is the kerb."), "Photo two thirty five is the kerb. [CHECK NUMBER: two thirty five]", "spelt-out digits are flagged");
+eq(flagGarbledNumber("The next photo is photo number 19."), "The next photo is photo number 19.", "a plain number is not flagged");
+eq(flagGarbledNumber("Photo 300And34 is the wall. [CHECK NUMBER: 300And34, likely 334]"), "Photo 300And34 is the wall. [CHECK NUMBER: 300And34, likely 334]", "an already-flagged line is left alone");
+eq(flagGarbledNumber("The 2 and 3 storey buildings on the east side."), "The 2 and 3 storey buildings on the east side.", "digits joined by 'and' with no photo word are not a figure number");
+eq(trimLine("So the next photo for number 56756 is the north wall of room 3."), "The next photo for number 56756 is the north wall of room 3.", "a long odd number with no garble pattern passes through (the model flags it)");
+eq(countFlags("a [CHECK: x] b [CHECK NUMBER: 1, likely 2] c"), 2, "flags counted");
 
 {
   const full = formatTranscript({

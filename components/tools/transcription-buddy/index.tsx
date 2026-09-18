@@ -32,6 +32,7 @@ import {
   TRANSCRIPTION_TOOL_SLUG,
 } from "@/lib/transcription/config";
 import { formatBatch } from "@/lib/transcription/format";
+import { countFlags } from "@/lib/transcription/trim";
 
 type Status = "queued" | "uploading" | "transcribing" | "done" | "failed";
 
@@ -306,6 +307,9 @@ export function TranscriptionBuddyTool({ isAdmin }: ToolProps) {
   // only ever maps over, so positions never move. The typing skill reads a batch top to bottom
   // against the operator's own file list, so this has to be the order they dropped them in.
   const output = formatBatch(done.map(textFor));
+  // [CHECK: …] flags the clean-up appended — a self-correction it couldn't resolve, or a
+  // garbled figure number. Counted so the operator searches for them before typing.
+  const flags = view === "raw" ? 0 : countFlags(output);
   const anyCleaned = done.some((it) => it.cleanedChanged);
   const cleanupNote = done.find((it) => it.cleanupNote)?.cleanupNote ?? null;
 
@@ -436,6 +440,11 @@ export function TranscriptionBuddyTool({ isAdmin }: ToolProps) {
           </div>
 
           <p className="mt-2 text-sm text-ad-muted">
+            {flags > 0 && (
+              <span className="text-ad-orange">
+                {flags} line{flags === 1 ? "" : "s"} flagged [CHECK] — a correction the tool couldn&apos;t resolve or a garbled figure number. Search the text for &quot;[CHECK&quot; before typing.{" "}
+              </span>
+            )}
             {view === "typing"
               ? `For typing: greeting, weather, sign-off and fillers removed${done.length ? ` — ${removed} line${removed === 1 ? "" : "s"} taken out` : ""}. Just the figures. Switch to Cleaned to see everything that was said.`
               : view === "raw"

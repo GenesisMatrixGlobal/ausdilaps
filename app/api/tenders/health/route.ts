@@ -170,7 +170,14 @@ async function sendHealthEmail(
     return false;
   }
 
-  const to = process.env.ADMIN_EMAIL ?? "info@ausdilaps.com.au";
+  // TENDER_NOTIFY_EMAIL first, so ONE variable moves every Tender Watch email — the handoff
+  // and this check — without touching ADMIN_EMAIL, which the public quote form also notifies.
+  // Splitting them is what lets the whole pipeline be pointed at one person while it is being
+  // watched, and pointed back at the team afterwards, in one place.
+  const to = (process.env.TENDER_NOTIFY_EMAIL ?? process.env.ADMIN_EMAIL ?? "info@ausdilaps.com.au")
+    .split(",")
+    .map((a) => a.trim())
+    .filter(Boolean);
   const from = process.env.RESEND_FROM_EMAIL ?? "AusDilaps <no-reply@ausdilaps.com.au>";
   const critical = checks.filter((c) => c.level === "critical").length;
 
@@ -214,7 +221,7 @@ async function sendHealthEmail(
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: [to], subject, html }),
+      body: JSON.stringify({ from, to, subject, html }),
     });
     if (!res.ok) {
       console.error("[tenders] health email failed:", res.status, await res.text());

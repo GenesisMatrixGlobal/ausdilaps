@@ -175,12 +175,22 @@ const DUD_TIME = 0.2;
 // indefinitely makes the survey uncompletable, and the completion bonus unreachable through
 // no fault of the player — the same trap the cat's first "refuse the shot" version fell into.
 
-/** Slower than the player (5.5), so you can always walk away from it. */
-const CAT_SPEED = 2.9;
+/** Slower than the player (5.5), so you can always walk away from it. Dropped from 2.9 on
+ *  2026-09-18 (Rhys) — with per-wall marks there is a lot more walking between shots, and a
+ *  cat at the old speed was arriving before the framing was even settled. */
+const CAT_SPEED = 2.2;
 /** Inside this, the cat is at your ankles and the camera will not steady at all. */
 const CAT_CATCH_RADIUS = 0.9;
-/** After a tangle it scampers off, so it can never lock a room permanently. */
-const CAT_BACKOFF = 2.6;
+/**
+ * After a tangle it scampers off, so it can never lock a room permanently.
+ *
+ * ⚠️ 2.0 rather than 2.6 is the counterweight to dropping CAT_SPEED to 2.2 — a slower cat that
+ * also stayed away as long became cheap enough to simply ignore, and the check script said so:
+ * "ignores the cat" went from losing to WINNING outright. A hazard whose best counter-play is
+ * to not think about it is scenery. It walks slower and comes back sooner; total pressure is
+ * about what it was.
+ */
+const CAT_BACKOFF = 2.0;
 /** How far to the side of the shot the cat still counts as being in frame. */
 const CAT_FRAME_HALF_WIDTH = 1.2;
 /**
@@ -194,9 +204,10 @@ const CAT_FRAME_HALF_WIDTH = 1.2;
 const CAT_IN_SHOT_FACTOR = 0.4;
 
 const TODDLER_COUNT = 1;
-/** Toddlers are slow — they get you by being underfoot, not by outrunning you. Slower than
- *  the first pass, where two of them converging could hound you across a room. */
-const TODDLER_SPEED = 1.55;
+/** Toddlers are slow — they get you by being underfoot, not by outrunning you. Down from 1.55
+ *  on 2026-09-18, and 1.9 before that: a toddler is meant to be something you walk around,
+ *  not something that runs you down. */
+const TODDLER_SPEED = 1.1;
 /** Trips only fire inside this AND only while you are actually moving. */
 const TODDLER_TRIP_RADIUS = 0.62;
 /** Flat on your back: no moving, no shooting, no focus. */
@@ -774,7 +785,20 @@ export type ShotPreview = {
   wallId: string;
   /** Position alone, 0-1. */
   factor: number;
-  /** What the photo would actually be worth if the shutter fired this instant, 0-100. */
+  /**
+   * How well the wall is FRAMED right now, 0-100 — position and anything in the shot, but
+   * NOT the focus meter.
+   *
+   * ⚠️ This is what the field-of-view cone is tinted by, and keeping focus out of it is the
+   * whole point. The cone answers ONE question — "am I standing in the right place?" — and
+   * that question has nothing to do with how long you have been holding still. Tinting it by
+   * the full shot quality meant a cone that visibly filled the brackets still showed amber
+   * because focus was rebuilding, which reads as the game refusing to acknowledge a correct
+   * position. Steadiness already has its own readout: the ring over the player's head.
+   */
+  framing: number;
+  /** What the photo would actually be worth if the shutter fired this instant, 0-100.
+   *  framing x focus. This is the HUD number, not the cone's colour. */
   quality: number;
   cat: boolean;
   defect: boolean;
@@ -798,15 +822,17 @@ export function shotPreview(state: GameState): ShotPreview | null {
   const wallId = `${roomId}:${side}`;
   const verdict = positionVerdict(roomId, side, state.x, state.y);
   const cat = catInShot(state, side);
-  const quality = verdict.code
-    ? 0
-    : Math.round(100 * verdict.factor * focusFactor(state.focus) * (cat ? CAT_IN_SHOT_FACTOR : 1));
+  // The cat belongs on the FRAMING side of this — it is something in the shot, which is
+  // exactly what the cone is showing you. Focus does not.
+  const framing = verdict.code ? 0 : verdict.factor * (cat ? CAT_IN_SHOT_FACTOR : 1);
+  const quality = Math.round(100 * framing * focusFactor(state.focus));
 
   return {
     roomId,
     side,
     wallId,
     factor: verdict.factor,
+    framing: Math.round(100 * framing),
     quality,
     cat,
     defect: state.defects.has(wallId),

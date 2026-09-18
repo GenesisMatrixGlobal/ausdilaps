@@ -699,7 +699,11 @@ function drawFieldOfView(ctx: CanvasRenderingContext2D, state: GameState): void 
   const spillLo = Math.max(lo, wallLo - 1);
   const spillHi = Math.min(hi, wallHi + 1);
 
-  const colour = qualityColour(shot.quality);
+  // ⚠️ FRAMING, not quality. The cone answers "am I standing in the right place" and nothing
+  // else; the focus ring over the player's head answers "am I steady yet". Tinting this by the
+  // full shot quality meant a cone that plainly filled the brackets still showed amber while
+  // focus rebuilt — which reads as the game ignoring a correct position.
+  const colour = qualityColour(shot.framing);
   const apexX = px(state.x);
   const apexY = px(state.y);
   const faceX = alongX ? px(along) : px(face);

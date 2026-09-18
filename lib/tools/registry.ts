@@ -204,7 +204,7 @@ export const TOOLS: ToolDefinition[] = [
     kind: "game",
     title: "Site Snap",
     description:
-      "A two-minute pixel photo survey \u2014 walk the house, shoot every wall from the room centre, beat the clock without wrecking the quality.",
+      "A two-minute pixel photo survey \u2014 walk the house, frame every wall from in front of it, beat the clock without wrecking the quality.",
     Component: dynamic(() =>
       import("@/components/tools/site-snap").then((m) => m.SiteSnapTool)
     ),

@@ -12,6 +12,7 @@
 // the toddlers, the player, effects — are drawn live on top.
 
 import {
+  FOV_TAN,
   GRID,
   ROOMS,
   SIDES,
@@ -21,10 +22,11 @@ import {
   isFenceCell,
   isSolid,
   isStructural,
+  standPoint,
   type Room,
   type Side,
 } from "./house";
-import { catOnAnkles, type GameState } from "./engine";
+import { catOnAnkles, shotPreview, type GameState } from "./engine";
 import {
   CAT_H_PX,
   CAT_W_PX,
@@ -52,7 +54,6 @@ const C = {
   glass: "#a8cbdc",
   glassLit: "#c9e3ee",
   frame: "#8d7a5c",
-  centre: "#46688a",
   good: "#4f9d69",
   mid: "#c9922f",
   bad: "#c0563a",
@@ -399,6 +400,28 @@ function wallStrip(r: Room, side: Side): { x: number; y: number; w: number; h: n
   }
 }
 
+/**
+ * The part of the wall one photo is expected to cover — the frame you get standing on the
+ * mark. The viewfinder brackets this rather than the whole wall.
+ *
+ * ⚠️ On 24 of the 28 walls it IS the whole wall, because the ideal standoff is exactly where
+ * the camera's cone spans the wall's length, so this is invisible there. It exists for the
+ * four where the standoff is CLAMPED by the room: the hall is 23 tiles long and 3 deep, so no
+ * photo from inside it can ever hold more than a fifth of its long walls. Scoring is already
+ * relative to what is achievable there, and without this the drawing contradicted the score —
+ * a short lit bar on a long wall beside a HUD reading 100%. Now "fill the brackets" is the
+ * same instruction on every wall in the house.
+ */
+function targetBand(r: Room, side: Side): { x: number; y: number; w: number; h: number } {
+  const strip = wallStrip(r, side);
+  const wall = standPoint(r.id, side);
+  const half = Math.min(wall.ideal * FOV_TAN, wall.length / 2);
+  if (wall.axis === "x") {
+    return { ...strip, x: wall.mx - half, w: half * 2 };
+  }
+  return { ...strip, y: wall.my - half, h: half * 2 };
+}
+
 function drawCrack(ctx: CanvasRenderingContext2D, r: Room, side: Side): void {
   const s = wallStrip(r, side);
   const horizontal = side === "n" || side === "s";
@@ -451,36 +474,25 @@ export function draw(ctx: CanvasRenderingContext2D, state: GameState): void {
     }
   }
 
-  // Room centres — the tripod spot you have to shoot from
-  for (const r of ROOMS) {
-    const cx = px(r.cx);
-    const cy = px(r.cy);
-    const pulse = 3 + Math.sin(state.elapsed * 3) * 1.5;
-    ctx.strokeStyle = C.centre;
-    ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.55;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 6 + pulse, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = C.centre;
-    ctx.fillRect(cx - 5, cy - 1, 10, 2);
-    ctx.fillRect(cx - 1, cy - 5, 2, 10);
-  }
+  // The camera's field of view, and the slice of wall it actually covers.
+  drawFieldOfView(ctx, state);
 
   // Viewfinder — brackets on the wall currently aimed at, so "which wall am I shooting" is
-  // never a guess. Brightness tracks focus, which is how the player learns the mechanic
-  // without being told it exists.
+  // never a guess — and it brackets the TARGET BAND, so filling the brackets with the lit
+  // slice is the whole instruction. Brightness tracks focus, which is how the player learns
+  // that mechanic without being told it exists; it drops right back when the shot would be
+  // refused outright.
   const aimed = aimedWall(state);
   if (aimed) {
-    const s = wallStrip(aimed.room, aimed.side);
+    const s = targetBand(aimed.room, aimed.side);
     const x = px(s.x);
     const y = px(s.y);
     const w = px(s.w);
     const h = px(s.h);
     const len = 7;
+    const refused = shotPreview(state)?.code !== undefined;
     ctx.strokeStyle = "#23272b";
-    ctx.globalAlpha = 0.35 + 0.65 * state.focus;
+    ctx.globalAlpha = refused ? 0.15 : 0.35 + 0.65 * state.focus;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(x, y + len);
@@ -642,6 +654,98 @@ function drawFlash(ctx: CanvasRenderingContext2D, state: GameState): void {
   ctx.beginPath();
   ctx.arc(cx, cy, 3 + t * 26, 0, Math.PI * 2);
   ctx.stroke();
+}
+
+/**
+ * The field-of-view "pizza slice", and the slice of wall it covers.
+ *
+ * This is the teaching device for the per-wall stand points, not decoration. The cone is the
+ * SAME half-angle the ideal standoff is derived from (house.ts), so the three states read
+ * straight off the picture with nothing to memorise:
+ *
+ *   too close  — the cone is narrow, and only a short bar of the wall lights up
+ *   right      — the cone's edges land on the wall's corners, and the whole wall lights up
+ *   too far    — the whole wall lights up but the cone visibly overshoots it, wasting frame
+ *
+ * It is tinted by what the shot would ACTUALLY score this instant — position, focus, cat and
+ * all — through the same shotPreview() the shutter uses. A cone that promised a score the
+ * shutter then refused would be worse than no cone at all.
+ */
+function drawFieldOfView(ctx: CanvasRenderingContext2D, state: GameState): void {
+  if (state.stun > 0) return; // flat on your back: no camera, no cone
+
+  const aimed = aimedWall(state);
+  const shot = shotPreview(state);
+  if (!aimed || !shot) return;
+
+  const r = aimed.room;
+  const wall = standPoint(r.id, aimed.side);
+  const alongX = wall.axis === "x";
+
+  // Split the player into "along the wall" and "back from it".
+  const along = alongX ? state.x : state.y;
+  const face = alongX ? wall.my : wall.mx;
+  const depth = Math.abs((alongX ? state.y : state.x) - face);
+  if (depth < 0.08) return; // nose against the wall; a degenerate triangle is just noise
+
+  const halfWidth = depth * FOV_TAN;
+  const lo = along - halfWidth;
+  const hi = along + halfWidth;
+
+  const wallLo = alongX ? r.x : r.y;
+  const wallHi = alongX ? r.x + r.w : r.y + r.h;
+  // Let the cone spill a tile past the corners, deliberately: overshoot is the signal that you
+  // are standing too far back, and clamping it to the wall would hide exactly that.
+  const spillLo = Math.max(lo, wallLo - 1);
+  const spillHi = Math.min(hi, wallHi + 1);
+
+  const colour = qualityColour(shot.quality);
+  const apexX = px(state.x);
+  const apexY = px(state.y);
+  const faceX = alongX ? px(along) : px(face);
+  const faceY = alongX ? px(face) : px(along);
+
+  ctx.save();
+
+  // Fade out towards the wall, so the cone reads as light falling off rather than a flat wedge
+  // sitting on top of the floor.
+  const fade = ctx.createLinearGradient(apexX, apexY, faceX, faceY);
+  fade.addColorStop(0, colour);
+  fade.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.globalAlpha = 0.26;
+  ctx.fillStyle = fade;
+  ctx.beginPath();
+  ctx.moveTo(apexX, apexY);
+  if (alongX) {
+    ctx.lineTo(px(spillLo), px(face));
+    ctx.lineTo(px(spillHi), px(face));
+  } else {
+    ctx.lineTo(px(face), px(spillLo));
+    ctx.lineTo(px(face), px(spillHi));
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.globalAlpha = 0.45;
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // The wall actually in frame, drawn over its status strip.
+  const litLo = Math.max(lo, wallLo);
+  const litHi = Math.min(hi, wallHi);
+  if (litHi > litLo) {
+    const strip = wallStrip(r, aimed.side);
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = colour;
+    if (alongX) {
+      ctx.fillRect(px(litLo), px(strip.y) - 1, px(litHi) - px(litLo), px(strip.h) + 2);
+    } else {
+      ctx.fillRect(px(strip.x) - 1, px(litLo), px(strip.w) + 2, px(litHi) - px(litLo));
+    }
+  }
+
+  ctx.restore();
 }
 
 /** Which wall the player is currently pointed at, if they're standing in a room. */

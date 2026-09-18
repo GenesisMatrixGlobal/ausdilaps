@@ -584,7 +584,7 @@ export type CaptureResult =
       defect: boolean;
       cat: boolean;
     }
-  | { ok: false; reason: string };
+  | { ok: false; code: RefusalCode; reason: string };
 
 /**
  * Advance the world by `dt` seconds. Returns a capture result if the shutter fired this step.
@@ -768,20 +768,59 @@ export function focusFactor(focus: number): number {
   return FOCUS_FLOOR + (1 - FOCUS_FLOOR) * Math.max(0, Math.min(1, focus));
 }
 
-export function attemptCapture(state: GameState): CaptureResult {
+export type ShotPreview = {
+  roomId: string;
+  side: Side;
+  wallId: string;
+  /** Position alone, 0-1. */
+  factor: number;
+  /** What the photo would actually be worth if the shutter fired this instant, 0-100. */
+  quality: number;
+  cat: boolean;
+  defect: boolean;
+  code?: RefusalCode;
+  reason?: string;
+};
+
+/**
+ * What a shot would score right now. Null when the player is not standing in a room.
+ *
+ * THE single evaluation of a shot. attemptCapture takes the photo with it, the renderer tints
+ * the field-of-view cone with it, and the HUD shows its number — so the cone can never promise
+ * a score the shutter then refuses to pay. That agreement is the entire reason the cone is
+ * worth drawing.
+ */
+export function shotPreview(state: GameState): ShotPreview | null {
   const roomId = roomAt(state.x, state.y);
-  if (!roomId) return { ok: false, reason: "Step into a room first" };
+  if (!roomId) return null;
 
-  const r = room(roomId);
-  const distance = Math.hypot(state.x - r.cx, state.y - r.cy);
-  if (distance >= MAX_RADIUS) return { ok: false, reason: "Too far from the centre" };
+  const side = state.facing;
+  const wallId = `${roomId}:${side}`;
+  const verdict = positionVerdict(roomId, side, state.x, state.y);
+  const cat = catInShot(state, side);
+  const quality = verdict.code
+    ? 0
+    : Math.round(100 * verdict.factor * focusFactor(state.focus) * (cat ? CAT_IN_SHOT_FACTOR : 1));
 
-  const wallId = `${roomId}:${state.facing}`;
-  const defect = state.defects.has(wallId);
-  const cat = catInShot(state, state.facing);
-  const quality = Math.round(
-    100 * centreFactor(distance) * focusFactor(state.focus) * (cat ? CAT_IN_SHOT_FACTOR : 1)
-  );
+  return {
+    roomId,
+    side,
+    wallId,
+    factor: verdict.factor,
+    quality,
+    cat,
+    defect: state.defects.has(wallId),
+    code: verdict.code,
+    reason: verdict.reason,
+  };
+}
+
+export function attemptCapture(state: GameState): CaptureResult {
+  const shot = shotPreview(state);
+  if (!shot) return { ok: false, code: "outside", reason: "step into a room first" };
+  if (shot.code) return { ok: false, code: shot.code, reason: shot.reason! };
+
+  const { wallId, defect, cat, quality } = shot;
 
   const previous = state.captured[wallId];
   const retake = previous !== undefined;

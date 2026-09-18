@@ -9,6 +9,7 @@ import {
   newGame,
   remainingSeconds,
   roomProgress,
+  shotPreview,
   step,
   summarise,
   type GameState,
@@ -18,7 +19,7 @@ import { VIEW_H, VIEW_W, draw } from "./render";
 import { loadSprites } from "./sprites";
 
 /**
- * Site Snap — walk the house, photograph every wall from the centre of each room.
+ * Site Snap — walk the house, photograph every wall from in front of the middle of it.
  *
  * The React layer owns nothing but presentation. All game state lives in a ref and is
  * mutated by engine.step(); React state holds only what a person actually reads, so a
@@ -60,6 +61,9 @@ type Hud = {
   remaining: number;
   captured: number;
   shots: number;
+  /** What the shot would score if the shutter fired now, 0-100, or null when out of position.
+   *  Quantised to whole percent on purpose — see the dirty check in the tick. */
+  shot: number | null;
   progress: Array<{ id: string; done: number }>;
 };
 
@@ -68,6 +72,7 @@ function emptyHud(): Hud {
     remaining: RUN_SECONDS,
     captured: 0,
     shots: 0,
+    shot: null,
     progress: ROOMS.map((r) => ({ id: r.id, done: 0 })),
   };
 }
@@ -270,9 +275,25 @@ export function SiteSnapTool() {
 
         const remaining = Math.ceil(remainingSeconds(game));
         const captured = Object.keys(game.captured).length;
+        // ⚠️ `shot` changes every frame the player moves or the focus meter climbs, so it has
+        // to be in this comparison or React never hears about it. It is already an integer
+        // percent, which is what keeps this from being a 60fps re-render.
+        const preview = shotPreview(game);
+        const shot = preview && !preview.code ? preview.quality : null;
         const prev = hudRef.current;
-        if (remaining !== prev.remaining || captured !== prev.captured || game.shots !== prev.shots) {
-          hudRef.current = { remaining, captured, shots: game.shots, progress: roomProgress(game) };
+        if (
+          remaining !== prev.remaining ||
+          captured !== prev.captured ||
+          game.shots !== prev.shots ||
+          shot !== prev.shot
+        ) {
+          hudRef.current = {
+            remaining,
+            captured,
+            shots: game.shots,
+            shot,
+            progress: roomProgress(game),
+          };
           setHud(hudRef.current);
         }
       }
@@ -329,6 +350,24 @@ export function SiteSnapTool() {
             <p className="text-xs uppercase tracking-wide text-ad-muted">Shots</p>
             <p className="font-heading text-3xl tabular-nums text-ad-ink">{hud.shots}</p>
           </div>
+          {phase === "playing" && (
+            <div>
+              <p className="text-xs uppercase tracking-wide text-ad-muted">This shot</p>
+              <p
+                className={`font-heading text-3xl tabular-nums ${
+                  hud.shot === null
+                    ? "text-ad-muted"
+                    : hud.shot >= 80
+                      ? "text-ad-green"
+                      : hud.shot >= 50
+                        ? "text-ad-amber"
+                        : "text-ad-orange"
+                }`}
+              >
+                {hud.shot === null ? "—" : `${hud.shot}%`}
+              </p>
+            </div>
+          )}
         </div>
 
         {phase === "playing" && (
@@ -389,15 +428,19 @@ export function SiteSnapTool() {
                   <b className="text-white">Shoot</b> Space
                 </p>
                 <p>
-                  Stand on the marker in the middle of the room and hold still — the camera
-                  steadies, and a steady shot scores. Cracked walls are worth double. The
-                  clock only pays out if you photograph every wall.
+                  Stand in front of the middle of a wall — not too close, not too far back.
+                  The <b className="text-white">cone</b> is what your camera can see: fill the
+                  brackets on the wall with it and the whole strip lights up green.
+                </p>
+                <p>
+                  Then hold still. The camera steadies, and a steady shot scores. Cracked walls
+                  are worth double, and the clock only pays out if you photograph every wall.
                 </p>
                 <p className="text-white/60">
                   Watch out: the <b className="text-white">cat</b> hunts you while you stand
                   still and kills your focus, and the{" "}
-                  <b className="text-white">toddlers</b> will put you flat on your back if you
-                  walk into them. Standing still is safe from toddlers. Moving is safe from
+                  <b className="text-white">toddler</b> will put you flat on your back if you
+                  walk into them. Standing still is safe from the toddler. Moving is safe from
                   the cat. Good luck.
                 </p>
               </div>

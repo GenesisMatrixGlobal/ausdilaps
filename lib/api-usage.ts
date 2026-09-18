@@ -11,7 +11,7 @@
 // Deliberately NOT importing "server-only" or next/headers statically: lib/knowledge/ai.ts
 // and lib/tenders/classify.ts run from tsx scripts and the cron as well as from routes.
 
-export type ApiProvider = "google" | "anthropic" | "arcgis";
+export type ApiProvider = "google" | "anthropic" | "arcgis" | "deepgram";
 
 export type GoogleApi =
   | "geocoding"
@@ -84,10 +84,24 @@ export function anthropicCostCents(model: string, usage: AnthropicUsage | undefi
   return Math.round(usd * 100 * 10_000) / 10_000;
 }
 
+/** Deepgram Nova-3 pre-recorded, list price in CENTS PER AUDIO MINUTE (pay-as-you-go,
+ *  $0.0043/min), plus the keyterm-prompting add-on ($0.0013/min) when a request carries
+ *  keyterms. Deepgram pro-rates to the second; `units` below is minutes ROUNDED UP, so the
+ *  dashboard reads as a ceiling, which is the rule for every provider here. */
+export const DEEPGRAM_CENTS_PER_MINUTE = 0.43;
+export const DEEPGRAM_KEYTERM_CENTS_PER_MINUTE = 0.13;
+
+export function deepgramCostCents(seconds: number, keyterms: boolean): number {
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  const perMinute = DEEPGRAM_CENTS_PER_MINUTE + (keyterms ? DEEPGRAM_KEYTERM_CENTS_PER_MINUTE : 0);
+  return Math.round(minutes * perMinute * 10_000) / 10_000;
+}
+
 export type ApiCall =
   | { provider: "google"; api: GoogleApi; units?: number; tool?: string }
   | { provider: "arcgis"; api: "query"; units?: number; tool?: string }
-  | { provider: "anthropic"; api: "messages"; model: string; usage: AnthropicUsage | undefined; tool?: string };
+  | { provider: "anthropic"; api: "messages"; model: string; usage: AnthropicUsage | undefined; tool?: string }
+  | { provider: "deepgram"; api: "listen"; model: string; seconds: number; keyterms: boolean; tool?: string };
 
 /** Production only — there is no dev database, so a localhost call would land as a real
  *  cost on the live dashboard. `API_USAGE_LOG=1` prints the row instead, for checking the
@@ -137,14 +151,25 @@ export async function recordApiCall(call: ApiCall): Promise<void> {
             cost_cents: anthropicCostCents(call.model, call.usage) ?? 0,
             meta: { model: call.model, ...(call.usage ?? {}) },
           }
-        : {
-            provider: call.provider,
-            api: call.api,
-            tool,
-            units: call.units ?? 1,
-            cost_cents: call.provider === "google" ? GOOGLE_CENTS_PER_REQUEST[call.api] * (call.units ?? 1) : 0,
-            meta: null,
-          };
+        : call.provider === "deepgram"
+          ? {
+              provider: "deepgram",
+              api: "listen",
+              tool,
+              units: Math.max(1, Math.ceil(call.seconds / 60)),
+              cost_cents: deepgramCostCents(call.seconds, call.keyterms),
+              meta: { model: call.model, seconds: Math.round(call.seconds), keyterms: call.keyterms },
+            }
+          : {
+              provider: call.provider,
+              api: call.api,
+              tool,
+              units: call.units ?? 1,
+              // Every provider needs its own arm here — a new one falling through to this 0
+              // shows on /admin/usage as free, which is how Deepgram nearly did.
+              cost_cents: call.provider === "google" ? GOOGLE_CENTS_PER_REQUEST[call.api] * (call.units ?? 1) : 0,
+              meta: null,
+            };
     if (mode === "log") {
       console.log("[api-usage]", JSON.stringify(row));
       return;

@@ -5,7 +5,12 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTool } from "@/lib/tools/registry";
-import { GOOGLE_CENTS_PER_REQUEST, GOOGLE_FREE_REQUESTS_PER_MONTH, type GoogleApi } from "@/lib/api-usage";
+import {
+  DEEPGRAM_CENTS_PER_MINUTE,
+  GOOGLE_CENTS_PER_REQUEST,
+  GOOGLE_FREE_REQUESTS_PER_MONTH,
+  type GoogleApi,
+} from "@/lib/api-usage";
 
 export interface UsageRow {
   tool: string | null;
@@ -128,6 +133,7 @@ const API_LABEL: Record<string, string> = {
   directions: "Directions",
   messages: "Claude vision / text",
   query: "State cadastre (ArcGIS, free)",
+  listen: "Deepgram transcription (per audio minute)",
 };
 
 export function apiLabel(provider: string, api: string): string {
@@ -138,6 +144,7 @@ export function apiLabel(provider: string, api: string): string {
 export function unitPriceCents(provider: string, api: string): number | null {
   if (provider === "google" && api in GOOGLE_CENTS_PER_REQUEST) return GOOGLE_CENTS_PER_REQUEST[api as GoogleApi];
   if (provider === "arcgis") return 0;
+  if (provider === "deepgram") return DEEPGRAM_CENTS_PER_MINUTE;
   return null;
 }
 

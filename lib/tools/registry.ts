@@ -29,6 +29,7 @@
 import dynamic from "next/dynamic";
 import type { ComponentType } from "react";
 import { DEPARTMENT_SLUGS, type DepartmentSlug } from "@/lib/departments";
+import { TRANSCRIPTION_DEPARTMENTS } from "@/lib/transcription/config";
 
 /** `title` is a display label and can be changed freely — it is renamed from time to time as
  *  the team's language for a tool settles. `slug` and `code` cannot: the slug is a live route
@@ -170,6 +171,19 @@ export const TOOLS: ToolDefinition[] = [
     departments: ["projects", "reports"],
     Component: dynamic(() =>
       import("@/components/tools/closeout-markup").then((m) => m.CloseoutMarkupTool)
+    ),
+  },
+  {
+    slug: "transcription-buddy",
+    code: "TRN",
+    title: "Transcription Buddy",
+    description:
+      "Drop the inspector's MP3 dictation and get the transcript back in the report layout, mis-hearings fixed, ready to copy.",
+    // Shared with the API routes via lib/transcription/config.ts so a card and its data calls
+    // cannot disagree about who has access.
+    departments: [...TRANSCRIPTION_DEPARTMENTS],
+    Component: dynamic(() =>
+      import("@/components/tools/transcription-buddy").then((m) => m.TranscriptionBuddyTool)
     ),
   },
   {

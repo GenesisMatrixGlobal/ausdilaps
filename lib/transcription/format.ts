@@ -27,6 +27,9 @@ export function timestamp(seconds: number): string {
   return [hh, mm, ss].map((n) => String(n).padStart(2, "0")).join(":");
 }
 
+/** The three header lines every file opens with. */
+export const HEADER_LINE_COUNT = 3;
+
 /** One file in the Word layout. Empty or whitespace-only utterances are skipped. */
 export function formatTranscript(file: TranscribedFile): string {
   const lines = ["Audio file", file.name, "Transcript"];
@@ -46,4 +49,16 @@ export function formatBatch(blocks: string[]): string {
 /** Timestamp lines in a formatted transcript — the invariant the clean-up pass must keep. */
 export function timestampLines(text: string): string[] {
   return text.split("\n").filter((l) => /^\d{2}:\d{2}:\d{2}$/.test(l.trim()));
+}
+
+/**
+ * Header (the three fixed lines) and body (the timestamped lines) of a formatted transcript.
+ * The clean-up pass is only ever shown the BODY: a model asked to "return the corrected
+ * transcript" reads the header as furniture and drops it, which the timestamp invariant
+ * cannot see — the first live run came back headless.
+ */
+export function splitHeader(text: string): { header: string; body: string } {
+  const lines = text.split("\n");
+  if (lines[0] !== "Audio file" || lines.length < HEADER_LINE_COUNT) return { header: "", body: text };
+  return { header: lines.slice(0, HEADER_LINE_COUNT).join("\n"), body: lines.slice(HEADER_LINE_COUNT).join("\n") };
 }

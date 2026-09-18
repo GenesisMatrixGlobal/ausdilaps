@@ -17,7 +17,7 @@ values (
   'dictation',
   'dictation',
   false,
-  104857600, -- 100 MB, = MAX_AUDIO_BYTES in lib/transcription/config.ts
+  52428800, -- 50 MB, = MAX_AUDIO_BYTES in lib/transcription/config.ts AND the project's global upload limit (a bucket may not exceed it)
   array['audio/mpeg','audio/mp3','audio/mp4','audio/x-m4a','audio/m4a','audio/aac','audio/wav','audio/x-wav','audio/webm','audio/ogg']
 )
 on conflict (id) do nothing;

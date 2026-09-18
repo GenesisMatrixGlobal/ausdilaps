@@ -19,10 +19,17 @@ export type DeepgramResult = {
   durationSeconds: number;
 };
 
+type Sentence = { text: string; start: number; end: number };
+
 type DeepgramResponse = {
   metadata?: { duration?: number; model_info?: Record<string, { name?: string }> };
   results?: {
-    channels?: Array<{ alternatives?: Array<{ transcript?: string }> }>;
+    channels?: Array<{
+      alternatives?: Array<{
+        transcript?: string;
+        paragraphs?: { paragraphs?: Array<{ sentences?: Sentence[] }> };
+      }>;
+    }>;
     utterances?: Array<{ start: number; end: number; transcript: string }>;
   };
 };
@@ -63,12 +70,18 @@ export async function transcribeUrl(audioUrl: string, keyterms: readonly string[
     keyterms: keyterms.length > 0,
   });
 
-  const transcript = data.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
-  const utterances: Utterance[] = (data.results?.utterances ?? []).map((u) => ({
-    start: u.start,
-    end: u.end,
-    text: u.transcript,
-  }));
+  const alt = data.results?.channels?.[0]?.alternatives?.[0];
+  const transcript = alt?.transcript ?? "";
+  // One line per SENTENCE, which is what Word's Transcribe produces and what reads well.
+  // Deepgram's `utterances` are split on pauses, and an inspector dictating while walking
+  // pauses mid-sentence constantly — the first live run had lines reading just "The" and
+  // "four is the". Sentences come from the `paragraphs` feature; utterances are the fallback.
+  const sentences: Utterance[] = (alt?.paragraphs?.paragraphs ?? [])
+    .flatMap((p) => p.sentences ?? [])
+    .map((s) => ({ start: s.start, end: s.end, text: s.text }));
+  const utterances: Utterance[] = sentences.length
+    ? sentences
+    : (data.results?.utterances ?? []).map((u) => ({ start: u.start, end: u.end, text: u.transcript }));
 
   if (!transcript.trim() && utterances.length === 0) {
     throw new Error("Deepgram returned no speech for that file. Is it silent, or not audio?");

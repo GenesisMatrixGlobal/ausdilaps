@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { ACCEPTED_AUDIO_MIME, DICTATION_BUCKET, MAX_AUDIO_BYTES } from "./config";
+import { ACCEPTED_AUDIO_MIME, DICTATION_BUCKET } from "./config";
 
 // The audio's brief home between the browser and Deepgram.
 //
@@ -22,9 +22,11 @@ let ensured = false;
 export async function ensureDictationBucket(): Promise<void> {
   if (ensured) return;
   const db = createAdminClient();
+  // No fileSizeLimit here, deliberately: the bucket inherits the project's global upload
+  // limit, and asking for MORE than that fails the whole createBucket call ("The object
+  // exceeded the maximum allowed size"). The route enforces MAX_AUDIO_BYTES itself.
   const { error } = await db.storage.createBucket(DICTATION_BUCKET, {
     public: false,
-    fileSizeLimit: MAX_AUDIO_BYTES,
     allowedMimeTypes: [...ACCEPTED_AUDIO_MIME],
   });
   // "already exists" arrives as an error, not a success — that is the normal case.

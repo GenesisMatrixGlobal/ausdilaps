@@ -8,7 +8,7 @@
 
 import { recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
 import { CLEANUP_MODEL } from "./config";
-import { timestampLines } from "./format";
+import { splitHeader, timestampLines } from "./format";
 import { DICTATION_KEYTERMS, keytermsFor } from "./keyterms";
 
 export type CleanupResult = { text: string; changed: boolean; note?: string };
@@ -29,6 +29,7 @@ export async function cleanTranscript(input: { raw: string; filename: string }):
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return { text: input.raw, changed: false, note: "Clean-up not configured" };
 
+  const { header, body } = splitHeader(input.raw);
   try {
     const hint = keytermsFor(input.filename);
     const userText = [
@@ -37,7 +38,7 @@ export async function cleanTranscript(input: { raw: string; filename: string }):
       `Vocabulary the inspector uses: ${DICTATION_KEYTERMS.join(", ")}`,
       "",
       "Transcript:",
-      input.raw,
+      body,
     ]
       .filter((l) => l !== "")
       .join("\n");
@@ -80,13 +81,14 @@ export async function cleanTranscript(input: { raw: string; filename: string }):
 
     // The one structural invariant: every timestamp, in order. A model that dropped or
     // reordered a line has done more than fix words, and the raw is the safer thing to show.
-    const before = timestampLines(input.raw);
+    const before = timestampLines(body);
     const after = timestampLines(text);
     if (before.length !== after.length || before.some((t, i) => t !== after[i])) {
       throw new Error(`timestamps changed (${before.length} → ${after.length})`);
     }
 
-    return { text, changed: text !== input.raw.trim() };
+    const full = header ? `${header}\n${text}` : text;
+    return { text: full, changed: text !== body.trim() };
   } catch (e) {
     console.warn(`[transcription] clean-up skipped: ${(e as Error).message}`);
     return { text: input.raw, changed: false, note: "Clean-up unavailable — showing the raw transcript" };

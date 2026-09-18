@@ -8,7 +8,7 @@
 // so a tidy-up of format.ts cannot silently break the skill, and pins the file-name keyterm
 // parsing that hands Deepgram the street name. Exits non-zero on any failure.
 
-import { formatBatch, formatTranscript, timestamp, timestampLines } from "@/lib/transcription/format";
+import { formatBatch, formatTranscript, splitHeader, timestamp, timestampLines } from "@/lib/transcription/format";
 import { DICTATION_KEYTERMS, keytermsFor, keytermsForFile } from "@/lib/transcription/keyterms";
 
 let failures = 0;
@@ -68,6 +68,16 @@ eq(formatBatch(["", "  ", formatTranscript(sunnywood)]), formatTranscript(sunnyw
 // ── the clean-up invariant ──────────────────────────────────────────────
 eq(timestampLines(formatTranscript(emeraldwood)).join(","), "00:00:01,00:00:02,00:00:13", "timestamp lines extracted in order");
 eq(timestampLines("00:00:01\nnot 00:00:02 a timestamp\n00:00:03").join(","), "00:00:01,00:00:03", "only whole-line timestamps count");
+
+// ── header / body split (what the clean-up pass is and is not shown) ────
+{
+  const full = formatTranscript(emeraldwood);
+  const { header, body } = splitHeader(full);
+  eq(header, "Audio file\n11 Emeraldwood st.mp3\nTranscript", "header is exactly the three fixed lines");
+  eq(body.startsWith("00:00:01\nHi, this is Ram."), true, "body starts at the first timestamp");
+  eq(`${header}\n${body}`, full, "header + body round-trips");
+  eq(splitHeader("00:00:01\nno header here").header, "", "text without a header has an empty header");
+}
 
 // ── file-name keyterms ──────────────────────────────────────────────────
 eq(keytermsFor("11 Emeraldwood st.mp3").join("|"), "Emeraldwood Street", "house number dropped, st expanded");

@@ -20,8 +20,11 @@ export const DICTATION_BUCKET = "dictation";
 
 /** Vercel's serverless body cap is 4.5 MB, which is why the audio never touches our routes:
  *  the browser PUTs it straight to Storage and Deepgram fetches it from there. So this is the
- *  only size ceiling, and it is generous — a 60-minute phone recording at 128 kbps is ~58 MB. */
-export const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
+ *  only size ceiling. ⚠️ 50 MB is the Supabase PROJECT's global upload limit (Settings →
+ *  Storage); a bucket cannot be given a higher per-file limit than that — createBucket answers
+ *  "The object exceeded the maximum allowed size" — so raising this means raising the project
+ *  limit first. 50 MB is ~50 minutes of 128 kbps MP3, well past the longest dictation seen. */
+export const MAX_AUDIO_BYTES = 50 * 1024 * 1024;
 
 /** MP3 is the ask; the others cost nothing to accept and phones produce them. */
 export const ACCEPTED_AUDIO_MIME = [

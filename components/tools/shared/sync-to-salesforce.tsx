@@ -31,6 +31,7 @@ interface ResolvedTarget {
   markupSlotsUsed: number;
   markupSlotsTotal: number;
   existingLines: number;
+  status: string | null;
   lineItem: { id: string; label: string; alreadyFilled: boolean } | null;
 }
 
@@ -76,7 +77,13 @@ export interface SyncToSalesforceProps {
 interface LinesResult {
   created: { key: string; id: string }[];
   quoteUrl: string | null;
+  /** The status the Quote was unlocked FROM, or null if it was already Draft. */
+  unlockedFrom?: string | null;
 }
+
+/** Line items cannot be written to a Quote in this state; the sync puts it back to Draft
+ *  first. See lib/quote-lines/editable.ts. */
+const LOCKED_STATUS = "Ready To Send";
 
 export function SyncToSalesforce({
   getImageBase64,
@@ -373,6 +380,13 @@ export function SyncToSalesforce({
                       ? `All ${target.markupSlotsTotal} Site Mark Up slots are full — upload only`
                       : `Link it to Site Mark Up ${target.nextMarkupSlot} (${target.markupSlotsUsed} of ${target.markupSlotsTotal} used)`}
               </label>
+              {target.status === LOCKED_STATUS && (wantLines || clearFirst) && (
+                <p className="text-ad-muted">
+                  This Quote is <span className="font-medium text-ad-ink">{LOCKED_STATUS}</span>, which blocks line-item
+                  changes — it will be set back to Draft. It stays in Draft afterwards: it can&apos;t go back to{" "}
+                  {LOCKED_STATUS} until the new lines have their text and markup filled in.
+                </p>
+              )}
               {/* Never for a pasted line item: clearing the Quote would delete it. */}
               {!target.lineItem && (target.existingLines > 0 || target.markupSlotsUsed > 0) && (
                 <div>
@@ -535,6 +549,9 @@ export function SyncToSalesforce({
           {linesResult && (
             <p className="mt-2 border-t border-ad-border pt-2 text-ad-ink">
               Created {linesResult.created.length} quote line item{linesResult.created.length === 1 ? "" : "s"} on the Quote.
+              {linesResult.unlockedFrom
+                ? ` The Quote was ${linesResult.unlockedFrom} and has been set to Draft — set it back once the new lines are finished.`
+                : ""}
               {linesResult.quoteUrl && (
                 <>
                   {" "}

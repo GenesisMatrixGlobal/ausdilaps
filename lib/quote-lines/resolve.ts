@@ -23,6 +23,9 @@ export interface QuoteForLines {
   /** Site Mark Up slots holding a link, so the footer can say what clearing the Quote would
    *  remove. The sheet never writes these — it only offers to clear them. */
   markupSlotsUsed: number;
+  /** "Draft" or "Ready To Send" — the only two active values. A locked Quote is put back to
+   *  Draft by the create/clear routes; see lib/quote-lines/editable.ts. */
+  status: string | null;
   /** Lightning record page, for the "Open the Quote" link. */
   url: string | null;
 }
@@ -32,6 +35,7 @@ interface QuoteRecord {
   Name?: string | null;
   QuoteNumber?: string | null;
   Pricebook2Id?: string | null;
+  Status?: string | null;
   Opportunity?: { Name?: string | null } | null;
   QuoteLineItems?: { totalSize?: number } | null;
   [slotField: string]: unknown;
@@ -70,7 +74,7 @@ export async function resolveQuoteForLines(quoteInput: string): Promise<{
   // LIMIT 2 so an ambiguous Quote Number errors instead of guessing.
   const slotFields = MARKUP_SLOTS.map((s) => s.url).join(", ");
   const records = await soqlQuery<QuoteRecord>(
-    `SELECT Id, Name, QuoteNumber, Pricebook2Id, ${slotFields}, Opportunity.Name, ` +
+    `SELECT Id, Name, QuoteNumber, Pricebook2Id, Status, ${slotFields}, Opportunity.Name, ` +
       `(SELECT Id FROM QuoteLineItems) FROM Quote WHERE ${where} LIMIT 2`
   );
   if (records.length === 0) throw new MarkupSyncError(`No Quote found for "${lookup.value}".`);
@@ -87,6 +91,7 @@ export async function resolveQuoteForLines(quoteInput: string): Promise<{
     opportunityName: q.Opportunity?.Name ?? null,
     pricebook2Id: q.Pricebook2Id ?? null,
     existingLines: q.QuoteLineItems?.totalSize ?? 0,
+    status: q.Status ?? null,
     markupSlotsUsed: MARKUP_SLOTS.filter((slot) => {
       const v = q[slot.url];
       return v !== null && v !== undefined && v !== "";

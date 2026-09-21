@@ -123,6 +123,7 @@ interface QuoteRecord {
   QuoteNumber?: string | null;
   Opportunity?: Record<string, unknown> | null;
   QuoteLineItems?: { totalSize?: number } | null;
+  Status?: string | null;
 }
 
 export interface ResolvedTarget {
@@ -150,6 +151,9 @@ export interface ResolvedTarget {
    *  would remove. A subquery counts up to 200, which is far past any real markup job — the
    *  CLEAR itself reports the true number it deleted (lib/quote-lines/clear.ts). */
   existingLines: number;
+  /** "Ready To Send" blocks a line-item write until the sync puts it back to Draft —
+   *  see lib/quote-lines/editable.ts. */
+  status: string | null;
   /** Set when a Quote LINE ITEM was pasted. The file still lands in the Quote's Box
    *  folder — same job, same place — but the link is written to the line item's own
    *  markup field rather than a Quote slot. */
@@ -223,7 +227,7 @@ export async function resolveQuoteTarget(opts: {
         : `QuoteNumber = '${soqlEscape(lookup.value)}'`;
   const slotFields = MARKUP_SLOTS.map((s) => s.url).join(", ");
   const records = await soqlQuery<QuoteRecord>(
-    `SELECT Id, Name, QuoteNumber, ${slotFields}, Opportunity.Name, Opportunity.${field}, ` +
+    `SELECT Id, Name, QuoteNumber, Status, ${slotFields}, Opportunity.Name, Opportunity.${field}, ` +
       `(SELECT Id FROM QuoteLineItems) FROM Quote WHERE ${where} LIMIT 2`
   );
 
@@ -246,6 +250,7 @@ export async function resolveQuoteTarget(opts: {
     opportunityName,
     boxFolderLink: rawLink,
     existingLines: quote.QuoteLineItems?.totalSize ?? 0,
+    status: quote.Status ?? null,
     suggestedFilename: suggestFilename(
       quote.Name ?? null,
       quote.QuoteNumber ?? null,

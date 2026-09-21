@@ -10,6 +10,7 @@ import { z } from "zod";
 import { isStaff } from "@/lib/auth/is-staff";
 import { isConfigError, MarkupSyncError } from "@/lib/markup-sync";
 import { clearQuote } from "@/lib/quote-lines/clear";
+import { ensureQuoteEditable } from "@/lib/quote-lines/editable";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -38,8 +39,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const unlockedFrom = await ensureQuoteEditable(parsed.data.quoteId);
     const result = await clearQuote(parsed.data.quoteId);
-    return NextResponse.json({ ok: true, result });
+    return NextResponse.json({ ok: true, result: { ...result, unlockedFrom } });
   } catch (e) {
     if (isConfigError(e)) return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 501 });
     if (e instanceof MarkupSyncError) return NextResponse.json({ ok: false, error: e.message }, { status: 400 });

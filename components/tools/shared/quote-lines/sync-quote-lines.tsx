@@ -23,6 +23,7 @@ export interface ResolvedQuote {
   opportunityName: string | null;
   existingLines: number;
   markupSlotsUsed: number;
+  status: string | null;
   url: string | null;
 }
 
@@ -35,7 +36,13 @@ interface ClearResult {
 interface CreateResult {
   created: { key: string; id: string }[];
   quoteUrl: string | null;
+  /** The status the Quote was unlocked FROM, or null if it was already Draft. */
+  unlockedFrom?: string | null;
 }
+
+/** Line items cannot be written to a Quote in this state; the sync puts it back to Draft
+ *  first. See lib/quote-lines/editable.ts. */
+const LOCKED_STATUS = "Ready To Send";
 
 export interface SyncQuoteLinesProps {
   /** Prefill for the paste box — Building Markup hands over whatever its PNG sync resolved. */
@@ -222,6 +229,13 @@ export function SyncQuoteLines({ rows, initialQuoteInput }: SyncQuoteLinesProps 
               adds to them — it does not replace anything.
             </p>
           )}
+          {quote.status === LOCKED_STATUS && (
+            <p className="text-ad-muted">
+              This Quote is <span className="font-medium text-ad-ink">{LOCKED_STATUS}</span>, which blocks new line
+              items — it will be set back to Draft. It stays in Draft afterwards: it can&apos;t go back to{" "}
+              {LOCKED_STATUS} until the new lines have their text and markup filled in.
+            </p>
+          )}
           {hasSomethingToClear && (
             <div>
               <label className="flex items-start gap-2 font-medium text-ad-ink">
@@ -294,6 +308,12 @@ export function SyncQuoteLines({ rows, initialQuoteInput }: SyncQuoteLinesProps 
             {result.outcome.created.length} line item{result.outcome.created.length === 1 ? "" : "s"}
             {quote?.number ? ` on Quote ${quote.number}` : ""}.
           </p>
+          {result.outcome.unlockedFrom && (
+            <p className="mt-1 text-ad-muted">
+              The Quote was {result.outcome.unlockedFrom} and has been set to Draft. Set it back once the new lines
+              are finished.
+            </p>
+          )}
           <p className="mt-1 text-ad-muted">
             Unit price is a $1 placeholder — finalise pricing in Salesforce off the m² and rate fields.
           </p>

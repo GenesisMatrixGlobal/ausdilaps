@@ -13,6 +13,7 @@ import { isConfigError, MarkupSyncError } from "@/lib/markup-sync";
 import { createRecords } from "@/lib/salesforce";
 import { resolveQuoteForLines } from "@/lib/quote-lines/resolve";
 import { buildQuoteLineItems } from "@/lib/quote-lines/payload";
+import { ensureQuoteEditable } from "@/lib/quote-lines/editable";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -75,12 +76,16 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    // AFTER validation, before the write: a refused row must never leave a Quote unlocked
+    // for nothing. See lib/quote-lines/editable.ts for why it is not locked again after.
+    const unlockedFrom = await ensureQuoteEditable(quote.id);
     const created = await createRecords("QuoteLineItem", records);
     return NextResponse.json({
       ok: true,
       result: {
         created: created.map((c, i) => ({ key: parsed.data.rows[i].key, id: c.id })),
         quoteUrl: quote.url,
+        unlockedFrom,
       },
     });
   } catch (e) {

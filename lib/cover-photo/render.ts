@@ -19,10 +19,11 @@ import {
   COVER_DIM_OUTSIDE_PERCENT,
   COVER_FILL_OPACITY_PERCENT,
   COVER_GREEN,
-  COVER_HEIGHT_PX,
   COVER_OUTLINE_WEIGHT,
   COVER_STROKE_OPACITY_PERCENT,
-  COVER_WIDTH_PX,
+  coverSizeFor,
+  DEFAULT_COVER_SCALE,
+  type CoverScale,
 } from "./style";
 
 export type CoverMapType = "satellite" | "hybrid" | "roadmap";
@@ -114,7 +115,12 @@ export async function renderCoverPhoto(input: {
   ring: LatLng[];
   bounds: LatLngBox;
   mapType: CoverMapType;
+  /** Output size as a multiple of the template box. Only the final resize reads it — the
+   *  framing is planned from COVER_ASPECT, which is scale-independent, so picking a bigger
+   *  output can never change what is in frame. */
+  scale?: CoverScale;
 }): Promise<CoverPhotoResult> {
+  const { width: outWidth, height: outHeight } = coverSizeFor(input.scale ?? DEFAULT_COVER_SCALE);
   const bounds = coverFrameBounds(input.bounds);
 
   const { stitched, plan, pxWidth, pxHeight } = await renderTiledStaticMap({
@@ -150,14 +156,14 @@ export async function renderCoverPhoto(input: {
     // "fill", not "cover": coverFrameBounds() has already put the rendered plan on the
     // template's aspect, so this is a scale and not a crop — and a crop would take Google's
     // attribution bar off the bottom, which the Maps Platform terms forbid.
-    .resize(COVER_WIDTH_PX, COVER_HEIGHT_PX, { fit: "fill" })
+    .resize(outWidth, outHeight, { fit: "fill" })
     .png()
     .toBuffer();
 
   return {
     imageBase64: composed.toString("base64"),
-    widthPx: COVER_WIDTH_PX,
-    heightPx: COVER_HEIGHT_PX,
+    widthPx: outWidth,
+    heightPx: outHeight,
     renderedWidthPx: pxWidth,
     renderedHeightPx: pxHeight,
   };

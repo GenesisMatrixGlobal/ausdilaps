@@ -14,7 +14,7 @@ import type { LatLng } from "@/lib/kml/types";
 import { mercatorSpan } from "@/lib/kml/standard-markup/projection";
 import { planTiles } from "@/lib/maps/static-map-plan";
 import { MIN_FRAME_METRES, coverFrameBounds, coverViewFor } from "@/lib/cover-photo/frame";
-import { COVER_ASPECT, COVER_HEIGHT_PX, COVER_WIDTH_PX } from "@/lib/cover-photo/style";
+import { COVER_ASPECT, COVER_BOX_HEIGHT, COVER_BOX_WIDTH, COVER_SCALES, coverSizeFor } from "@/lib/cover-photo/style";
 
 let failures = 0;
 function fail(msg: string) {
@@ -57,7 +57,30 @@ const SHAPES: [string, number, number][] = [
   ["rural 400x400", 400, 400],
 ];
 
-console.log(`Target ${COVER_WIDTH_PX}x${COVER_HEIGHT_PX} (aspect ${COVER_ASPECT.toFixed(4)})\n`);
+console.log(
+  `Sizes ${COVER_SCALES.map((s) => coverSizeLabelPlain(s)).join(" / ")} (aspect ${COVER_ASPECT.toFixed(4)})\n`
+);
+
+function coverSizeLabelPlain(s: (typeof COVER_SCALES)[number]) {
+  const { width, height } = coverSizeFor(s);
+  return `${width}x${height}`;
+}
+
+// Every offered size must be whole pixels at the SAME aspect — a scale that produced a half
+// pixel would turn the final resize into a fractional stretch, and one that drifted off the
+// aspect would crop or squash. Both are invisible on an aerial photo.
+for (const s of COVER_SCALES) {
+  const { width, height } = coverSizeFor(s);
+  ok(Number.isInteger(width) && Number.isInteger(height), `scale ${s}: ${width}x${height} is not whole pixels`);
+  ok(
+    Math.abs(width / height - COVER_ASPECT) < 1e-12,
+    `scale ${s}: aspect ${(width / height).toFixed(6)} != ${COVER_ASPECT.toFixed(6)}`
+  );
+  ok(
+    width === COVER_BOX_WIDTH * s && height === COVER_BOX_HEIGHT * s,
+    `scale ${s}: not a clean multiple of the box`
+  );
+}
 
 for (const [city, centre] of CITIES) {
   for (const [name, w, d] of SHAPES) {
@@ -113,10 +136,12 @@ for (const [city, centre] of CITIES) {
       `${city} ${name}: export frame is smaller than the view — something framed was cropped`
     );
 
-    // 5. The resize is a DOWNSCALE, so the output is supersampled rather than blown up.
+    // 5. The resize is a DOWNSCALE at every offered size, so the output is supersampled
+    //    rather than blown up. The largest size is the binding one.
+    const largest = coverSizeFor(COVER_SCALES[COVER_SCALES.length - 1]).width;
     ok(
-      plan.width * 2 >= COVER_WIDTH_PX,
-      `${city} ${name}: rendered ${plan.width * 2}px wide, below the ${COVER_WIDTH_PX}px output`
+      plan.width * 2 >= largest,
+      `${city} ${name}: rendered ${plan.width * 2}px wide, below the ${largest}px output`
     );
   }
 }

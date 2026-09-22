@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { COVER_SCALES, DEFAULT_COVER_SCALE } from "./style";
 
 const latLngSchema = z.object({ lat: z.number(), lng: z.number() });
 
@@ -34,6 +35,12 @@ export const coverRenderRequestSchema = z.object({
     east: z.number().min(-180).max(180),
   }),
   mapType: z.enum(["satellite", "hybrid", "roadmap"]).default("hybrid"),
+  /** Output size, as a multiple of the report template's box. Built from COVER_SCALES so the
+   *  wire and the picker can never offer different sets. Defaulted, so a client bundle that
+   *  was open when this shipped still validates. */
+  scale: z
+    .union([z.literal(COVER_SCALES[0]), z.literal(COVER_SCALES[1]), z.literal(COVER_SCALES[2])])
+    .default(DEFAULT_COVER_SCALE),
 });
 
 export type CoverParcelRequest = z.infer<typeof coverParcelRequestSchema>;

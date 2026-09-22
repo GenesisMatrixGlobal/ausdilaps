@@ -18,7 +18,14 @@ import type { LatLngBox } from "@/lib/kml/standard-markup/projection";
 import { AddressSearch, type PlaceSelection } from "@/components/tools/shared/address-search";
 import { downloadBlob } from "@/components/tools/shared/download";
 import { coverViewFor } from "@/lib/cover-photo/frame";
-import { COVER_ASPECT, COVER_HEIGHT_PX, COVER_WIDTH_PX } from "@/lib/cover-photo/style";
+import {
+  COVER_ASPECT,
+  COVER_SCALES,
+  coverSizeFor,
+  coverSizeLabel,
+  DEFAULT_COVER_SCALE,
+  type CoverScale,
+} from "@/lib/cover-photo/style";
 import { CoverMap, type CoverMapCommands } from "./cover-map";
 import { SyncCoverPhoto } from "./sync-cover-photo";
 import { ToolSpend } from "@/components/tools/shared/tool-spend";
@@ -76,6 +83,9 @@ export function CoverPhotoTool({ isAdmin }: ToolProps) {
    *  the same stale value and the second click did nothing. Verified: -, - used to move one
    *  step, not two. */
   const zoomStepRef = useRef(0);
+  /** Output size. Ordinary state, unlike the zoom step: it is READ during render (the select's
+   *  value, the caption, and renderImage's dependency list), so a ref would not re-render. */
+  const [scale, setScale] = useState<CoverScale>(DEFAULT_COVER_SCALE);
 
   const frame = useCallback((box: LatLngBox | null) => {
     if (box) setFitRequest({ key: `${Date.now()}`, box });
@@ -163,12 +173,14 @@ export function CoverPhotoTool({ isAdmin }: ToolProps) {
     const res = await fetch("/api/cover-photo/render", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ring, bounds: camera.bounds, mapType: camera.mapType }),
+      body: JSON.stringify({ ring, bounds: camera.bounds, mapType: camera.mapType, scale }),
     });
     const json = await res.json();
     if (!json.ok) throw new Error(json.error ?? "The render failed.");
     return json.imageBase64 as string;
-  }, [ring]);
+    // `scale` matters here: SyncCoverPhoto holds this callback and calls it at upload time, so
+    // a stale one would file the previous size against the Survey.
+  }, [ring, scale]);
 
   async function download() {
     setBusy(true);
@@ -292,6 +304,23 @@ export function CoverPhotoTool({ isAdmin }: ToolProps) {
             +
           </button>
         </div>
+        {/* Governs BOTH Download .png and Send to Salesforce — they share one renderImage, so
+            there is no way for the file and the synced image to come out different sizes. */}
+        <label className="inline-flex items-center gap-2 text-sm text-ad-muted">
+          Size
+          <select
+            value={String(scale)}
+            onChange={(e) => setScale(Number(e.target.value) as CoverScale)}
+            className="rounded-lg border border-ad-border bg-white px-2 py-1.5 text-sm text-ad-ink outline-none focus:border-ad-steel"
+          >
+            {COVER_SCALES.map((s) => (
+              <option key={s} value={String(s)}>
+                {coverSizeLabel(s)}
+                {s === 1 ? "" : `  (${s}\u00d7)`}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           className={cn(buttonVariants({ variant: "outline", size: "md" }))}
           onClick={download}
@@ -325,7 +354,8 @@ export function CoverPhotoTool({ isAdmin }: ToolProps) {
       )}
 
       <p className="text-xs text-ad-muted">
-        The photo is exactly what the map shows, at {COVER_WIDTH_PX}&times;{COVER_HEIGHT_PX}. Pan
+        The photo is exactly what the map shows, at {coverSizeFor(scale).width}&times;
+        {coverSizeFor(scale).height}. Every size frames the same ground. Pan
         and zoom to re-frame it; hold &#8984; or Ctrl to zoom with the scroll wheel.
       </p>
     </div>

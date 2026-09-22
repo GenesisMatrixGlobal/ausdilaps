@@ -11,21 +11,39 @@
 // Dependency-free: the client imports it too.
 
 /** The report template's image BOX, in template points. Not the output size — see
- *  COVER_OUTPUT_SCALE. Change these two and everything downstream (the map's on-screen
- *  aspect, the export framing, the final resize) follows. */
+ *  COVER_SCALES. Change these two and everything downstream (the map's on-screen aspect,
+ *  the export framing, the final resize) follows. */
 export const COVER_BOX_WIDTH = 600;
 export const COVER_BOX_HEIGHT = 442;
 
-/** Rendered at 2x the box so the image is still sharp when the report is printed rather than
- *  read on screen. It costs nothing extra at Google's end — the frame is already fetched at
- *  ~2400px and downscaled, so this just throws away less of it. */
-export const COVER_OUTPUT_SCALE = 2;
+/**
+ * The output sizes the operator can pick, as multiples of the box.
+ *
+ * All three land on whole pixels (600x442 / 900x663 / 1200x884), which is why the box is a
+ * multiple of 2 — a scale that produced a half pixel would make the resize a fractional
+ * stretch. Add one only if it keeps that true.
+ *
+ * Bigger is free at Google's end: the frame is already fetched at ~1500-2500px and
+ * downscaled, so a larger output just throws away less of it. 2x is the default because a
+ * report is printed as often as it is read on screen.
+ */
+export const COVER_SCALES = [1, 1.5, 2] as const;
+export type CoverScale = (typeof COVER_SCALES)[number];
+export const DEFAULT_COVER_SCALE: CoverScale = 2;
 
-export const COVER_WIDTH_PX = COVER_BOX_WIDTH * COVER_OUTPUT_SCALE;
-export const COVER_HEIGHT_PX = COVER_BOX_HEIGHT * COVER_OUTPUT_SCALE;
+export function coverSizeFor(scale: CoverScale): { width: number; height: number } {
+  return { width: COVER_BOX_WIDTH * scale, height: COVER_BOX_HEIGHT * scale };
+}
 
-/** Width / height. The frame is planned to this ratio so the final resize is 1:1 rather
- *  than a hidden stretch. Scale-independent, so doubling the output cannot change framing. */
+/** Shorthand for the label on a size option: "1200 x 884". */
+export function coverSizeLabel(scale: CoverScale): string {
+  const { width, height } = coverSizeFor(scale);
+  return `${width} \u00d7 ${height}`;
+}
+
+/** Width / height. The frame is planned to this ratio so the final resize is 1:1 rather than
+ *  a hidden stretch. Derived from the BOX, so it is the same at every scale — picking a
+ *  bigger output can never change what is in frame. */
 export const COVER_ASPECT = COVER_BOX_WIDTH / COVER_BOX_HEIGHT;
 
 /** 6-digit hex, no leading '#': the form buildStaticMapUrl wants. Maps JS wants a '#', and

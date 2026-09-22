@@ -52,6 +52,22 @@ export type StaffUsage = {
   byTool: { title: string; count: number }[];
 };
 
+type View = "active" | "pending" | "deactivated";
+
+/** Which tab a person belongs on. Deactivated wins over pending: an invite that was
+ *  never accepted and then switched off is a closed account, not an open invite. */
+function viewOf(row: StaffRow): View {
+  if (!row.is_active) return "deactivated";
+  if (!row.last_sign_in_at) return "pending";
+  return "active";
+}
+
+const VIEWS: { key: View; label: string; empty: string }[] = [
+  { key: "active", label: "Active", empty: "Nobody has signed in yet." },
+  { key: "pending", label: "Pending invites", empty: "No invites waiting — everyone invited has signed in." },
+  { key: "deactivated", label: "Deactivated", empty: "No deactivated accounts." },
+];
+
 /** Supabase invite links are short-lived, so an old unaccepted invite needs resending
  *  rather than chasing. Three days is comfortably past any sensible expiry. */
 function isStale(iso: string | null): boolean {
@@ -73,6 +89,8 @@ export function StaffTable({
   const [editing, setEditing] = useState<string | null>(null);
   const [result, setResult] = useState<ActionResult | null>(null);
   const [pending, start] = useTransition();
+  const [view, setView] = useState<View>("active");
+  const visible = rows.filter((r) => viewOf(r) === view);
 
   function run(action: (fd: FormData) => Promise<ActionResult>, formData: FormData) {
     start(async () => {
@@ -106,8 +124,41 @@ export function StaffTable({
         </p>
       )}
 
-      <div className="divide-y divide-ad-border overflow-hidden rounded-xl border border-ad-border bg-white">
-        {rows.map((row) => {
+      <div className="mb-4 flex gap-1 border-b border-ad-border">
+        {VIEWS.map((v) => {
+          const count = rows.filter((r) => viewOf(r) === v.key).length;
+          const on = view === v.key;
+          return (
+            <button
+              key={v.key}
+              type="button"
+              onClick={() => setView(v.key)}
+              aria-pressed={on}
+              className={cn(
+                "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+                on ? "border-ad-orange text-ad-ink" : "border-transparent text-ad-muted hover:text-ad-ink"
+              )}
+            >
+              {v.label}
+              <span className={cn("ml-1.5 tabular-nums", on ? "text-ad-muted" : "text-ad-muted/70")}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {visible.length === 0 && (
+        <p className="rounded-xl border border-dashed border-ad-border bg-ad-surface/40 px-6 py-8 text-center text-sm text-ad-muted">
+          {VIEWS.find((v) => v.key === view)?.empty}
+        </p>
+      )}
+
+      <div
+        className={cn(
+          "divide-y divide-ad-border overflow-hidden rounded-xl border border-ad-border bg-white",
+          visible.length === 0 && "hidden"
+        )}
+      >
+        {visible.map((row) => {
           const isSelf = row.id === currentUserId;
           const isAdminRole = row.role === "admin" || row.role === "superadmin";
           const active = lastActive(row);
@@ -127,16 +178,6 @@ export function StaffTable({
                     {isSelf && (
                       <span className="rounded bg-ad-steel/10 px-2 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wide text-ad-steel">
                         You
-                      </span>
-                    )}
-                    {!row.is_active && (
-                      <span className="rounded bg-ad-orange/10 px-2 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wide text-ad-orange">
-                        Deactivated
-                      </span>
-                    )}
-                    {row.is_active && !row.last_sign_in_at && (
-                      <span className="rounded bg-ad-orange/10 px-2 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wide text-ad-orange">
-                        Pending invite
                       </span>
                     )}
                     {!isAdminRole && row.can_manage_knowledge && (

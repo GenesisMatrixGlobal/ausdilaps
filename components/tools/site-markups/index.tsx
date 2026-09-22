@@ -7,7 +7,6 @@ import { RoadMarkupTab } from "./road-tab";
 import { ResidentialMarkupTab } from "./residential-tab";
 import { MeasureTab } from "./measure-tab";
 import type { ToolProps } from "@/lib/tools/registry";
-import { ToolSpend } from "@/components/tools/shared/tool-spend";
 
 // ⚠️ The LABEL and the code name differ, deliberately. "Building Markup" is what staff
 // call it; the tab key, the component (ResidentialMarkupTab), the route
@@ -42,11 +41,9 @@ export function SiteMarkupsTool({ isAdmin = false }: ToolProps) {
   /** Bumped on every tab switch, which is as close to "an action finished" as this shell can
    *  see: the four tabs make their own Google and Anthropic calls. The month figure below
    *  refetches on it, so it is fresh whenever the operator changes tab. */
-  const [tabSwitches, setTabSwitches] = useState(0);
 
   function show(next: Tab) {
     setTab(next);
-    setTabSwitches((n) => n + 1);
     setVisited((prev) => (prev.has(next) ? prev : new Set(prev).add(next)));
   }
 
@@ -59,7 +56,6 @@ export function SiteMarkupsTool({ isAdmin = false }: ToolProps) {
       </ToolHeaderSlot>
       {/* Month to date across all four tabs — their routes hand back no per-action cost. */}
       <div className="mb-3">
-        <ToolSpend slug="site-markups" refreshKey={tabSwitches} isAdmin={isAdmin} />
       </div>
       {/* `hidden`, not conditional rendering: see `visited` above. */}
       {visited.has("residential") && (

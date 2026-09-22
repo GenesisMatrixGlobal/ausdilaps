@@ -41,8 +41,6 @@ import { CannotDraw } from "./cannot-draw";
 import { OpportunityCard } from "./opportunity-card";
 import { StatusTable } from "./status-table";
 import { FileToSalesforce } from "./file-to-salesforce";
-import { ToolSpend } from "@/components/tools/shared/tool-spend";
-import type { ToolProps } from "@/lib/tools/registry";
 
 interface ResolvedParcel {
   key: string;
@@ -83,7 +81,7 @@ function slugify(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "overview";
 }
 
-export function CloseoutMarkupTool({ isAdmin }: ToolProps) {
+export function CloseoutMarkupTool() {
   const [opportunity, setOpportunity] = useState<CloseoutOpportunity | null>(null);
   const [properties, setProperties] = useState<CloseoutProperty[]>([]);
   const [unmapped, setUnmapped] = useState<UnmappedWorkOrder[]>([]);
@@ -107,7 +105,6 @@ export function CloseoutMarkupTool({ isAdmin }: ToolProps) {
   const [downloading, setDownloading] = useState(false);
   /** Paid actions this session (a resolve = the site's geocodes; a render = Static Maps
    *  tiles). Bumped so the cost line refetches the month figure that now includes them. */
-  const [paidActions, setPaidActions] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [fitRequest, setFitRequest] = useState<
     { key: string; rings: LatLng[][]; padding?: "tight" | "context" } | null
@@ -284,7 +281,6 @@ export function CloseoutMarkupTool({ isAdmin }: ToolProps) {
       setSiteLots(site.lots);
       setSiteNote(siteNoteFor(site));
       setGenerated(true);
-      setPaidActions((n) => n + 1);
       // The site is framed WITH the properties: it is usually in the middle of them, but on a
       // job where the works sit at one end, leaving it out would frame it off the edge.
       frameFrom([...json.parcels, ...site.lots.map((l) => ({ ring: l.ring, point: l.point }))], `${opportunity.id}:${++fitSeq.current}`);
@@ -417,7 +413,6 @@ export function CloseoutMarkupTool({ isAdmin }: ToolProps) {
     setDownloading(true);
     try {
       const base64 = await renderImageBase64();
-      setPaidActions((n) => n + 1);
       downloadBlob(Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)), `${filenameStem}.png`, "image/png");
     } catch (e) {
       setError((e as Error).message);
@@ -502,7 +497,6 @@ export function CloseoutMarkupTool({ isAdmin }: ToolProps) {
       {/* Month to date only, shown before anything is resolved so the figure is there while the
           operator decides: the resolve and render routes hand back no per-action cost. */}
       <div className="mt-2">
-        <ToolSpend slug="closeout-markup" refreshKey={paidActions} isAdmin={isAdmin} />
       </div>
 
       {blocker && <CannotDraw blocker={blocker} opportunityUrl={opportunity?.url ?? null} />}

@@ -22,14 +22,11 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { useCopied } from "@/components/tools/shared/copy-text";
-import { ToolSpend } from "@/components/tools/shared/tool-spend";
-import type { ToolProps } from "@/lib/tools/registry";
 import { formatCents } from "@/lib/format-cents";
 import {
   ACCEPTED_AUDIO_EXTENSIONS,
   DICTATION_BUCKET,
   MAX_AUDIO_BYTES,
-  TRANSCRIPTION_TOOL_SLUG,
 } from "@/lib/transcription/config";
 import { formatBatch } from "@/lib/transcription/format";
 import { countFlags } from "@/lib/transcription/trim";
@@ -128,7 +125,7 @@ async function readJson<T>(res: Response, fallback: string): Promise<T> {
   return json;
 }
 
-export function TranscriptionBuddyTool({ isAdmin }: ToolProps) {
+export function TranscriptionBuddyTool() {
   const [items, setItems] = useState<Item[]>([]);
   const [view, setView] = useState<View>("typing");
   const [dragActive, setDragActive] = useState(false);
@@ -298,7 +295,6 @@ export function TranscriptionBuddyTool({ isAdmin }: ToolProps) {
     };
   }, [busy, settled, items.length]);
 
-  const sessionCents = done.reduce((s, it) => s + (it.costCents ?? 0), 0);
 
   const textFor = (it: Item) => (view === "raw" ? it.raw : view === "cleaned" ? it.cleaned : it.typing) ?? "";
   const removed = done.reduce((s, it) => s + (it.typingRemoved ?? 0), 0);
@@ -436,7 +432,6 @@ export function TranscriptionBuddyTool({ isAdmin }: ToolProps) {
           {halted && <p className="mt-2 text-sm text-ad-orange">{halted}</p>}
 
           <div className="mt-2">
-            <ToolSpend slug={TRANSCRIPTION_TOOL_SLUG} sessionCents={sessionCents} sessionCount={done.length} unit="file" isAdmin={isAdmin} />
           </div>
 
           <p className="mt-2 text-sm text-ad-muted">

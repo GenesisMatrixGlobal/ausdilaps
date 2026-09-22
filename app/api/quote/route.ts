@@ -89,11 +89,34 @@ async function sendEmails(
     return true;
   };
 
+  /**
+   * Who else gets copied, built as ONE list from every rule that applies.
+   *
+   * Two independent reasons to copy someone exist now — a Tier-1 lead, and an access-letter
+   * enquiry — and a lead can be both. Written as two `...(cond ? {cc} : {})` spreads the
+   * second would silently overwrite the first, so sales would stop being told about a Tier-1
+   * access-letter enquiry. Deduped because a company that points both env vars at one address
+   * would otherwise have Resend reject the send for a repeated recipient.
+   *
+   * An access letter is the occupier of an adjoining property responding to a notice, so it
+   * is PROJECTS' work, not a sales enquiry — they are the ones who booked the inspection and
+   * have to get access. info@ still receives it, because the enquiry list is built from there.
+   */
+  const accessLetterNotify =
+    process.env.ACCESS_LETTER_NOTIFY_EMAIL ?? "projects@ausdilaps.com.au";
+
+  const cc = [
+    ...(tier === "tier1" && salesNotify ? [salesNotify] : []),
+    ...(d.inquiryType === "I Received An Access Letter" && accessLetterNotify
+      ? [accessLetterNotify]
+      : []),
+  ].filter((address, i, all) => address !== adminEmail && all.indexOf(address) === i);
+
   // Admin notice
   const adminSent = await send({
     from,
     to: [adminEmail],
-    ...(tier === "tier1" && salesNotify ? { cc: [salesNotify] } : {}),
+    ...(cc.length > 0 ? { cc } : {}),
     reply_to: d.email,
     subject: `New quote — ${d.name}${d.company ? ` (${d.company})` : ""}${tier === "tier1" ? " · TIER 1" : ""}`,
     html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;color:#2f343a;">

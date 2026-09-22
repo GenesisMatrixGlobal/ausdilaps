@@ -59,7 +59,7 @@ export async function inviteStaff(formData: FormData): Promise<ActionResult> {
   const conn = adminClient();
   if ("error" in conn) return { ok: false, error: conn.error };
 
-  const { error } = await conn.client.auth.admin.inviteUserByEmail(email, {
+  const { data: invited, error } = await conn.client.auth.admin.inviteUserByEmail(email, {
     redirectTo: `${siteUrl()}/staff/auth/callback?next=/staff`,
     data: {
       full_name: fullName || null,
@@ -85,6 +85,27 @@ export async function inviteStaff(formData: FormData): Promise<ActionResult> {
       };
     }
     return { ok: false, error: error.message };
+  }
+
+  // ⚠️ Write the role here too, don't rely on the trigger. Migration 0022 made
+  // handle_new_user() honour the metadata only when invited_at is set — and GoTrue sets
+  // invited_at in an UPDATE after the insert the trigger saw, so every invite since 0022
+  // landed as client_member: invisible on this page, bounced at the door. 0023 adds the
+  // update-time trigger; this is the same write from the caller that already knows the
+  // answer, so an invite works whichever migrations have been pasted. Guarded on
+  // client_member so it can never demote anyone.
+  if (invited?.user?.id) {
+    const { error: roleErr } = await conn.client
+      .from("profiles")
+      .update({
+        role,
+        departments: role === "staff" ? departments : [],
+        can_manage_knowledge: role === "staff" ? canManageKnowledge : false,
+        invited_by: admin.id,
+      })
+      .eq("id", invited.user.id)
+      .eq("role", "client_member");
+    if (roleErr) console.error("[admin] couldn't apply invite role:", roleErr.message);
   }
 
   revalidatePath("/admin/staff");
@@ -233,6 +254,40 @@ export async function removeStaff(formData: FormData): Promise<ActionResult> {
   return { ok: true, message: "Staff member removed." };
 }
 
+/**
+ * Finish the invites that migration 0022 left half-done.
+ *
+ * 0022's trigger honours the invite metadata only when auth.users.invited_at is set, and
+ * GoTrue sets that AFTER the insert — so an invited person's profile came through as
+ * client_member, which this page filters out. They were invisible here and bounced at
+ * /staff/no-access, with nothing anywhere saying why. This applies the metadata for
+ * anyone who WAS invited (invited_at set — a self-signup never has it, which is the rule
+ * 0022 exists for) and is still client_member. Same guard as 0023's trigger, so once that
+ * is pasted this has nothing left to do. Best-effort; a failure only means the row stays
+ * hidden one more load.
+ */
+async function repairStuckInvites(
+  client: ReturnType<typeof createAdminClient>,
+  users: { id: string; invited_at?: string | null; user_metadata?: Record<string, unknown> }[]
+): Promise<void> {
+  for (const u of users) {
+    const role = parseRole(u.user_metadata?.role);
+    if (!u.invited_at || !role) continue;
+    const { data, error } = await client
+      .from("profiles")
+      .update({
+        role,
+        departments: role === "staff" ? normaliseDepartments(u.user_metadata?.departments) : [],
+        can_manage_knowledge: role === "staff" && u.user_metadata?.can_manage_knowledge === true,
+      })
+      .eq("id", u.id)
+      .eq("role", "client_member")
+      .select("email");
+    if (error) console.error("[admin] couldn't repair stuck invite:", error.message);
+    else if (data?.length) console.warn("[admin] repaired stuck invite for", data[0].email, "— apply migration 0023.");
+  }
+}
+
 /** Refuse the change if it would leave nobody able to administer the portal. */
 async function ensureAnotherAdminExists(excludingId: string): Promise<ActionResult | null> {
   const conn = adminClient();
@@ -276,16 +331,6 @@ export async function listStaff(): Promise<{ rows: StaffRow[]; error: string | n
   const conn = adminClient();
   if ("error" in conn) return { rows: [], error: conn.error };
 
-  const { data, error } = await conn.client
-    .from("profiles")
-    .select(
-      "id, email, full_name, role, departments, can_manage_knowledge, is_active, last_seen_at, created_at"
-    )
-    .in("role", ["staff", "admin", "superadmin"])
-    .order("created_at", { ascending: false });
-
-  if (error) return { rows: [], error: error.message };
-
   // Whether someone has ever signed in lives in auth.users, not profiles, and
   // supabase-js cannot join across that boundary — hence the second call. Worth it:
   // profiles.last_seen_at only started being written recently, so it would report
@@ -293,6 +338,8 @@ export async function listStaff(): Promise<{ rows: StaffRow[]; error: string | n
   //
   // Best-effort: if this call fails the list still renders, just without the pending
   // badges. A staff list that loads is worth more than one that is perfectly labelled.
+  //
+  // Read BEFORE profiles now, because it also feeds repairStuckInvites() below.
   const authByEmail = new Map<string, { lastSignInAt: string | null; invitedAt: string | null }>();
   try {
     const { data: list } = await conn.client.auth.admin.listUsers({ perPage: 1000 });
@@ -303,9 +350,20 @@ export async function listStaff(): Promise<{ rows: StaffRow[]; error: string | n
         invitedAt: u.invited_at ?? null,
       });
     }
+    await repairStuckInvites(conn.client, list?.users ?? []);
   } catch (e) {
     console.error("[admin] couldn't read auth users for invite status:", (e as Error).message);
   }
+
+  const { data, error } = await conn.client
+    .from("profiles")
+    .select(
+      "id, email, full_name, role, departments, can_manage_knowledge, is_active, last_seen_at, created_at"
+    )
+    .in("role", ["staff", "admin", "superadmin"])
+    .order("created_at", { ascending: false });
+
+  if (error) return { rows: [], error: error.message };
 
   return {
     rows: (data ?? []).map((r) => {

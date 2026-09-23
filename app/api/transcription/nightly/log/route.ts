@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
   const since = addDays(sydneyNow(new Date()).date, -LIST_DAYS);
   const [runs, folders, files] = await Promise.all([
     db.from("transcription_nightly_runs").select("run_date, status, day_folder_id, day_folder_path, last_tick_at, report_sent_at, report, error").gte("run_date", since).order("run_date", { ascending: false }),
-    db.from("transcription_nightly_folders").select("run_date, box_folder_id").gte("run_date", since),
+    listFolders(since),
     pageAll(since),
   ]);
   const err = runs.error ?? folders.error;
@@ -67,7 +67,8 @@ export async function POST(req: NextRequest) {
       reportError: report?.sendError ?? null,
       error: r.error,
       folders: fl.length,
-      missing: fl.filter((f) => !withAudio.has(f.box_folder_id)).length,
+      // No recording and no written note — a post-con with "No changes noted.txt" is not missing.
+      missing: fl.filter((f) => !withAudio.has(f.box_folder_id) && !(f.notes_files ?? []).length).length,
       recordings: fs.length,
       transcribed: fs.filter((f) => f.status === "done").length,
       failed: fs.filter((f) => f.status === "failed").length,
@@ -98,6 +99,14 @@ async function pageAll(since: string): Promise<Slim[]> {
     if (data.length < 1000) break;
   }
   return out;
+}
+
+/** Folder rows for the list; without notes_files on a database from the first paste of 0025. */
+async function listFolders(since: string): Promise<{ data: { run_date: string; box_folder_id: string; notes_files?: string[] | null }[] | null; error: { message: string } | null }> {
+  const db = createAdminClient();
+  const res = await db.from("transcription_nightly_folders").select("run_date, box_folder_id, notes_files").gte("run_date", since);
+  if (res.error && /notes_files/.test(res.error.message)) return db.from("transcription_nightly_folders").select("run_date, box_folder_id").gte("run_date", since);
+  return res;
 }
 
 function missingTable(message: string): string {

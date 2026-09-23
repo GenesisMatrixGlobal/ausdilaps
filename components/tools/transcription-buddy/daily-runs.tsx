@@ -253,10 +253,10 @@ function InspectorGroup({ folder, files, view }: { folder: FolderRow | null; fil
     <details className="rounded-xl border border-ad-border bg-white" open={files.length === 0 || undefined}>
       <summary className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
         <span className="font-medium text-ad-ink">{title}</span>
-        {files.length === 0 ? (
-          <span className="text-ad-orange">
-            No recording{folder?.notes_files?.length ? <span className="text-ad-muted"> · written notes: {folder.notes_files.join(", ")}</span> : null}
-          </span>
+        {files.length === 0 && folder?.notes_files?.length ? (
+          <span className="text-ad-muted">Written notes, no recording: {folder.notes_files.join(", ")}</span>
+        ) : files.length === 0 ? (
+          <span className="text-ad-orange">No recording</span>
         ) : (
           <span className="text-ad-muted">
             {done.length} of {files.length} transcribed

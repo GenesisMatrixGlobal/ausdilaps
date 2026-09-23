@@ -39,7 +39,8 @@ export type ReportInspector = {
   staffName: string | null;
   staffEmail: string | null;
   files: ReportFile[];
-  /** The folder is there and holds no recording. */
+  /** No recording AND no written notes. A folder with a note instead ("No changes noted.txt"
+   *  on a post-con) is NOT missing — Rhys, 2026-09-23. */
   missing: boolean;
   /** Written notes in a folder with no recording — see FoundFolder.notes. */
   notes: string[];
@@ -94,6 +95,7 @@ export function buildReport(input: {
   const inspectors: ReportInspector[] = input.folders
     .map((f) => {
       const files = input.files.filter((x) => x.inspector_folder_id === f.box_folder_id).sort(byName).map(toReportFile);
+      const notes = files.length === 0 ? f.notes_files ?? [] : [];
       return {
         folderId: f.box_folder_id,
         folderName: f.folder_name,
@@ -101,8 +103,8 @@ export function buildReport(input: {
         staffName: f.staff_name,
         staffEmail: f.staff_email,
         files,
-        missing: files.length === 0,
-        notes: files.length === 0 ? f.notes_files ?? [] : [],
+        missing: files.length === 0 && notes.length === 0,
+        notes,
       };
     })
     .sort((a, b) => a.folderName.localeCompare(b.folderName));
@@ -169,11 +171,11 @@ export function renderDailyReport(r: NightlyReport, toolUrl: string): { subject:
 
   const rows: string[] = [];
   for (const i of r.inspectors) {
-    const flag = !i.missing
-      ? ""
+    const flag = i.missing
+      ? ' — <span style="color:#e8642a"><strong>no recording</strong></span>'
       : i.notes.length
-        ? ` — <span style="color:#e8642a"><strong>no recording</strong></span> (written notes: ${escapeHtml(i.notes.join(", "))})`
-        : ' — <span style="color:#e8642a"><strong>no recording</strong></span>';
+        ? ` — written notes, no recording (${escapeHtml(i.notes.join(", "))})`
+        : "";
     const head = `<tr><td colspan="2" ${CELL}><strong>${escapeHtml(who(i))}</strong>${flag}</td></tr>`;
     rows.push(head);
     for (const f of i.files) rows.push(`<tr><td ${CELL}>${escapeHtml(f.name)}</td><td ${CELL}>${escapeHtml(statusText(f))}</td></tr>`);
@@ -207,7 +209,7 @@ export function renderMissingNotice(n: Notice, date: string): { subject: string;
   const many = n.folders.length > 1;
   const subject = many ? `${n.folders.length} jobs with no recording for ${displayDate(date)}` : `No recording found for ${displayDate(date)}`;
   const items = n.folders
-    .map((f) => `<li><a href="${escapeHtml(boxFolderUrl(f.id))}">${escapeHtml(f.name)}</a>${f.notes.length ? ` (has notes: ${escapeHtml(f.notes.join(", "))})` : ""}</li>`)
+    .map((f) => `<li><a href="${escapeHtml(boxFolderUrl(f.id))}">${escapeHtml(f.name)}</a></li>`)
     .join("");
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#2f343a">
 <p>Hi ${escapeHtml(first)},</p>

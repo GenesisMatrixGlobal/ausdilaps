@@ -291,18 +291,19 @@ eq(report.totals.transcribed, 2, "and the transcribed ones");
 eq(report.totals.failed, 1, "and the failures");
 eq(report.totals.flags, 2, "and the [CHECK] lines");
 eq(report.inspectors.find((i) => i.folderName === "MW")!.files[0].name, "12 Smith St Part 2.mp3", "parts in NATURAL order — Part 2 before Part 10");
-eq(report.inspectors.filter((i) => i.missing).length, 3, "three job folders with no recording");
+eq(report.inspectors.filter((i) => i.missing).length, 2, "a folder with written notes is NOT missing — only the two with nothing");
 eq(report.notices.length, 1, "ONE notice per inspector, not one per job");
-eq(report.notices[0].folders.length, 2, "listing both of George's jobs");
+eq(report.notices[0].folders.length, 1, "George's notes-only job is not in his notice");
 eq(report.inspectors.find((i) => i.folderId === "b")!.notes.join(), "5 norman st notes.docx", "written notes are carried to the report");
 eq(report.notices[0].email, "george@example.com", "notice goes to George");
 eq(report.unmatchedMissing.join(), "ZZ", "the unknown folder is reported, not emailed");
 const email = renderDailyReport(report, "https://example.com/tool");
-eq(email.subject, "Dictations for Tue 22 Sep 2026: 2 transcribed, 3 missing, 1 failed", "report subject");
-eq(email.html.includes("written notes: 5 norman st notes.docx"), true, "the report shows a folder's written notes");
+eq(email.subject, "Dictations for Tue 22 Sep 2026: 2 transcribed, 2 missing, 1 failed", "report subject");
+eq(email.html.includes("written notes, no recording (5 norman st notes.docx)"), true, "the report shows a notes-only folder, not as missing");
 eq(email.html.includes("Would have emailed"), true, "shadow mode says who WOULD have been emailed");
 eq(renderMissingNotice(report.notices[0], "2026-09-22").html.includes("Hi George,"), true, "notice greets by first name");
-eq(renderMissingNotice(report.notices[0], "2026-09-22").subject, "2 jobs with no recording for Tue 22 Sep 2026", "one email names how many jobs");
+eq(renderMissingNotice(report.notices[0], "2026-09-22").subject, "No recording found for Tue 22 Sep 2026", "one job, singular subject");
+eq(renderMissingNotice({ ...report.notices[0], folders: [{ id: "x", name: "a", notes: [] }, { id: "y", name: "b", notes: [] }] }, "2026-09-22").subject, "2 jobs with no recording for Tue 22 Sep 2026", "several jobs, one email");
 eq(renderDailyReport({ ...report, inspectors: [{ ...report.inspectors[0], folderName: "<b>x</b>" }] }, "u").html.includes("<b>x</b>"), false, "folder names are escaped");
 
 if (failures) {

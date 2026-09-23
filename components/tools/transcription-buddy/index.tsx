@@ -1,6 +1,6 @@
 "use client";
 
-// Transcription Buddy — an inspector's MP3 dictation in, the transcript out, one Copy button.
+// Transcription Buddy — an inspector's dictation, read from Box, the transcript out, one Copy.
 //
 // The transcript comes back in the SAME layout Word's Transcribe feature produces (Audio file /
 // name / Transcript / hh:mm:ss lines), because that is what the report team's typing skill
@@ -10,28 +10,23 @@
 //                left is the figures, which is all the typing skill reads.
 //   Cleaned    — every line, with a Claude pass fixing plain mis-hearings only.
 //   Raw        — exactly what the transcriber heard, for checking either of the above.
-// Several files can be dropped; they run three at a time and Copy all hands back the whole
-// batch the way the Word document laid it out.
 //
-// The audio never passes through our own routes: Vercel caps a function body at 4.5 MB and a
-// ten-minute phone recording is twice that. The browser asks for a signed upload URL, PUTs the
-// bytes straight to Supabase Storage, and the transcribe route hands Deepgram a link.
+// BOX LINKS ONLY (2026-09-23, Rhys). The recordings already live in Box, so the tool reads them
+// there: paste file or folder links, a folder becomes every recording in it, and Box hands
+// Deepgram a download URL. Nothing is uploaded, nothing is copied, no size cap of ours applies,
+// and a queue of dozens runs three at a time with Stop and Resume. The drag-and-drop path and
+// its Storage bucket were removed with this — the upload was the slow part.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
 import { useCopied } from "@/components/tools/shared/copy-text";
 import { formatCents } from "@/lib/format-cents";
-import {
-  ACCEPTED_AUDIO_EXTENSIONS,
-  DICTATION_BUCKET,
-  MAX_AUDIO_BYTES,
-} from "@/lib/transcription/config";
+import { extractBoxLinks } from "@/lib/transcription/box-link";
 import { formatBatch } from "@/lib/transcription/format";
 import { countFlags } from "@/lib/transcription/trim";
 
-type Status = "queued" | "uploading" | "transcribing" | "done" | "failed";
+type Status = "queued" | "transcribing" | "done" | "failed";
 
 type View = "typing" | "cleaned" | "raw";
 
@@ -41,15 +36,12 @@ const VIEWS: { key: View; label: string }[] = [
   { key: "raw", label: "Raw" },
 ];
 
-/** Where a recording comes from: dropped here, or already filed in Box (by link — Box hands
- *  Deepgram a download URL and nothing is copied anywhere). */
-type Source = { kind: "file"; file: File } | { kind: "box"; url: string };
-
 type Item = {
   id: string;
-  source: Source;
-  /** Bytes when known — a dropped file's size, or Box's once the link resolves. */
-  size?: number;
+  fileId: string;
+  /** The shared link the file was reached through, when the account has no direct access. */
+  sharedUrl?: string;
+  size: number;
   name: string;
   status: Status;
   raw?: string;
@@ -101,17 +93,10 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 
 const STATUS_LABEL: Record<Status, string> = {
   queued: "Queued",
-  uploading: "Uploading…",
   transcribing: "Transcribing…",
   done: "Done",
   failed: "Failed",
 };
-
-function isAudio(file: File): boolean {
-  if (file.type.startsWith("audio/")) return true;
-  const lower = file.name.toLowerCase();
-  return ACCEPTED_AUDIO_EXTENSIONS.some((ext) => lower.endsWith(ext));
-}
 
 function mb(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -137,10 +122,8 @@ async function readJson<T>(res: Response, fallback: string): Promise<T> {
 export function TranscriptionBuddyTool() {
   const [items, setItems] = useState<Item[]>([]);
   const [view, setView] = useState<View>("typing");
-  const [dragActive, setDragActive] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
   const { copied, failed, copy } = useCopied();
 
   // ⚠️ The REF is the queue; `items` only mirrors it for rendering. Every mutation writes the
@@ -154,6 +137,10 @@ export function TranscriptionBuddyTool() {
   const running = useRef(false);
   /** Trips the circuit breaker below. Reset by any success. */
   const consecutiveFailures = useRef(0);
+  /** Stop: workers finish the file in hand and claim no more. Resume runs the queue again. */
+  const stopRequested = useRef(false);
+  /** Mirror of the ref for the toolbar — a ref may not be read during render. */
+  const [stopping, setStopping] = useState(false);
   const [halted, setHalted] = useState<string | null>(null);
 
   const patch = useCallback((id: string, changes: Partial<Item>) => {
@@ -161,7 +148,7 @@ export function TranscriptionBuddyTool() {
     setItems(itemsRef.current);
   }, []);
 
-  const busy = items.some((it) => it.status === "uploading" || it.status === "transcribing");
+  const busy = items.some((it) => it.status === "transcribing");
 
   // The ticker only ever sets state from its interval callback — the React compiler lint
   // rejects a synchronous setState in an effect body, so the reset rides on the first tick.
@@ -176,37 +163,11 @@ export function TranscriptionBuddyTool() {
   const processOne = useCallback(
     async (item: Item) => {
       try {
-        let res: Response;
-        if (item.source.kind === "box") {
-          // Box resolves the link and hands Deepgram a download URL; nothing is uploaded.
-          patch(item.id, { status: "transcribing" });
-          res = await fetch("/api/transcription/from-box", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ url: item.source.url }),
-          });
-        } else {
-          const { file } = item.source;
-          const prep = await fetch("/api/transcription/upload-url", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ name: item.name, size: file.size, type: file.type }),
-          });
-          const { path, token } = await readJson<{ path: string; token: string }>(prep, "Could not prepare the upload.");
-
-          // Straight to Storage on the signed URL — the bytes never touch a Vercel function.
-          const { error: uploadError } = await createClient()
-            .storage.from(DICTATION_BUCKET)
-            .uploadToSignedUrl(path, token, file, { contentType: file.type || "audio/mpeg" });
-          if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
-
-          patch(item.id, { status: "transcribing" });
-          res = await fetch("/api/transcription/transcribe", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ path, name: item.name }),
-          });
-        }
+        const res = await fetch("/api/transcription/from-box", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ fileId: item.fileId, sharedUrl: item.sharedUrl }),
+        });
         const json = await readJson<TranscribeResponse>(res, "Transcription failed.");
         patch(item.id, {
           status: "done",
@@ -234,23 +195,24 @@ export function TranscriptionBuddyTool() {
     if (running.current) return;
     running.current = true;
     consecutiveFailures.current = 0;
+    stopRequested.current = false;
+    setStopping(false);
     setHalted(null);
     try {
       /** Take the next queued file and mark it taken IN THE SAME TICK — see the ref note above. */
       const claim = (): Item | null => {
         const next = itemsRef.current.find((it) => it.status === "queued");
         if (!next) return null;
-        patch(next.id, { status: "uploading", error: undefined });
+        patch(next.id, { status: "transcribing", error: undefined });
         return next;
       };
 
       const worker = async () => {
         for (;;) {
           // ⚠️ A run of failures STOPS the batch. Without this, a wrong Deepgram key or an
-          // account out of credit fails all 27 files one at a time — and each one has already
-          // pushed its megabytes to Storage by the time the transcribe call answers. You would
-          // come back to 27 identical errors and a few hundred MB uploaded for nothing.
-          if (consecutiveFailures.current >= MAX_CONSECUTIVE_FAILURES) return;
+          // account out of credit fails all 27 files one at a time and you come back to 27
+          // identical errors.
+          if (consecutiveFailures.current >= MAX_CONSECUTIVE_FAILURES || stopRequested.current) return;
           const next = claim();
           if (!next) return;
           await processOne(next);
@@ -259,63 +221,83 @@ export function TranscriptionBuddyTool() {
 
       await Promise.all(Array.from({ length: BATCH_CONCURRENCY }, worker));
 
+      const stillQueued = itemsRef.current.filter((it) => it.status === "queued").length;
       if (consecutiveFailures.current >= MAX_CONSECUTIVE_FAILURES) {
-        const stillQueued = itemsRef.current.filter((it) => it.status === "queued").length;
         setHalted(
           `Stopped after ${MAX_CONSECUTIVE_FAILURES} failures in a row${stillQueued ? `, with ${stillQueued} still to go` : ""}. ` +
             `Read the error below — it is the same for all of them — then press Resume.`
         );
+      } else if (stopRequested.current && stillQueued) {
+        setHalted(`Stopped, with ${stillQueued} still queued. Press Resume to carry on, or Clear to drop them.`);
       }
     } finally {
       running.current = false;
     }
   }, [patch, processOne]);
 
-  const addFiles = useCallback(
-    (files: FileList | File[]) => {
-      const fresh: Item[] = [];
-      for (const file of Array.from(files)) {
-        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const source: Source = { kind: "file", file };
-        if (!isAudio(file)) {
-          fresh.push({ id, source, size: file.size, name: file.name, status: "failed", error: "Not an audio file." });
-        } else if (file.size > MAX_AUDIO_BYTES) {
-          fresh.push({
-            id,
-            source,
-            size: file.size,
-            name: file.name,
-            status: "failed",
-            error: `Too large (${mb(file.size)}; ${mb(MAX_AUDIO_BYTES)} max). Paste its Box link instead — there is no size limit that way.`,
-          });
-        } else {
-          fresh.push({ id, source, size: file.size, name: file.name, status: "queued" });
-        }
-      }
-      if (!fresh.length) return;
-      // Synchronous, because runQueue() reads the ref in this same tick.
-      itemsRef.current = [...itemsRef.current, ...fresh];
-      setItems(itemsRef.current);
-      void runQueue();
-    },
-    [runQueue]
-  );
+  const [linkText, setLinkText] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [intakeNote, setIntakeNote] = useState<string | null>(null);
 
-  const [boxLink, setBoxLink] = useState("");
-  const addBoxLink = useCallback(() => {
-    const url = boxLink.trim();
-    if (!url) return;
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    // Shown by the link's tail until Box answers with the real file name.
-    const tail = url.replace(/[?#].*$/, "").split("/").filter(Boolean).slice(-2).join("/");
-    const item: Item = /box\.com\//i.test(url)
-      ? { id, source: { kind: "box", url }, name: `Box file …${tail}`, status: "queued" }
-      : { id, source: { kind: "box", url }, name: url, status: "failed", error: "Not a Box link." };
-    itemsRef.current = [...itemsRef.current, item];
-    setItems(itemsRef.current);
-    setBoxLink("");
-    void runQueue();
-  }, [boxLink, runQueue]);
+  /** Every Box link in the box → asked of Box what it holds → queued. A folder becomes every
+   *  recording in it; a file already in the queue is not added twice. Listing is free; the
+   *  queue starts as soon as the first link resolves. */
+  const addLinks = useCallback(async () => {
+    const links = extractBoxLinks(linkText);
+    if (!links.length) {
+      setIntakeNote("No Box links found. Paste links like …box.com/file/123456 or …box.com/folder/123456, one per line.");
+      return;
+    }
+    setAdding(true);
+    setIntakeNote(null);
+    const notes: string[] = [];
+    let added = 0;
+    for (const url of links) {
+      try {
+        const res = await fetch("/api/transcription/box-list", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+        const listed = await readJson<{ kind: "file" | "folder"; folderName?: string; files: { fileId: string; name: string; size: number; sharedUrl?: string }[] }>(
+          res,
+          "Could not read that Box link."
+        );
+        const known = new Set(itemsRef.current.map((it) => it.fileId));
+        const fresh: Item[] = listed.files
+          .filter((f) => !known.has(f.fileId))
+          .map((f) => ({
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            fileId: f.fileId,
+            sharedUrl: f.sharedUrl,
+            name: f.name,
+            size: f.size,
+            status: "queued" as const,
+          }));
+        if (listed.kind === "folder") {
+          notes.push(
+            listed.files.length === 0
+              ? `"${listed.folderName}" has no audio files in it.`
+              : `"${listed.folderName}": ${listed.files.length} recording${listed.files.length === 1 ? "" : "s"}${fresh.length < listed.files.length ? `, ${listed.files.length - fresh.length} already queued` : ""}.`
+          );
+        } else if (!fresh.length) {
+          notes.push(`${listed.files[0]?.name ?? "That file"} is already in the queue.`);
+        }
+        if (fresh.length) {
+          added += fresh.length;
+          // Synchronous, because runQueue() reads the ref in this same tick.
+          itemsRef.current = [...itemsRef.current, ...fresh];
+          setItems(itemsRef.current);
+          void runQueue();
+        }
+      } catch (e) {
+        notes.push(`${url.replace(/^https?:\/\//, "").slice(0, 60)}: ${(e as Error).message}`);
+      }
+    }
+    setAdding(false);
+    setLinkText("");
+    setIntakeNote(notes.length ? notes.join(" ") : added ? null : "Nothing new to add.");
+  }, [linkText, runQueue]);
 
   const retry = useCallback(
     (id: string) => {
@@ -364,74 +346,36 @@ export function TranscriptionBuddyTool() {
 
   return (
     <div>
-      {/* Drop zone — compact once the queue has something in it. */}
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => fileInput.current?.click()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") fileInput.current?.click();
-        }}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragActive(true);
-        }}
-        onDragLeave={(e) => {
-          e.preventDefault();
-          setDragActive(false);
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragActive(false);
-          if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
-        }}
-        className={cn(
-          "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed text-center transition-colors",
-          items.length ? "p-5" : "p-10",
-          dragActive ? "border-ad-orange bg-ad-orange/10" : "border-ad-border hover:bg-ad-surface"
-        )}
-      >
-        <input
-          ref={fileInput}
-          type="file"
-          multiple
-          accept={[...ACCEPTED_AUDIO_EXTENSIONS, "audio/*"].join(",")}
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files?.length) addFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
-        <p className="font-medium text-ad-ink">
-          {dragActive ? "Drop the recording here" : "Drag & drop the inspector's MP3 here, or click to browse"}
-        </p>
-        {!items.length && (
-          <p className="max-w-md text-sm text-ad-muted">
-            Drop the whole job in — {BATCH_CONCURRENCY} transcribe at a time and the rest queue behind them. A
-            15-minute dictation takes about a minute.
-          </p>
-        )}
-      </div>
-
-      {/* The other way in: a recording already filed in Box. Box hands Deepgram a download URL, so
-          nothing is re-uploaded and no size cap of ours applies — the way to do a two-hour file. */}
+      {/* Intake: Box links, one or many. A folder link is the whole job. */}
       <form
-        className="mt-3 flex flex-wrap items-center gap-2"
+        className="rounded-xl border border-ad-border bg-white p-4"
         onSubmit={(e) => {
           e.preventDefault();
-          addBoxLink();
+          void addLinks();
         }}
       >
-        <input
-          type="url"
-          value={boxLink}
-          onChange={(e) => setBoxLink(e.target.value)}
-          placeholder="…or paste a Box link to a recording that is already filed"
-          className="h-11 min-w-0 flex-1 rounded-full border border-ad-border bg-white px-4 text-sm text-ad-ink placeholder:text-ad-muted focus:outline-none focus:ring-2 focus:ring-ad-accent"
+        <label htmlFor="box-links" className="block text-sm font-medium text-ad-ink">
+          Paste Box links to the recordings — files or whole folders, one per line
+        </label>
+        <textarea
+          id="box-links"
+          value={linkText}
+          onChange={(e) => setLinkText(e.target.value)}
+          rows={items.length ? 2 : 4}
+          placeholder={"https://ausdilaps.app.box.com/folder/…\nhttps://ausdilaps.app.box.com/file/…"}
+          className="mt-2 w-full resize-y rounded-lg border border-ad-border bg-white p-3 font-mono text-sm text-ad-ink placeholder:text-ad-muted focus:outline-none focus:ring-2 focus:ring-ad-accent"
         />
-        <button type="submit" className={cn(buttonVariants({ variant: "outline", size: "md" }))} disabled={!boxLink.trim()}>
-          Add from Box
-        </button>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <button type="submit" className={cn(buttonVariants({ variant: "primary", size: "md" }))} disabled={adding || !linkText.trim()}>
+            {adding ? "Reading Box…" : "Add to queue"}
+          </button>
+          {!items.length && (
+            <span className="text-sm text-ad-muted">
+              A folder link queues every recording in it. {BATCH_CONCURRENCY} transcribe at a time; a 15-minute dictation takes about a minute. Nothing is uploaded — Box hands the audio straight to the transcriber.
+            </span>
+          )}
+          {intakeNote && <span className="text-sm text-ad-orange">{intakeNote}</span>}
+        </div>
       </form>
 
       {items.length > 0 && (
@@ -477,6 +421,19 @@ export function TranscriptionBuddyTool() {
             >
               Clear
             </button>
+            {busy && !stopping && items.some((it) => it.status === "queued") && (
+              <button
+                type="button"
+                className={cn(buttonVariants({ variant: "outline", size: "md" }))}
+                onClick={() => {
+                  // Workers finish the file in hand and claim no more; runQueue reports the count.
+                  stopRequested.current = true;
+                  setStopping(true);
+                }}
+              >
+                Stop after these
+              </button>
+            )}
             {halted && (
               <button
                 type="button"
@@ -528,7 +485,7 @@ export function TranscriptionBuddyTool() {
                 <span className="min-w-0 flex-1 truncate font-medium text-ad-ink" title={it.name}>
                   {it.name}
                 </span>
-                <span className="text-ad-muted">{it.size !== undefined ? mb(it.size) : "Box"}</span>
+                <span className="text-ad-muted">{mb(it.size)}</span>
                 {it.status === "done" && it.durationSeconds ? (
                   <span className="text-ad-muted">{minutes(it.durationSeconds)}</span>
                 ) : null}
@@ -553,7 +510,7 @@ export function TranscriptionBuddyTool() {
                     {copiedId === it.id ? "Copied" : "Copy"}
                   </button>
                 )}
-                {it.status === "failed" && it.error !== "Not an audio file." && it.error !== "Not a Box link." && !it.error?.startsWith("Too large") && (
+                {it.status === "failed" && (
                   <button
                     type="button"
                     className={cn(buttonVariants({ variant: "outline", size: "sm" }))}

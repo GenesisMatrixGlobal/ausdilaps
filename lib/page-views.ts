@@ -106,7 +106,7 @@ export async function recordPageView(event: PageViewEvent, meta: PageViewMeta = 
 const RENDER_CONFIRM_WINDOW_MS = 30 * 60_000;
 
 /**
- * Marks this visitor's most recent samples view as actually PAINTED (migration 0023).
+ * Marks this visitor's most recent samples view as actually PAINTED (migration 0024).
  *
  * Two round trips rather than one: PostgREST cannot order-and-limit an UPDATE, so the row is
  * found first and updated by id. Both are inside `after()`, so nothing waits on them.
@@ -133,10 +133,10 @@ export async function markRendered(visitorId: string): Promise<void> {
 
     const { error: upErr } = await db.from("page_views").update({ rendered: true }).eq("id", id);
     if (upErr) {
-      // 0023 is pasted in by hand, so a deploy can land before it. Say which migration, once,
+      // 0024 is pasted in by hand, so a deploy can land before it. Say which migration, once,
       // rather than logging an opaque column error on every page load.
       if (/rendered/.test(upErr.message)) {
-        console.warn("[page-views] no `rendered` column — apply migration 0023_page_view_rendered.sql.");
+        console.warn("[page-views] no `rendered` column — apply migration 0024_page_view_rendered.sql.");
         return;
       }
       throw upErr;
@@ -160,7 +160,7 @@ export type SamplesStats = {
    *  announcing themselves as desktop Chrome — kept and reported rather than hidden, because
    *  it is the only measure of how much of that there is. */
   unrendered7d: number;
-  /** Views too old to have been measured (before migration 0023 / its first paint). Reported
+  /** Views too old to have been measured (before migration 0024 / its first paint). Reported
    *  apart from `unrendered7d` so nothing historic is miscalled automated. */
   unmeasured7d: number;
   /** Set when the table can't be read — most likely 0015 not applied yet. */
@@ -195,7 +195,7 @@ export async function loadSamplesStats(): Promise<SamplesStats> {
     const twoWeeks = now - 14 * DAY;
     const rows = data ?? [];
 
-    // Anything before the first confirmed paint could not have been measured — 0023 had not
+    // Anything before the first confirmed paint could not have been measured — 0024 had not
     // landed, or the beacon had not shipped. Calling those rows automated would put a number
     // on the dashboard that is simply an artefact of when the column was added.
     const firstMeasured = rows
@@ -213,7 +213,7 @@ export async function loadSamplesStats(): Promise<SamplesStats> {
 
       if (isView) {
         // ⚠️ Only a painted view is a view. The count read 26 "visitors" when about twenty
-        // were headless fetches — see migration 0023 for the measurement that settled it.
+        // were headless fetches — see migration 0024 for the measurement that settled it.
         if (painted) {
           out.views30d++;
           if (t >= week) out.views7d++;

@@ -35,7 +35,7 @@ export type SampleVisitor = {
   lastSeen: string;
   /** Page renders (locked + library) — the same thing the tile counts. */
   views: number;
-  /** Views this browser CONFIRMED it painted (migration 0023). A visitor whose views never
+  /** Views this browser CONFIRMED it painted (migration 0024). A visitor whose views never
    *  painted did not look at anything — it fetched the page. Kept on the list rather than
    *  dropped, so the scraping stays visible, but marked. */
   paintedViews: number;
@@ -65,7 +65,7 @@ type Row = {
   visitor_id: string | null;
   lead_id: string | null;
   item: string | null;
-  /** Migration 0023. Null on rows written before it, which is NOT the same as false —
+  /** Migration 0024. Null on rows written before it, which is NOT the same as false —
    *  see the badge in app/admin/samples/page.tsx. */
   rendered: boolean | null;
 };

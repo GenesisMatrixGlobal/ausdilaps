@@ -38,7 +38,7 @@ alter table public.page_views
   add column if not exists rendered boolean not null default false;
 
 comment on column public.page_views.rendered is
-  'The browser reported a First Contentful Paint for this view. False = fetched but never drawn (or predates migration 0023).';
+  'The browser reported a First Contentful Paint for this view. False = fetched but never drawn (or predates migration 0024).';
 
 -- The reader asks for "rendered views in the last N days" on every dashboard load.
 create index if not exists page_views_rendered_idx

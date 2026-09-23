@@ -83,7 +83,7 @@ function VisitorRow({ v }: { v: SampleVisitor }) {
               {UNLOCK_LABEL[v.unlock]}
             </span>
             {/* Not a person: every view was served but none was ever painted (migration
-                0023). Listed rather than hidden so the scraping stays visible, and only
+                0024). Listed rather than hidden so the scraping stays visible, and only
                 shown once something HAS painted somewhere, or rows that predate the
                 measurement would all be libelled. */}
             {v.views > 0 && v.paintedViews === 0 && (

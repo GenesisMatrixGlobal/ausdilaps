@@ -1,5 +1,5 @@
 // "This page was actually drawn on a screen" — the beacon behind `page_views.rendered`
-// (migration 0023).
+// (migration 0024).
 //
 // The view itself is counted in proxy.ts from request headers alone, and headers cannot tell
 // a person from a headless browser: the scrapers measured on 2026-09-23 announced themselves

@@ -188,7 +188,7 @@ function apiSpendTile(u: ApiUsage): Stat {
   };
 }
 
-/** Visits to the sample report library this week (migrations 0015 + 0023, lib/page-views.ts).
+/** Visits to the sample report library this week (migrations 0015 + 0024, lib/page-views.ts).
  *  Counts only views the BROWSER CONFIRMED IT PAINTED — headless scrapers announcing
  *  themselves as desktop Chrome pass every header check there is, and a paint is the thing
  *  they do not produce. Requests that never painted are reported on the sub-line rather than

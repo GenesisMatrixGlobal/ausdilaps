@@ -91,7 +91,7 @@ export const SAMPLES_VISITOR_COOKIE = "ad_samples_v";
  *  cookies above are scoped to /dilapidation-reports and would not reach /api/*. */
 export const SAMPLES_CLICK_PATH = "/dilapidation-reports/samples/click";
 
-/** Where the page confirms it was actually PAINTED (migration 0023). Under the samples path
+/** Where the page confirms it was actually PAINTED (migration 0024). Under the samples path
  *  for the same reason as the click beacon: the visitor cookie is scoped to
  *  /dilapidation-reports and would never be sent to /api/*. */
 export const SAMPLES_RENDERED_PATH = "/dilapidation-reports/samples/rendered";

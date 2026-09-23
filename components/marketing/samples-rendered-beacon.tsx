@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { SAMPLES_RENDERED_PATH } from "@/lib/samples-access";
 
 /**
- * Tells the server this page was actually PAINTED (migration 0023).
+ * Tells the server this page was actually PAINTED (migration 0024).
  *
  * The view is counted server-side in proxy.ts, where the only evidence is request headers —
  * and headers cannot separate a person from a headless browser. A First Contentful Paint can:

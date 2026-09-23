@@ -12,6 +12,9 @@ import { chunkBody, formatBatch, formatTranscript, splitHeader, timestamp, times
 import { DICTATION_KEYTERMS, STAFF_NAMES, keytermsFor, keytermsForFile } from "@/lib/transcription/keyterms";
 import { countFlags, flagGarbledNumber, linesRemoved, trimForTyping, trimLine } from "@/lib/transcription/trim";
 import { extractBoxLinks, parseBoxLink } from "@/lib/transcription/box-link";
+import { addDays, displayDate, isAtOrAfter, isIsoDate, matchesDay, matchesMonth, matchesYear, sydneyNow, sydneyYesterday } from "@/lib/transcription/nightly/dates";
+import { folderInitials, initialsOf, matchInspector } from "@/lib/transcription/nightly/initials";
+import { buildReport, renderDailyReport, renderMissingNotice } from "@/lib/transcription/nightly/report";
 
 let failures = 0;
 function fail(msg: string) {
@@ -221,8 +224,79 @@ eq(new Set(full).size, full.length, "no duplicate keyterms");
 const words = full.join(" ").split(/\s+/).length;
 if (words * 1.5 > 500) fail(`keyterm list too long: ~${Math.round(words * 1.5)} tokens of a 500 cap`);
 
+// ── nightly crawl: Sydney dates across the DST change ───────────────────
+// Vercel Cron is UTC; the crawl is 4am SYDNEY. NSW moved to AEDT at 2am on Sun 4 Oct 2026.
+eq(sydneyNow(new Date("2026-09-22T18:00:00Z")).hour, 4, "AEST: 18:00 UTC is 4am Sydney");
+eq(sydneyNow(new Date("2026-09-22T17:00:00Z")).hour, 3, "AEST: 17:00 UTC is still 3am — that tick does nothing");
+eq(sydneyNow(new Date("2026-10-05T17:00:00Z")).hour, 4, "AEDT: 17:00 UTC is 4am Sydney");
+eq(sydneyYesterday(new Date("2026-09-22T18:00:00Z")), "2026-09-22", "4am on the 23rd works on the 22nd");
+eq(sydneyYesterday(new Date("2026-10-04T17:10:00Z")), "2026-10-04", "4am on the 5th (AEDT) works on the 4th");
+eq(addDays("2026-02-28", 1), "2026-03-01", "addDays crosses a month");
+eq(addDays("2026-01-01", -1), "2025-12-31", "addDays crosses a year");
+eq(isIsoDate("2026-02-30"), false, "not a real date");
+eq(isAtOrAfter(new Date("2026-09-22T20:30:00Z"), "2026-09-23", 6, 30), true, "6:30am AEST is the report deadline");
+eq(isAtOrAfter(new Date("2026-09-22T20:29:00Z"), "2026-09-23", 6, 30), false, "6:29am is not");
+eq(displayDate("2026-09-22"), "Tue 22 Sep 2026", "display date");
+
+// ── nightly crawl: finding year / month / day by name ───────────────────
+eq(matchesYear("2026", 2026), true, "year");
+eq(matchesYear("2025", 2026), false, "wrong year");
+for (const n of ["09", "9", "Sep", "Sept", "September", "09 September", "2026-09", "9. September 2026"]) eq(matchesMonth(n, 2026, 9), true, `month "${n}"`);
+for (const n of ["10", "October", "2026-10", "09 October", "2025-09"]) eq(matchesMonth(n, 2026, 9), false, `not September: "${n}"`);
+for (const n of ["22", "22nd", "Tue 22", "2026-09-22", "22-09-2026", "22.09.26", "22 September"]) eq(matchesDay(n, "2026-09-22"), true, `day "${n}"`);
+for (const n of ["23", "2026-09-23", "22-10-2026", "2026-10-22", "22 October", "Tue 2"]) eq(matchesDay(n, "2026-09-22"), false, `not the 22nd: "${n}"`);
+eq(matchesDay("2026-09-02", "2026-02-09"), false, "ISO order is never read as day-month");
+
+// ── nightly crawl: inspector initials ───────────────────────────────────
+eq(initialsOf("Martin (Jie) Weng"), "MW", "bracketed nickname dropped");
+eq(initialsOf("Michael Yousry Aziz Metry"), "MM", "first and LAST word");
+eq(initialsOf("Linda (Lai) Yee Win"), "LW", "nickname plus a middle name");
+for (const n of ["MW", "mw", "M.W.", "M W", "MW - Martin"]) eq(folderInitials(n), "MW", `folder "${n}"`);
+const staff = [
+  { name: "Martin (Jie) Weng", email: "martin@example.com" },
+  { name: "George Agapiadis", email: "george@example.com" },
+  { name: "Ram Ghalley", email: null },
+];
+eq(matchInspector("MW", staff).kind, "match", "unique initials match");
+eq(matchInspector("George Agapiadis", staff).kind, "match", "a folder with the full name matches");
+eq(matchInspector("ZZ", staff).kind, "unknown", "unknown initials");
+eq(matchInspector("MW", [...staff, { name: "Madison Wyre", email: "m@example.com" }]).kind, "ambiguous", "two current MWs are ambiguous — never emailed");
+
+// ── nightly crawl: the morning report ───────────────────────────────────
+const report = buildReport({
+  date: "2026-09-22",
+  dayFolderId: "1",
+  dayFolderPath: "2026 / 09 / 22",
+  folders: [
+    { box_folder_id: "a", folder_name: "MW", initials: "MW", match_kind: "match", staff_name: "Martin (Jie) Weng", staff_email: "martin@example.com" },
+    { box_folder_id: "b", folder_name: "GA", initials: "GA", match_kind: "match", staff_name: "George Agapiadis", staff_email: "george@example.com" },
+    { box_folder_id: "c", folder_name: "ZZ", initials: "ZZ", match_kind: "unknown", staff_name: null, staff_email: null },
+  ],
+  files: [
+    { box_file_id: "f2", inspector_folder_id: "a", name: "12 Smith St Part 10.mp3", status: "done", attempts: 1, error: null, flags: 0, duration_seconds: 60, txt_box_file_id: "t", txt_error: null },
+    { box_file_id: "f1", inspector_folder_id: "a", name: "12 Smith St Part 2.mp3", status: "done", attempts: 1, error: null, flags: 2, duration_seconds: 600, txt_box_file_id: "t", txt_error: null },
+    { box_file_id: "f3", inspector_folder_id: "a", name: "13 Smith St.mp3", status: "failed", attempts: 3, error: "Deepgram API 400", flags: null, duration_seconds: null, txt_box_file_id: null, txt_error: null },
+  ],
+  live: false,
+  budgetExhausted: false,
+});
+eq(report.totals.recordings, 3, "report counts every recording");
+eq(report.totals.transcribed, 2, "and the transcribed ones");
+eq(report.totals.failed, 1, "and the failures");
+eq(report.totals.flags, 2, "and the [CHECK] lines");
+eq(report.inspectors.find((i) => i.folderName === "MW")!.files[0].name, "12 Smith St Part 2.mp3", "parts in NATURAL order — Part 2 before Part 10");
+eq(report.inspectors.filter((i) => i.missing).length, 2, "two folders with no recording");
+eq(report.notices.length, 1, "only the matched inspector gets a notice");
+eq(report.notices[0].email, "george@example.com", "notice goes to George");
+eq(report.unmatchedMissing.join(), "ZZ", "the unknown folder is reported, not emailed");
+const email = renderDailyReport(report, "https://example.com/tool");
+eq(email.subject, "Dictations for Tue 22 Sep 2026: 2 transcribed, 2 missing, 1 failed", "report subject");
+eq(email.html.includes("Would have emailed"), true, "shadow mode says who WOULD have been emailed");
+eq(renderMissingNotice({ folderName: "GA", staffName: "George Agapiadis", email: "g@x" }, "2026-09-22", null).html.includes("Hi George,"), true, "notice greets by first name");
+eq(renderDailyReport({ ...report, inspectors: [{ ...report.inspectors[0], folderName: "<b>x</b>" }] }, "u").html.includes("<b>x</b>"), false, "folder names are escaped");
+
 if (failures) {
   console.error(`\n${failures} failure(s)`);
   process.exit(1);
 }
-console.log("✓ transcript layout and keyterms hold");
+console.log("✓ transcript layout, keyterms and the nightly crawl hold");

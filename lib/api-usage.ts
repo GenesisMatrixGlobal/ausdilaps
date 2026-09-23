@@ -11,7 +11,17 @@
 // Deliberately NOT importing "server-only" or next/headers statically: lib/knowledge/ai.ts
 // and lib/tenders/classify.ts run from tsx scripts and the cron as well as from routes.
 
+import { AsyncLocalStorage } from "node:async_hooks";
+
 export type ApiProvider = "google" | "anthropic" | "arcgis" | "deepgram";
+
+/** The tool a stretch of work belongs to when there is no staff page behind it — a cron has
+ *  no Referer. `withApiTool("transcription-buddy", () => ...)` attributes every call made
+ *  inside it, so the shared pipeline (deepgram.ts, cleanup.ts) needs no tool parameter. */
+const toolContext = new AsyncLocalStorage<string>();
+export function withApiTool<T>(tool: string, fn: () => Promise<T>): Promise<T> {
+  return toolContext.run(tool, fn);
+}
 
 export type GoogleApi =
   | "geocoding"
@@ -133,7 +143,7 @@ export async function recordApiCall(call: ApiCall): Promise<void> {
   const mode = recording();
   if (mode === "off") return;
   try {
-    const tool = call.tool ?? (await toolFromRequest());
+    const tool = call.tool ?? toolContext.getStore() ?? (await toolFromRequest());
     const row: {
       provider: ApiProvider;
       api: string;

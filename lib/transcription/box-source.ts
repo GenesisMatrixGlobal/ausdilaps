@@ -28,7 +28,7 @@ export type BoxAudioFile = {
   sharedUrl?: string;
 };
 
-type BoxItem = { id: string; type: "file" | "folder" | "web_link"; name: string; size?: number };
+type BoxItem = BoxEntry;
 
 const AUDIO_EXT = new Set<string>(ACCEPTED_AUDIO_EXTENSIONS);
 
@@ -60,18 +60,29 @@ export async function listBoxAudio(link: BoxLink): Promise<{ kind: "file" | "fol
   }
   if (target.type !== "folder") throw new BoxSourceError("That Box link isn't a file or a folder.");
 
-  // Paged, and NOT cached: lib/box's listFolderItems carries revalidate: 1800 for the samples
-  // page, and a recording uploaded a minute ago has to show up here.
-  const files: BoxAudioFile[] = [];
+  const files: BoxAudioFile[] = (await listFolderEntries(target.id, headers))
+    .filter((e) => e.type === "file" && isAudioName(e.name))
+    .map((e) => ({ fileId: e.id, name: e.name, size: e.size ?? 0, sharedUrl }));
+  return { kind: "folder", folderName: target.name, files };
+}
+
+export type BoxEntry = { id: string; type: "file" | "folder" | "web_link"; name: string; size?: number };
+
+/** Everything directly in a folder, Box's name order. Paged, and NOT cached: lib/box's
+ *  listFolderItems carries revalidate: 1800 for the samples page, and a recording uploaded a
+ *  minute ago has to show up here. Shared by the Manual tab and the nightly crawl. */
+export async function listFolderEntries(folderId: string, headers?: Record<string, string>): Promise<BoxEntry[]> {
+  const h = headers ?? { Authorization: `Bearer ${await getAccessToken()}` };
+  const out: BoxEntry[] = [];
   for (let offset = 0; ; offset += 1000) {
-    const page = await boxJson<{ entries: BoxItem[]; total_count: number }>(
-      `https://api.box.com/2.0/folders/${target.id}/items?fields=id,type,name,size&limit=1000&offset=${offset}&sort=name&direction=ASC`,
-      headers
+    const page = await boxJson<{ entries: BoxEntry[]; total_count: number }>(
+      `https://api.box.com/2.0/folders/${folderId}/items?fields=id,type,name,size&limit=1000&offset=${offset}&sort=name&direction=ASC`,
+      h
     );
-    for (const e of page.entries) if (e.type === "file" && isAudioName(e.name)) files.push({ fileId: e.id, name: e.name, size: e.size ?? 0, sharedUrl });
+    out.push(...page.entries);
     if (offset + 1000 >= page.total_count) break;
   }
-  return { kind: "folder", folderName: target.name, files };
+  return out;
 }
 
 export type BoxAudioSource = { name: string; size: number; downloadUrl: string };

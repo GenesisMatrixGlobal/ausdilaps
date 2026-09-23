@@ -41,9 +41,15 @@ const VIEWS: { key: View; label: string }[] = [
   { key: "raw", label: "Raw" },
 ];
 
+/** Where a recording comes from: dropped here, or already filed in Box (by link — Box hands
+ *  Deepgram a download URL and nothing is copied anywhere). */
+type Source = { kind: "file"; file: File } | { kind: "box"; url: string };
+
 type Item = {
   id: string;
-  file: File;
+  source: Source;
+  /** Bytes when known — a dropped file's size, or Box's once the link resolves. */
+  size?: number;
   name: string;
   status: Status;
   raw?: string;
@@ -63,6 +69,9 @@ type Item = {
 type TranscribeResponse = {
   ok: boolean;
   error?: string;
+  /** From /from-box only: Box's own file name and size. */
+  name?: string;
+  size?: number;
   raw?: string;
   cleaned?: string;
   typing?: string;
@@ -167,28 +176,42 @@ export function TranscriptionBuddyTool() {
   const processOne = useCallback(
     async (item: Item) => {
       try {
-        const prep = await fetch("/api/transcription/upload-url", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name: item.name, size: item.file.size, type: item.file.type }),
-        });
-        const { path, token } = await readJson<{ path: string; token: string }>(prep, "Could not prepare the upload.");
+        let res: Response;
+        if (item.source.kind === "box") {
+          // Box resolves the link and hands Deepgram a download URL; nothing is uploaded.
+          patch(item.id, { status: "transcribing" });
+          res = await fetch("/api/transcription/from-box", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ url: item.source.url }),
+          });
+        } else {
+          const { file } = item.source;
+          const prep = await fetch("/api/transcription/upload-url", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name: item.name, size: file.size, type: file.type }),
+          });
+          const { path, token } = await readJson<{ path: string; token: string }>(prep, "Could not prepare the upload.");
 
-        // Straight to Storage on the signed URL — the bytes never touch a Vercel function.
-        const { error: uploadError } = await createClient()
-          .storage.from(DICTATION_BUCKET)
-          .uploadToSignedUrl(path, token, item.file, { contentType: item.file.type || "audio/mpeg" });
-        if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+          // Straight to Storage on the signed URL — the bytes never touch a Vercel function.
+          const { error: uploadError } = await createClient()
+            .storage.from(DICTATION_BUCKET)
+            .uploadToSignedUrl(path, token, file, { contentType: file.type || "audio/mpeg" });
+          if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
-        patch(item.id, { status: "transcribing" });
-        const res = await fetch("/api/transcription/transcribe", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ path, name: item.name }),
-        });
+          patch(item.id, { status: "transcribing" });
+          res = await fetch("/api/transcription/transcribe", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ path, name: item.name }),
+          });
+        }
         const json = await readJson<TranscribeResponse>(res, "Transcription failed.");
         patch(item.id, {
           status: "done",
+          name: json.name ?? item.name,
+          size: json.size ?? item.size,
           raw: json.raw ?? "",
           cleaned: json.cleaned ?? json.raw ?? "",
           typing: json.typing ?? json.cleaned ?? json.raw ?? "",
@@ -253,12 +276,20 @@ export function TranscriptionBuddyTool() {
       const fresh: Item[] = [];
       for (const file of Array.from(files)) {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const source: Source = { kind: "file", file };
         if (!isAudio(file)) {
-          fresh.push({ id, file, name: file.name, status: "failed", error: "Not an audio file." });
+          fresh.push({ id, source, size: file.size, name: file.name, status: "failed", error: "Not an audio file." });
         } else if (file.size > MAX_AUDIO_BYTES) {
-          fresh.push({ id, file, name: file.name, status: "failed", error: `Too large (${mb(file.size)}; ${mb(MAX_AUDIO_BYTES)} max).` });
+          fresh.push({
+            id,
+            source,
+            size: file.size,
+            name: file.name,
+            status: "failed",
+            error: `Too large (${mb(file.size)}; ${mb(MAX_AUDIO_BYTES)} max). Paste its Box link instead — there is no size limit that way.`,
+          });
         } else {
-          fresh.push({ id, file, name: file.name, status: "queued" });
+          fresh.push({ id, source, size: file.size, name: file.name, status: "queued" });
         }
       }
       if (!fresh.length) return;
@@ -269,6 +300,22 @@ export function TranscriptionBuddyTool() {
     },
     [runQueue]
   );
+
+  const [boxLink, setBoxLink] = useState("");
+  const addBoxLink = useCallback(() => {
+    const url = boxLink.trim();
+    if (!url) return;
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // Shown by the link's tail until Box answers with the real file name.
+    const tail = url.replace(/[?#].*$/, "").split("/").filter(Boolean).slice(-2).join("/");
+    const item: Item = /box\.com\//i.test(url)
+      ? { id, source: { kind: "box", url }, name: `Box file …${tail}`, status: "queued" }
+      : { id, source: { kind: "box", url }, name: url, status: "failed", error: "Not a Box link." };
+    itemsRef.current = [...itemsRef.current, item];
+    setItems(itemsRef.current);
+    setBoxLink("");
+    void runQueue();
+  }, [boxLink, runQueue]);
 
   const retry = useCallback(
     (id: string) => {
@@ -366,6 +413,27 @@ export function TranscriptionBuddyTool() {
         )}
       </div>
 
+      {/* The other way in: a recording already filed in Box. Box hands Deepgram a download URL, so
+          nothing is re-uploaded and no size cap of ours applies — the way to do a two-hour file. */}
+      <form
+        className="mt-3 flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          addBoxLink();
+        }}
+      >
+        <input
+          type="url"
+          value={boxLink}
+          onChange={(e) => setBoxLink(e.target.value)}
+          placeholder="…or paste a Box link to a recording that is already filed"
+          className="h-11 min-w-0 flex-1 rounded-full border border-ad-border bg-white px-4 text-sm text-ad-ink placeholder:text-ad-muted focus:outline-none focus:ring-2 focus:ring-ad-accent"
+        />
+        <button type="submit" className={cn(buttonVariants({ variant: "outline", size: "md" }))} disabled={!boxLink.trim()}>
+          Add from Box
+        </button>
+      </form>
+
       {items.length > 0 && (
         <>
           {/* Toolbar sits ABOVE the output, so it is reachable while the transcript is scrolled. */}
@@ -460,7 +528,7 @@ export function TranscriptionBuddyTool() {
                 <span className="min-w-0 flex-1 truncate font-medium text-ad-ink" title={it.name}>
                   {it.name}
                 </span>
-                <span className="text-ad-muted">{mb(it.file.size)}</span>
+                <span className="text-ad-muted">{it.size !== undefined ? mb(it.size) : "Box"}</span>
                 {it.status === "done" && it.durationSeconds ? (
                   <span className="text-ad-muted">{minutes(it.durationSeconds)}</span>
                 ) : null}
@@ -485,7 +553,7 @@ export function TranscriptionBuddyTool() {
                     {copiedId === it.id ? "Copied" : "Copy"}
                   </button>
                 )}
-                {it.status === "failed" && it.error !== "Not an audio file." && !it.error?.startsWith("Too large") && (
+                {it.status === "failed" && it.error !== "Not an audio file." && it.error !== "Not a Box link." && !it.error?.startsWith("Too large") && (
                   <button
                     type="button"
                     className={cn(buttonVariants({ variant: "outline", size: "sm" }))}

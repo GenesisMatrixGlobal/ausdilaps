@@ -11,6 +11,7 @@
 import { chunkBody, formatBatch, formatTranscript, splitHeader, timestamp, timestampLines } from "@/lib/transcription/format";
 import { DICTATION_KEYTERMS, STAFF_NAMES, keytermsFor, keytermsForFile } from "@/lib/transcription/keyterms";
 import { countFlags, flagGarbledNumber, linesRemoved, trimForTyping, trimLine } from "@/lib/transcription/trim";
+import { parseBoxFileLink } from "@/lib/transcription/box-link";
 
 let failures = 0;
 function fail(msg: string) {
@@ -178,6 +179,13 @@ eq(countFlags("a [CHECK: x] b [CHECK NUMBER: 1, likely 2] c"), 2, "flags counted
   eq(chunkBody(pairs, 100).length, 1, "a short body is one chunk");
   eq(chunkBody("", 100).join(""), "", "an empty body is harmless");
 }
+
+// ── Box file links ──────────────────────────────────────────────────────
+eq(JSON.stringify(parseBoxFileLink("https://ausdilaps.app.box.com/file/1234567890")), JSON.stringify({ kind: "file", fileId: "1234567890" }), "plain file link");
+eq(JSON.stringify(parseBoxFileLink("https://ausdilaps.app.box.com/folder/99/file/1234567890?x=1")), JSON.stringify({ kind: "file", fileId: "1234567890" }), "file link inside a folder path, query dropped");
+eq(JSON.stringify(parseBoxFileLink("https://ausdilaps.app.box.com/s/abcDEF123xyz?sb=1")), JSON.stringify({ kind: "shared", url: "https://ausdilaps.app.box.com/s/abcDEF123xyz" }), "shared link, query dropped");
+eq(parseBoxFileLink("https://ausdilaps.app.box.com/folder/1234567890"), null, "a folder link is refused");
+eq(parseBoxFileLink("https://example.com/file/123"), null, "not Box at all");
 
 // ── file-name keyterms ──────────────────────────────────────────────────
 eq(keytermsFor("11 Emeraldwood st.mp3").join("|"), "Emeraldwood Street", "house number dropped, st expanded");

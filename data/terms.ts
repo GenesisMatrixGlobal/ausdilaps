@@ -1,7 +1,9 @@
 // AusDilaps General Terms and Conditions, version 2.0 (see data/legal.ts).
 //
 // Version 1 (7 June 2023) with these changes only: the correct contracting entity;
-// order of precedence (4.5); the Site Records clause (13.7); its confidentiality
+// order of precedence (4.5); photography from public places (10.6, mirroring the
+// inspectors' "Property Photography – Legal Position Statement"); the Site Records
+// reuse clause (13.7, Rhys's wording); its confidentiality
 // carve-out (14.2(e)); Site Records retention (18.4); the privacy clause (20.13); and
 // typo / cross-reference fixes (e.g. 8.3, 10.4, 18.3(c)). Everything else is verbatim.
 // Inline **bold** and [links](/path) render through renderInline().
@@ -253,6 +255,21 @@ export const TERMS_SECTIONS: TermsSection[] = [
         number: "10.5",
         text: "By engaging AusDilaps to carry out a condition survey at a residential or commercial property, you recognise and accept that we retain the right, at our sole discretion, to provide the property owner(s) with a copy of the inspection report(s), should they request it.",
       },
+      {
+        number: "10.6",
+        text: "We may photograph the visible, external condition of a property from a public place, such as a footpath, road reserve or other council-owned or publicly accessible land, without entering the property. When we do:",
+        items: [
+          {
+            label: "(a)",
+            text: "the photographs record only the visible, external condition of the property and are not used to identify any individual;",
+          },
+          { label: "(b)", text: "we do not collect personal information beyond the property address; and" },
+          {
+            label: "(c)",
+            text: "we use, store, reproduce and disclose the photographs to record, evidence and report on the property’s condition before nearby construction works, including to you, the relevant council, the project principal and their insurers and professional advisers, and as set out in clause 13.7.",
+          },
+        ],
+      },
     ],
   },
   {
@@ -335,43 +352,7 @@ export const TERMS_SECTIONS: TermsSection[] = [
       },
       {
         number: "13.7",
-        text: "**Site Records** means photographs, video, drone, LiDAR and other imagery, measurements and field notes captured by us or our Personnel in providing the Services. Site Records are New Materials, owned by us under clause 13.2.",
-        items: [
-          {
-            label: "(a)",
-            text: "You agree that we may use, reproduce, adapt and supply Site Records, and the factual observations of property condition recorded in them, to prepare reports or provide services to any other person, during or after the Term.",
-          },
-          {
-            label: "(b)",
-            text: "When we do so, we will:",
-            items: [
-              {
-                label: "(1)",
-                text: "not name you or your project, or include Your Materials or any Confidential Information you have disclosed to us;",
-              },
-              {
-                label: "(2)",
-                text: "state the date the Site Records were captured and whether a reinspection has occurred;",
-              },
-              {
-                label: "(3)",
-                text: "comply with privacy laws and any request or restriction from the relevant property owner or occupier; and",
-              },
-              {
-                label: "(4)",
-                text: "not supply any post-construction comparison, defect origin or other damage assessment prepared for you without your written consent.",
-              },
-            ],
-          },
-          {
-            label: "(c)",
-            text: "You have no liability for, and no rights in, any report we prepare for another person under this clause.",
-          },
-          {
-            label: "(d)",
-            text: "This clause applies despite clauses 13.3 and 14. It does not apply to the extent a written agreement signed by both Parties says otherwise, or if you tell us in writing before we accept your Order that you do not agree to it.",
-          },
-        ],
+        text: "AusDilaps retains the intellectual property rights in photographs, records and other materials produced during an inspection (**Site Records**). These materials may be reused in reports prepared for other clients where relevant, provided that you are not identified and your confidential information is not disclosed. If you do not consent to this use, please notify us.",
       },
       { number: "13.8", text: "This clause 13 will survive termination or expiry of this Agreement." },
     ],
@@ -409,7 +390,7 @@ export const TERMS_SECTIONS: TermsSection[] = [
             text: "is in the public domain and/or is no longer confidential, except as a result of a breach of this Agreement;",
           },
           { label: "(d)", text: "must be disclosed by Law or by a regulatory authority, including under subpoena; or" },
-          { label: "(e)", text: "is Site Records, or factual observations, used in accordance with clause 13.7." },
+          { label: "(e)", text: "is Site Records reused in accordance with clause 13.7." },
         ],
       },
       {

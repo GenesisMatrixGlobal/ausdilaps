@@ -8,7 +8,7 @@
 
 import { anthropicCostCents, recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
 import { CLEANUP_MODEL } from "./config";
-import { splitHeader, timestampLines } from "./format";
+import { chunkBody, splitHeader, timestampLines } from "./format";
 import { DICTATION_KEYTERMS, keytermsFor } from "./keyterms";
 
 export type CleanupResult = { text: string; changed: boolean; note?: string; costCents: number };
@@ -30,17 +30,53 @@ Two things need judgement, and a flag when judgement is not enough. A flag is th
 
 - Return ONLY the corrected transcript text, in the same layout, with no preamble, explanation or markdown.`;
 
+/** Timestamp pairs per model call. ~120 pairs is ~15 minutes of dictation and ~3k tokens each
+ *  way — comfortably inside one response, and short enough that a two-hour file becomes eight
+ *  calls run three at a time rather than one call that overruns the route. */
+const CLEANUP_CHUNK_PAIRS = 120;
+const CLEANUP_CONCURRENCY = 3;
+
 export async function cleanTranscript(input: { raw: string; filename: string }): Promise<CleanupResult> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return { text: input.raw, changed: false, note: "Clean-up not configured", costCents: 0 };
 
   const { header, body } = splitHeader(input.raw);
+  const chunks = chunkBody(body, CLEANUP_CHUNK_PAIRS);
+  const results: ChunkResult[] = new Array(chunks.length);
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= chunks.length) return;
+      results[i] = await cleanChunk(chunks[i], input.filename, key);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CLEANUP_CONCURRENCY, chunks.length) }, worker));
+
+  const text = results.map((r) => r.text).join("\n");
+  const costCents = results.reduce((s, r) => s + r.costCents, 0);
+  const failed = results.filter((r) => !r.ok).length;
+  const full = header ? `${header}\n${text}` : text;
+  const note =
+    failed === 0
+      ? undefined
+      : failed === results.length
+        ? "Clean-up unavailable — showing the raw transcript"
+        : `Clean-up skipped for ${failed} of ${results.length} sections — those show the raw transcript`;
+  return { text: full, changed: text !== body, costCents, note };
+}
+
+type ChunkResult = { text: string; ok: boolean; costCents: number };
+
+/** One model call over one chunk of the body. Never throws: a failed chunk comes back as its
+ *  own raw text with `ok: false`, and the cost it incurred before failing. */
+async function cleanChunk(body: string, filename: string, key: string): Promise<ChunkResult> {
   // Billed the moment the response lands — a pass that is then discarded still cost this.
   let costCents = 0;
   try {
-    const hint = keytermsFor(input.filename);
+    const hint = keytermsFor(filename);
     const userText = [
-      `File name: ${input.filename}`,
+      `File name: ${filename}`,
       hint.length ? `Likely address words: ${hint.join(", ")}` : "",
       `Vocabulary the inspector uses: ${DICTATION_KEYTERMS.join(", ")}`,
       "",
@@ -48,6 +84,7 @@ export async function cleanTranscript(input: { raw: string; filename: string }):
       body,
     ]
       .filter((l) => l !== "")
+
       .join("\n");
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -95,10 +132,9 @@ export async function cleanTranscript(input: { raw: string; filename: string }):
       throw new Error(`timestamps changed (${before.length} → ${after.length})`);
     }
 
-    const full = header ? `${header}\n${text}` : text;
-    return { text: full, changed: text !== body.trim(), costCents };
+    return { text, ok: true, costCents };
   } catch (e) {
-    console.warn(`[transcription] clean-up skipped: ${(e as Error).message}`);
-    return { text: input.raw, changed: false, note: "Clean-up unavailable — showing the raw transcript", costCents };
+    console.warn(`[transcription] clean-up skipped for a section: ${(e as Error).message}`);
+    return { text: body, ok: false, costCents };
   }
 }

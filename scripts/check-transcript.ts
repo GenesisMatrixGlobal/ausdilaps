@@ -8,7 +8,7 @@
 // so a tidy-up of format.ts cannot silently break the skill, and pins the file-name keyterm
 // parsing that hands Deepgram the street name. Exits non-zero on any failure.
 
-import { formatBatch, formatTranscript, splitHeader, timestamp, timestampLines } from "@/lib/transcription/format";
+import { chunkBody, formatBatch, formatTranscript, splitHeader, timestamp, timestampLines } from "@/lib/transcription/format";
 import { DICTATION_KEYTERMS, STAFF_NAMES, keytermsFor, keytermsForFile } from "@/lib/transcription/keyterms";
 import { countFlags, flagGarbledNumber, linesRemoved, trimForTyping, trimLine } from "@/lib/transcription/trim";
 
@@ -165,6 +165,18 @@ eq(countFlags("a [CHECK: x] b [CHECK NUMBER: 1, likely 2] c"), 2, "flags counted
   );
   eq(linesRemoved(full, typing), 3, "three lines removed");
   eq(trimForTyping(typing), typing, "trimming twice changes nothing");
+}
+
+// ── chunking for the clean-up pass ─────────────────────────────────────
+{
+  const pairs = Array.from({ length: 7 }, (_, i) => `${timestamp(i * 10)}\nLine ${i}.`).join("\n");
+  const chunks = chunkBody(pairs, 3);
+  eq(chunks.length, 3, "seven pairs at three a chunk → three chunks");
+  eq(chunks.join("\n"), pairs, "joining the chunks gives the body back exactly");
+  eq(chunks.every((c) => /^\d{2}:\d{2}:\d{2}\n/.test(c)), true, "every chunk opens with a timestamp");
+  eq(chunks.every((c) => !/\d{2}:\d{2}:\d{2}$/.test(c)), true, "no chunk ends on a bare timestamp");
+  eq(chunkBody(pairs, 100).length, 1, "a short body is one chunk");
+  eq(chunkBody("", 100).join(""), "", "an empty body is harmless");
 }
 
 // ── file-name keyterms ──────────────────────────────────────────────────

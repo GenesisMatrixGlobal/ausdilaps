@@ -62,3 +62,29 @@ export function splitHeader(text: string): { header: string; body: string } {
   if (lines[0] !== "Audio file" || lines.length < HEADER_LINE_COUNT) return { header: "", body: text };
   return { header: lines.slice(0, HEADER_LINE_COUNT).join("\n"), body: lines.slice(HEADER_LINE_COUNT).join("\n") };
 }
+
+/**
+ * Split a body (timestamp/text pairs) into chunks of at most `maxPairs` pairs, on pair
+ * boundaries only, so a chunk never opens with text or closes with a stamp. Joining the chunks
+ * with "\n" gives the body back exactly. The clean-up pass works a chunk at a time: a
+ * two-hour dictation is ~25k tokens, past one response's `max_tokens` and past a route's
+ * wall clock, and the chunks run three at a time instead.
+ */
+export function chunkBody(body: string, maxPairs: number): string[] {
+  const lines = body.split("\n");
+  const chunks: string[] = [];
+  let current: string[] = [];
+  let pairs = 0;
+  for (const line of lines) {
+    const isStamp = /^\d{2}:\d{2}:\d{2}$/.test(line.trim());
+    if (isStamp && pairs >= maxPairs && current.length) {
+      chunks.push(current.join("\n"));
+      current = [];
+      pairs = 0;
+    }
+    current.push(line);
+    if (isStamp) pairs++;
+  }
+  if (current.length) chunks.push(current.join("\n"));
+  return chunks;
+}

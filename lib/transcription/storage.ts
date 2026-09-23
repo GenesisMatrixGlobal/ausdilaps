@@ -31,6 +31,16 @@ export async function ensureDictationBucket(): Promise<void> {
   });
   // "already exists" arrives as an error, not a success — that is the normal case.
   if (error && !/exist/i.test(error.message)) throw new Error(`Could not create the ${DICTATION_BUCKET} bucket: ${error.message}`);
+  // The live bucket was left carrying a 100 MB per-file limit by a half-failed first create.
+  // Clear it so the PROJECT's upload limit is the only ceiling and raising that setting in the
+  // dashboard is enough — otherwise a 110 MB file fails here even after the project allows it.
+  // Best effort: a refusal leaves the bucket as it was.
+  const { error: limitError } = await db.storage.updateBucket(DICTATION_BUCKET, {
+    public: false,
+    fileSizeLimit: null,
+    allowedMimeTypes: [...ACCEPTED_AUDIO_MIME],
+  });
+  if (limitError) console.warn(`[transcription] could not clear the ${DICTATION_BUCKET} bucket's file size limit: ${limitError.message}`);
   ensured = true;
 }
 

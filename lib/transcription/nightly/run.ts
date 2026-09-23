@@ -20,7 +20,7 @@ import { countFlags } from "../trim";
 import { addDays, isAtOrAfter, sydneyNow, sydneyYesterday } from "./dates";
 import { DayFolderError, discoverDay, type DayListing } from "./discover";
 import { matchInspector, type StaffMember } from "./initials";
-import { boxFolderUrl, buildReport, renderDailyReport, renderMissingNotice, type FileRow, type FolderRow, type NightlyReport } from "./report";
+import { buildReport, renderDailyReport, renderMissingNotice, type FileRow, type FolderRow, type NightlyReport } from "./report";
 import { addressList, sendEmail } from "./email";
 
 // One TICK of the nightly crawl. The cron calls this every 10 minutes through the early
@@ -163,6 +163,7 @@ async function discover(date: string): Promise<DayListing> {
         match_kind: staff ? m.kind : "unknown",
         staff_name: m.kind === "match" ? m.name : null,
         staff_email: m.kind === "match" ? m.email : null,
+        notes_files: f.notes,
       };
     });
     // Salesforce down → keep whatever an earlier tick resolved rather than blanking it.
@@ -299,7 +300,7 @@ export async function loadReport(date: string, listing?: DayListing | null): Pro
   const db = createAdminClient();
   const [run, folders, files] = await Promise.all([
     db.from(RUNS).select("day_folder_id, day_folder_path").eq("run_date", date).maybeSingle(),
-    db.from(FOLDERS).select("box_folder_id, folder_name, initials, match_kind, staff_name, staff_email").eq("run_date", date),
+    db.from(FOLDERS).select("box_folder_id, folder_name, initials, match_kind, staff_name, staff_email, notes_files").eq("run_date", date),
     db.from(FILES).select("box_file_id, inspector_folder_id, name, status, attempts, error, flags, duration_seconds, txt_box_file_id, txt_error").eq("run_date", date),
   ]);
   const fileRows = (files.data ?? []) as FileRow[];
@@ -352,9 +353,8 @@ async function maybeReport(date: string, now: Date, listing: DayListing, opts: {
   if (worthSending) {
     if (report.live) {
       for (const n of report.notices) {
-        const folder = report.inspectors.find((i) => i.folderName === n.folderName);
-        const msg = renderMissingNotice(n, date, folder ? boxFolderUrl(folder.folderId) : null);
-        const r = await sendEmail({ to: [n.email], cc: recipients, ...msg, idempotencyKey: `transcription-missing:${date}:${folder?.folderId ?? n.folderName}` });
+        const msg = renderMissingNotice(n, date);
+        const r = await sendEmail({ to: [n.email], cc: recipients, ...msg, idempotencyKey: `transcription-missing:${date}:${n.email.toLowerCase()}` });
         n.sent = r.sent;
         if (!r.sent) n.error = r.error;
       }

@@ -243,9 +243,14 @@ eq(matchesYear("2026", 2026), true, "year");
 eq(matchesYear("2025", 2026), false, "wrong year");
 for (const n of ["09", "9", "Sep", "Sept", "September", "09 September", "2026-09", "9. September 2026"]) eq(matchesMonth(n, 2026, 9), true, `month "${n}"`);
 for (const n of ["10", "October", "2026-10", "09 October", "2025-09"]) eq(matchesMonth(n, 2026, 9), false, `not September: "${n}"`);
-for (const n of ["22", "22nd", "Tue 22", "2026-09-22", "22-09-2026", "22.09.26", "22 September"]) eq(matchesDay(n, "2026-09-22"), true, `day "${n}"`);
-for (const n of ["23", "2026-09-23", "22-10-2026", "2026-10-22", "22 October", "Tue 2"]) eq(matchesDay(n, "2026-09-22"), false, `not the 22nd: "${n}"`);
+for (const n of ["220926", "22092026", "20260922", "22", "22nd", "Tue 22", "2026-09-22", "22-09-2026", "22.09.26", "22 September"]) eq(matchesDay(n, "2026-09-22"), true, `day "${n}"`);
+for (const n of ["230926", "220925", "221026", "23", "2026-09-23", "22-10-2026", "2026-10-22", "22 October", "Tue 2"]) eq(matchesDay(n, "2026-09-22"), false, `not the 22nd: "${n}"`);
 eq(matchesDay("2026-09-02", "2026-02-09"), false, "ISO order is never read as day-month");
+// The real tree, 2026-09-23: 2026 / 09. September / 220926.
+eq(matchesMonth("09. September", 2026, 9), true, "real month folder");
+eq(matchesMonth("08. August", 2026, 9), false, "real month folder, wrong month");
+eq(folderInitials("RG - 37472-00039595-01 - Pre-Con - Standard - 27 Beenwerrin Crescent CAPALABA"), "RG", "a real job folder's initials");
+eq(folderInitials("MW - ENG - REPORT AMENDMENT - NOOSAVILLE"), "MW", "a job folder with no job number");
 
 // ── nightly crawl: inspector initials ───────────────────────────────────
 eq(initialsOf("Martin (Jie) Weng"), "MW", "bracketed nickname dropped");
@@ -269,7 +274,8 @@ const report = buildReport({
   dayFolderPath: "2026 / 09 / 22",
   folders: [
     { box_folder_id: "a", folder_name: "MW", initials: "MW", match_kind: "match", staff_name: "Martin (Jie) Weng", staff_email: "martin@example.com" },
-    { box_folder_id: "b", folder_name: "GA", initials: "GA", match_kind: "match", staff_name: "George Agapiadis", staff_email: "george@example.com" },
+    { box_folder_id: "b", folder_name: "GA - 1 - Pre-Con - 5 Norman St", initials: "GA", match_kind: "match", staff_name: "George Agapiadis", staff_email: "george@example.com", notes_files: ["5 norman st notes.docx"] },
+    { box_folder_id: "d", folder_name: "GA - 2 - Pre-Con - 9 Norman St", initials: "GA", match_kind: "match", staff_name: "George Agapiadis", staff_email: "george@example.com" },
     { box_folder_id: "c", folder_name: "ZZ", initials: "ZZ", match_kind: "unknown", staff_name: null, staff_email: null },
   ],
   files: [
@@ -285,14 +291,18 @@ eq(report.totals.transcribed, 2, "and the transcribed ones");
 eq(report.totals.failed, 1, "and the failures");
 eq(report.totals.flags, 2, "and the [CHECK] lines");
 eq(report.inspectors.find((i) => i.folderName === "MW")!.files[0].name, "12 Smith St Part 2.mp3", "parts in NATURAL order — Part 2 before Part 10");
-eq(report.inspectors.filter((i) => i.missing).length, 2, "two folders with no recording");
-eq(report.notices.length, 1, "only the matched inspector gets a notice");
+eq(report.inspectors.filter((i) => i.missing).length, 3, "three job folders with no recording");
+eq(report.notices.length, 1, "ONE notice per inspector, not one per job");
+eq(report.notices[0].folders.length, 2, "listing both of George's jobs");
+eq(report.inspectors.find((i) => i.folderId === "b")!.notes.join(), "5 norman st notes.docx", "written notes are carried to the report");
 eq(report.notices[0].email, "george@example.com", "notice goes to George");
 eq(report.unmatchedMissing.join(), "ZZ", "the unknown folder is reported, not emailed");
 const email = renderDailyReport(report, "https://example.com/tool");
-eq(email.subject, "Dictations for Tue 22 Sep 2026: 2 transcribed, 2 missing, 1 failed", "report subject");
+eq(email.subject, "Dictations for Tue 22 Sep 2026: 2 transcribed, 3 missing, 1 failed", "report subject");
+eq(email.html.includes("written notes: 5 norman st notes.docx"), true, "the report shows a folder's written notes");
 eq(email.html.includes("Would have emailed"), true, "shadow mode says who WOULD have been emailed");
-eq(renderMissingNotice({ folderName: "GA", staffName: "George Agapiadis", email: "g@x" }, "2026-09-22", null).html.includes("Hi George,"), true, "notice greets by first name");
+eq(renderMissingNotice(report.notices[0], "2026-09-22").html.includes("Hi George,"), true, "notice greets by first name");
+eq(renderMissingNotice(report.notices[0], "2026-09-22").subject, "2 jobs with no recording for Tue 22 Sep 2026", "one email names how many jobs");
 eq(renderDailyReport({ ...report, inspectors: [{ ...report.inspectors[0], folderName: "<b>x</b>" }] }, "u").html.includes("<b>x</b>"), false, "folder names are escaped");
 
 if (failures) {

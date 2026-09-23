@@ -14,6 +14,7 @@ export type FolderRow = {
   match_kind: string;
   staff_name: string | null;
   staff_email: string | null;
+  notes_files?: string[] | null;
 };
 
 export type FileRow = {
@@ -40,9 +41,12 @@ export type ReportInspector = {
   files: ReportFile[];
   /** The folder is there and holds no recording. */
   missing: boolean;
+  /** Written notes in a folder with no recording — see FoundFolder.notes. */
+  notes: string[];
 };
 
-export type Notice = { folderName: string; staffName: string; email: string; sent?: boolean; error?: string };
+/** ONE email per inspector, listing every job folder of theirs with no recording. */
+export type Notice = { staffName: string; email: string; folders: { id: string; name: string; notes: string[] }[]; sent?: boolean; error?: string };
 
 export type NightlyReport = {
   date: string;
@@ -98,6 +102,7 @@ export function buildReport(input: {
         staffEmail: f.staff_email,
         files,
         missing: files.length === 0,
+        notes: files.length === 0 ? f.notes_files ?? [] : [],
       };
     })
     .sort((a, b) => a.folderName.localeCompare(b.folderName));
@@ -107,8 +112,12 @@ export function buildReport(input: {
   const notices: Notice[] = [];
   const unmatchedMissing: string[] = [];
   for (const i of inspectors.filter((x) => x.missing)) {
-    if (i.matchKind === "match" && i.staffEmail && i.staffName) notices.push({ folderName: i.folderName, staffName: i.staffName, email: i.staffEmail });
-    else unmatchedMissing.push(i.folderName);
+    if (i.matchKind === "match" && i.staffEmail && i.staffName) {
+      const key = i.staffEmail.toLowerCase();
+      let n = notices.find((x) => x.email.toLowerCase() === key);
+      if (!n) notices.push((n = { staffName: i.staffName, email: i.staffEmail, folders: [] }));
+      n.folders.push({ id: i.folderId, name: i.folderName, notes: i.notes });
+    } else unmatchedMissing.push(i.folderName);
   }
 
   return {
@@ -160,12 +169,17 @@ export function renderDailyReport(r: NightlyReport, toolUrl: string): { subject:
 
   const rows: string[] = [];
   for (const i of r.inspectors) {
-    const head = `<tr><td colspan="2" ${CELL}><strong>${escapeHtml(who(i))}</strong>${i.missing ? ' — <span style="color:#e8642a"><strong>no recording</strong></span>' : ""}</td></tr>`;
+    const flag = !i.missing
+      ? ""
+      : i.notes.length
+        ? ` — <span style="color:#e8642a"><strong>no recording</strong></span> (written notes: ${escapeHtml(i.notes.join(", "))})`
+        : ' — <span style="color:#e8642a"><strong>no recording</strong></span>';
+    const head = `<tr><td colspan="2" ${CELL}><strong>${escapeHtml(who(i))}</strong>${flag}</td></tr>`;
     rows.push(head);
     for (const f of i.files) rows.push(`<tr><td ${CELL}>${escapeHtml(f.name)}</td><td ${CELL}>${escapeHtml(statusText(f))}</td></tr>`);
   }
   if (r.loose.length) {
-    rows.push(`<tr><td colspan="2" ${CELL}><strong>Not in an inspector's folder</strong></td></tr>`);
+    rows.push(`<tr><td colspan="2" ${CELL}><strong>Not in a job folder</strong></td></tr>`);
     for (const f of r.loose) rows.push(`<tr><td ${CELL}>${escapeHtml(f.name)}</td><td ${CELL}>${escapeHtml(statusText(f))}</td></tr>`);
   }
 
@@ -173,7 +187,7 @@ export function renderDailyReport(r: NightlyReport, toolUrl: string): { subject:
   if (r.budgetExhausted) notes.push("The nightly transcription limit was reached — the rest can be run from the Manual tab.");
   if (r.totals.left) notes.push(`${r.totals.left} recording(s) were still in progress when this was sent; they will appear in the tool when done.`);
   if (r.notices.length) {
-    const list = r.notices.map((n) => `${escapeHtml(n.staffName)} (${escapeHtml(n.email)})`).join(", ");
+    const list = r.notices.map((n) => `${escapeHtml(n.staffName)} (${escapeHtml(n.email)}, ${n.folders.length} job${n.folders.length === 1 ? "" : "s"})`).join(", ");
     notes.push(r.live ? `Emailed about a missing recording: ${list}.` : `Would have emailed about a missing recording (inspector emails are off): ${list}.`);
   }
   if (r.unmatchedMissing.length) notes.push(`No one emailed for ${r.unmatchedMissing.map(escapeHtml).join(", ")} — the initials don't match exactly one current inspector.`);
@@ -188,13 +202,17 @@ ${notes.map((n) => `<p>${n}</p>`).join("\n")}
   return { subject, html };
 }
 
-export function renderMissingNotice(n: Notice, date: string, folderUrl: string | null): { subject: string; html: string } {
+export function renderMissingNotice(n: Notice, date: string): { subject: string; html: string } {
   const first = n.staffName.replace(/\([^)]*\)/g, " ").trim().split(/\s+/)[0];
-  const subject = `No recording found for ${displayDate(date)}`;
-  const link = folderUrl ? ` (<a href="${escapeHtml(folderUrl)}">open the folder</a>)` : "";
+  const many = n.folders.length > 1;
+  const subject = many ? `${n.folders.length} jobs with no recording for ${displayDate(date)}` : `No recording found for ${displayDate(date)}`;
+  const items = n.folders
+    .map((f) => `<li><a href="${escapeHtml(boxFolderUrl(f.id))}">${escapeHtml(f.name)}</a>${f.notes.length ? ` (has notes: ${escapeHtml(f.notes.join(", "))})` : ""}</li>`)
+    .join("");
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#2f343a">
 <p>Hi ${escapeHtml(first)},</p>
-<p>Your folder <strong>${escapeHtml(n.folderName)}</strong> for ${escapeHtml(displayDate(date))} has no audio recording in it${link}.</p>
+<p>${many ? "These job folders" : "This job folder"} for ${escapeHtml(displayDate(date))} ${many ? "have" : "has"} no audio recording in ${many ? "them" : "it"}:</p>
+<ul>${items}</ul>
 <p>Could you upload the dictation today so the report can be typed?</p>
 <p>Thanks,<br>AusDilaps Reports</p>
 </div>`;

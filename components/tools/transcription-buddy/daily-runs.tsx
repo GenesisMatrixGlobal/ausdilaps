@@ -37,7 +37,7 @@ type RunSummary = {
   minutes: number;
 };
 
-type FolderRow = { box_folder_id: string; folder_name: string; initials: string | null; match_kind: string; staff_name: string | null; staff_email: string | null };
+type FolderRow = { box_folder_id: string; folder_name: string; initials: string | null; match_kind: string; staff_name: string | null; staff_email: string | null; notes_files: string[] | null };
 type FileRow = {
   box_file_id: string;
   box_folder_id: string;
@@ -55,7 +55,7 @@ type FileRow = {
   txt_box_file_id: string | null;
   txt_error: string | null;
 };
-type StoredReport = { notices?: { staffName: string; email: string; sent?: boolean; error?: string }[]; live?: boolean; unmatchedMissing?: string[]; sendError?: string | null; emailed?: boolean };
+type StoredReport = { notices?: { staffName: string; email: string; folders?: { name: string }[]; sent?: boolean; error?: string }[]; live?: boolean; unmatchedMissing?: string[]; sendError?: string | null; emailed?: boolean };
 type Detail = { run: { report: StoredReport | null; error: string | null; day_folder_path: string | null } | null; folders: FolderRow[]; files: FileRow[] };
 
 type View = "typing" | "cleaned" | "raw";
@@ -220,14 +220,14 @@ function NightDetail({ run, detail, view, setView }: { run: RunSummary; detail: 
       {report?.notices && report.notices.length > 0 && (
         <p className="mt-3 text-sm text-ad-muted">
           {report.live ? "Emailed about a missing recording: " : "Would have emailed about a missing recording (inspector emails are off): "}
-          {report.notices.map((n) => `${n.staffName} (${n.email})${n.error ? ` — failed: ${n.error}` : ""}`).join(", ")}
+          {report.notices.map((n) => `${n.staffName} (${n.email}, ${n.folders?.length ?? 1} job${(n.folders?.length ?? 1) === 1 ? "" : "s"})${n.error ? ` — failed: ${n.error}` : ""}`).join(", ")}
         </p>
       )}
       {report?.unmatchedMissing && report.unmatchedMissing.length > 0 && (
         <p className="mt-1 text-sm text-ad-orange">Not emailed — initials don&apos;t match one current inspector: {report.unmatchedMissing.join(", ")}</p>
       )}
 
-      {groups.length === 0 && <p className="mt-3 text-sm text-ad-muted">No inspector folders in this day folder.</p>}
+      {groups.length === 0 && <p className="mt-3 text-sm text-ad-muted">No job folders in this day folder.</p>}
       <div className="mt-3 space-y-3">
         {groups.map((g) => (
           <InspectorGroup key={g.key} folder={g.folder} files={g.files} view={view} />
@@ -247,14 +247,16 @@ function InspectorGroup({ folder, files, view }: { folder: FolderRow | null; fil
       : folder.match_kind === "ambiguous"
         ? `${folder.folder_name} · initials match more than one inspector`
         : `${folder.folder_name} · not a current inspector's initials`
-    : "Not in an inspector's folder";
+    : "Not in a job folder";
 
   return (
     <details className="rounded-xl border border-ad-border bg-white" open={files.length === 0 || undefined}>
       <summary className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
         <span className="font-medium text-ad-ink">{title}</span>
         {files.length === 0 ? (
-          <span className="text-ad-orange">No recording</span>
+          <span className="text-ad-orange">
+            No recording{folder?.notes_files?.length ? <span className="text-ad-muted"> · written notes: {folder.notes_files.join(", ")}</span> : null}
+          </span>
         ) : (
           <span className="text-ad-muted">
             {done.length} of {files.length} transcribed

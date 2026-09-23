@@ -57,7 +57,8 @@ export function displayDate(date: string): string {
 // ── Finding the day folder by NAME ────────────────────────────────────────────────────────
 // The tree is <year> / <month> / <day>. How each level is spelled is the inspectors' habit, not
 // ours, so matching is tolerant: a month may be "09", "9", "Sep", "September", "09 September"
-// or "2026-09"; a day may be "22", "22nd", "Tue 22", "2026-09-22" or "22.09.26". A name only
+// or "2026-09"; a day may be "220926" (what Inspector Uploads actually uses: DDMMYY), "22",
+// "22nd", "Tue 22", "2026-09-22" or "22.09.26". A name only
 // matches when every number in it agrees — "2026-10-22" is never the 22nd of September.
 
 function tokens(name: string): string[] {
@@ -114,8 +115,25 @@ export function matchesMonth(name: string, year: number, month: number): boolean
   return rest.length === 1 && rest[0] === month;
 }
 
+/** A day folder written as one run of digits — "220926" (DDMMYY, the inspectors' habit in
+ *  Inspector Uploads), "22092026" (DDMMYYYY) or "20260922" (YYYYMMDD). Null for anything else. */
+function compactDate(name: string, year: number): { day: number; month: number; year: number } | null {
+  const t = tokens(name).filter((x) => /^\d+$/.test(x));
+  if (t.length !== 1) return null;
+  const d = t[0];
+  if (d.length === 6) return { day: +d.slice(0, 2), month: +d.slice(2, 4), year: 2000 + +d.slice(4) };
+  if (d.length === 8) {
+    return +d.slice(0, 4) === year
+      ? { year: +d.slice(0, 4), month: +d.slice(4, 6), day: +d.slice(6) }
+      : { day: +d.slice(0, 2), month: +d.slice(2, 4), year: +d.slice(4) };
+  }
+  return null;
+}
+
 export function matchesDay(name: string, date: string): boolean {
   const [year, month, day] = date.split("-").map(Number);
+  const compact = compactDate(name, year);
+  if (compact) return compact.day === day && compact.month === month && compact.year === year;
   const nums = numbers(name);
   // A two-digit year ("22.09.26") — read the last of three short numbers as the year.
   const short = nums.filter((n) => n < 100);

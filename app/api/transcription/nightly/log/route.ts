@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     const date = parsed.data.date;
     const [run, folders, files] = await Promise.all([
       db.from("transcription_nightly_runs").select("*").eq("run_date", date).maybeSingle(),
-      db.from("transcription_nightly_folders").select("box_folder_id, folder_name, initials, match_kind, staff_name, staff_email").eq("run_date", date).order("folder_name"),
+      db.from("transcription_nightly_folders").select("box_folder_id, folder_name, initials, match_kind, staff_name, staff_email, notes_files").eq("run_date", date).order("folder_name"),
       db
         .from("transcription_nightly_files")
         .select("box_file_id, box_folder_id, inspector_folder_id, name, size, status, attempts, error, typing, cleaned, raw, flags, duration_seconds, txt_box_file_id, txt_error, updated_at")

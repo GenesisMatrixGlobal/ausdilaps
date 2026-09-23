@@ -38,8 +38,10 @@ alter table public.transcription_nightly_runs add column if not exists report_se
 alter table public.transcription_nightly_runs add column if not exists report jsonb;
 alter table public.transcription_nightly_runs add column if not exists error text;
 
--- One row per inspector folder found in a day folder. The inspector is resolved from Salesforce
--- Staff__c at discovery and kept, so the log reads the same after someone leaves.
+-- One row per JOB folder found in a day folder ("RG - 37472-00039595-01 - Pre-Con - … CAPALABA").
+-- The inspector is resolved from the initials via Salesforce Staff__c at discovery and kept, so
+-- the log reads the same after someone leaves. notes_files = written notes in a folder with no
+-- recording, so a post-con with "No changes noted.txt" reads differently from a forgotten one.
 create table if not exists public.transcription_nightly_folders (
   id            uuid primary key default gen_random_uuid(),
   run_date      date not null references public.transcription_nightly_runs(run_date) on delete cascade,
@@ -49,12 +51,14 @@ create table if not exists public.transcription_nightly_folders (
   match_kind    text not null default 'unknown',
   staff_name    text,
   staff_email   text,
+  notes_files   text[] not null default '{}',
   first_seen_at timestamptz not null default now()
 );
 alter table public.transcription_nightly_folders add column if not exists initials text;
 alter table public.transcription_nightly_folders add column if not exists match_kind text not null default 'unknown';
 alter table public.transcription_nightly_folders add column if not exists staff_name text;
 alter table public.transcription_nightly_folders add column if not exists staff_email text;
+alter table public.transcription_nightly_folders add column if not exists notes_files text[] not null default '{}';
 alter table public.transcription_nightly_folders add column if not exists first_seen_at timestamptz not null default now();
 -- Plain unique index, not partial: on conflict cannot target a partial one through PostgREST.
 create unique index if not exists transcription_nightly_folders_key on public.transcription_nightly_folders(run_date, box_folder_id);

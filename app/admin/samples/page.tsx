@@ -82,6 +82,18 @@ function VisitorRow({ v }: { v: SampleVisitor }) {
             <span className="rounded-full bg-ad-surface px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-ad-steel">
               {UNLOCK_LABEL[v.unlock]}
             </span>
+            {/* Not a person: every view was served but none was ever painted (migration
+                0023). Listed rather than hidden so the scraping stays visible, and only
+                shown once something HAS painted somewhere, or rows that predate the
+                measurement would all be libelled. */}
+            {v.views > 0 && v.paintedViews === 0 && (
+              <span
+                className="rounded-full bg-ad-amber-tint px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-ad-amber"
+                title="Served but never rendered — almost certainly an automated fetch"
+              >
+                not rendered
+              </span>
+            )}
           </span>
           <span className="mt-0.5 block text-xs text-ad-muted">
             Last seen {ago(v.lastSeen)} · {v.views} {v.views === 1 ? "view" : "views"} ·{" "}

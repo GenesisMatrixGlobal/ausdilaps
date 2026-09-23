@@ -7,6 +7,7 @@ import {
   SAMPLES_CRUMBS,
 } from "@/components/marketing/samples-page-parts";
 import { SamplesUnlock } from "@/components/marketing/samples-unlock";
+import { SamplesRenderedBeacon } from "@/components/marketing/samples-rendered-beacon";
 import { JsonLd } from "@/components/seo/json-ld";
 import { faqPageSchema, breadcrumbSchema } from "@/lib/seo";
 import {
@@ -46,6 +47,7 @@ export default async function SamplesPage() {
     <>
       <JsonLd data={[faqPageSchema(SAMPLES_FAQ), breadcrumbSchema(SAMPLES_CRUMBS)]} />
 
+      <SamplesRenderedBeacon />
       <SamplesHeader>
         <SamplesUnlock />
 

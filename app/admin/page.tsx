@@ -188,9 +188,12 @@ function apiSpendTile(u: ApiUsage): Stat {
   };
 }
 
-/** Visits to the sample report library this week (migration 0015, lib/page-views.ts).
- *  Bots, prefetches and our own headless tests are filtered before a row is written, so
- *  this is people. Unlocks are the code-from-a-quote and the email fallback combined. */
+/** Visits to the sample report library this week (migrations 0015 + 0023, lib/page-views.ts).
+ *  Counts only views the BROWSER CONFIRMED IT PAINTED — headless scrapers announcing
+ *  themselves as desktop Chrome pass every header check there is, and a paint is the thing
+ *  they do not produce. Requests that never painted are reported on the sub-line rather than
+ *  hidden, because that number is the only measure of how much scraping there is.
+ *  Unlocks are the code-from-a-quote and the email fallback combined. */
 function samplesTile(s: SamplesStats): Stat {
   if (s.unavailable) {
     return { label: "Samples viewed · 7d", value: "—", sub: s.unavailable, tone: "warn", href: "/admin/samples" };
@@ -200,6 +203,8 @@ function samplesTile(s: SamplesStats): Stat {
   const parts = [
     unlocks === 0 ? "no unlocks" : `${unlocks} unlock${unlocks === 1 ? "" : "s"}`,
     s.views7d === 0 && s.viewsPrev7d === 0 ? null : `${delta >= 0 ? "+" : ""}${delta} vs last week`,
+    // Named plainly. "Filtered" would read as a problem; this is the filter working.
+    s.unrendered7d > 0 ? `${s.unrendered7d} automated ignored` : null,
   ].filter(Boolean);
   return {
     label: "Samples viewed · 7d",

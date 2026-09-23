@@ -101,8 +101,54 @@ export async function recordPageView(event: PageViewEvent, meta: PageViewMeta = 
   }
 }
 
+/** How far back a paint may confirm a view. Long enough for a slow page on a bad connection,
+ *  short enough that a tab reopened tomorrow confirms tomorrow's view and not yesterday's. */
+const RENDER_CONFIRM_WINDOW_MS = 30 * 60_000;
+
+/**
+ * Marks this visitor's most recent samples view as actually PAINTED (migration 0023).
+ *
+ * Two round trips rather than one: PostgREST cannot order-and-limit an UPDATE, so the row is
+ * found first and updated by id. Both are inside `after()`, so nothing waits on them.
+ *
+ * Only ever touches a view row. A click or an unlock is already proof of a human and has no
+ * business being rewritten by a beacon.
+ */
+export async function markRendered(visitorId: string): Promise<void> {
+  if (!isProductionRuntime()) return;
+  try {
+    const db = createAdminClient();
+    const since = new Date(Date.now() - RENDER_CONFIRM_WINDOW_MS).toISOString();
+    const { data, error } = await db
+      .from("page_views")
+      .select("id")
+      .eq("visitor_id", visitorId)
+      .in("event", ["view_locked", "view_library"])
+      .gte("occurred_at", since)
+      .order("occurred_at", { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    const id = data?.[0]?.id as string | undefined;
+    if (!id) return;
+
+    const { error: upErr } = await db.from("page_views").update({ rendered: true }).eq("id", id);
+    if (upErr) {
+      // 0023 is pasted in by hand, so a deploy can land before it. Say which migration, once,
+      // rather than logging an opaque column error on every page load.
+      if (/rendered/.test(upErr.message)) {
+        console.warn("[page-views] no `rendered` column — apply migration 0023_page_view_rendered.sql.");
+        return;
+      }
+      throw upErr;
+    }
+  } catch (e) {
+    console.error("[page-views] failed to mark rendered:", (e as Error).message);
+  }
+}
+
 export type SamplesStats = {
-  /** Locked + unlocked renders, i.e. "someone looked at the samples page". */
+  /** Views the browser CONFIRMED it painted — i.e. a person actually looked at the page.
+   *  Everything on this type counts only these. */
   views7d: number;
   viewsPrev7d: number;
   views30d: number;
@@ -110,6 +156,13 @@ export type SamplesStats = {
   libraryViews7d: number;
   unlocksCode7d: number;
   unlocksEmail7d: number;
+  /** Requests that were served but never painted, over the same 7 days. Headless scrapers
+   *  announcing themselves as desktop Chrome — kept and reported rather than hidden, because
+   *  it is the only measure of how much of that there is. */
+  unrendered7d: number;
+  /** Views too old to have been measured (before migration 0023 / its first paint). Reported
+   *  apart from `unrendered7d` so nothing historic is miscalled automated. */
+  unmeasured7d: number;
   /** Set when the table can't be read — most likely 0015 not applied yet. */
   unavailable: string | null;
 };
@@ -124,6 +177,8 @@ export async function loadSamplesStats(): Promise<SamplesStats> {
     libraryViews7d: 0,
     unlocksCode7d: 0,
     unlocksEmail7d: 0,
+    unrendered7d: 0,
+    unmeasured7d: 0,
     unavailable: null,
   };
   try {
@@ -131,24 +186,46 @@ export async function loadSamplesStats(): Promise<SamplesStats> {
     const since = new Date(now - 30 * DAY).toISOString();
     const { data, error } = await createAdminClient()
       .from("page_views")
-      .select("event, occurred_at")
+      .select("event, occurred_at, rendered")
       .eq("path", SAMPLES_VIEW_PATH)
       .gte("occurred_at", since);
     if (error) throw error;
 
     const week = now - 7 * DAY;
     const twoWeeks = now - 14 * DAY;
-    for (const row of data ?? []) {
+    const rows = data ?? [];
+
+    // Anything before the first confirmed paint could not have been measured — 0023 had not
+    // landed, or the beacon had not shipped. Calling those rows automated would put a number
+    // on the dashboard that is simply an artefact of when the column was added.
+    const firstMeasured = rows
+      .filter((r) => r.rendered === true)
+      .reduce<number | null>((min, r) => {
+        const t = new Date(r.occurred_at as string).getTime();
+        return min === null || t < min ? t : min;
+      }, null);
+
+    for (const row of rows) {
       const t = new Date(row.occurred_at as string).getTime();
       const ev = row.event as PageViewEvent;
       const isView = ev === "view_locked" || ev === "view_library";
+      const painted = row.rendered === true;
+
       if (isView) {
-        out.views30d++;
-        if (t >= week) out.views7d++;
-        else if (t >= twoWeeks) out.viewsPrev7d++;
+        // ⚠️ Only a painted view is a view. The count read 26 "visitors" when about twenty
+        // were headless fetches — see migration 0023 for the measurement that settled it.
+        if (painted) {
+          out.views30d++;
+          if (t >= week) out.views7d++;
+          else if (t >= twoWeeks) out.viewsPrev7d++;
+        } else if (t >= week) {
+          if (firstMeasured !== null && t >= firstMeasured) out.unrendered7d++;
+          else out.unmeasured7d++;
+        }
       }
       if (t >= week) {
-        if (ev === "view_library") out.libraryViews7d++;
+        // An unlock or a library view is only counted when it painted, for the same reason.
+        if (ev === "view_library" && painted) out.libraryViews7d++;
         if (ev === "unlock_code") out.unlocksCode7d++;
         if (ev === "unlock_email") out.unlocksEmail7d++;
       }

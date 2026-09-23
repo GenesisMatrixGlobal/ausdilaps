@@ -35,6 +35,10 @@ export type SampleVisitor = {
   lastSeen: string;
   /** Page renders (locked + library) — the same thing the tile counts. */
   views: number;
+  /** Views this browser CONFIRMED it painted (migration 0023). A visitor whose views never
+   *  painted did not look at anything — it fetched the page. Kept on the list rather than
+   *  dropped, so the scraping stays visible, but marked. */
+  paintedViews: number;
   /** Distinct files opened. */
   filesOpened: number;
   /** Where the FIRST visit came from, when the browser said. Our own pages are dropped —
@@ -61,6 +65,9 @@ type Row = {
   visitor_id: string | null;
   lead_id: string | null;
   item: string | null;
+  /** Migration 0023. Null on rows written before it, which is NOT the same as false —
+   *  see the badge in app/admin/samples/page.tsx. */
+  rendered: boolean | null;
 };
 
 const PAGE = 1000;
@@ -78,7 +85,7 @@ export async function loadSamplesVisitors(): Promise<SamplesVisitorsPage> {
     for (let page = 0; page < MAX_PAGES; page++) {
       const { data, error } = await db
         .from("page_views")
-        .select("event, occurred_at, referrer, user_agent, visitor_id, lead_id, item")
+        .select("event, occurred_at, referrer, user_agent, visitor_id, lead_id, item, rendered")
         .eq("path", SAMPLES_VIEW_PATH)
         .gte("occurred_at", since)
         .order("occurred_at", { ascending: true })
@@ -108,6 +115,7 @@ export async function loadSamplesVisitors(): Promise<SamplesVisitorsPage> {
           firstSeen: r.occurred_at,
           lastSeen: r.occurred_at,
           views: 0,
+          paintedViews: 0,
           filesOpened: 0,
           referrer: externalReferrer(r.referrer),
           device: deviceFrom(r.user_agent),
@@ -119,7 +127,10 @@ export async function loadSamplesVisitors(): Promise<SamplesVisitorsPage> {
       }
       v.lastSeen = r.occurred_at;
       if (!v.referrer) v.referrer = externalReferrer(r.referrer);
-      if (isView) v.views++;
+      if (isView) {
+        v.views++;
+        if (r.rendered === true) v.paintedViews++;
+      }
       if (r.event === "click_item" && r.item) v.itemSet.add(r.item);
       if (r.lead_id) v.leadIds.add(r.lead_id);
       v.events.push({ at: r.occurred_at, event: r.event, item: r.item });

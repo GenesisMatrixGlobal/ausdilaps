@@ -3,6 +3,7 @@ import { SamplesLibrary } from "@/components/marketing/samples-library";
 import { SamplesContactBand, SamplesHeader } from "@/components/marketing/samples-page-parts";
 import { getSampleCategories } from "@/lib/samples-data";
 import { SAMPLES_PATH } from "@/lib/samples-access";
+import { SamplesRenderedBeacon } from "@/components/marketing/samples-rendered-beacon";
 
 // The UNLOCKED library. Never linked and never indexed: proxy.ts rewrites
 // /dilapidation-reports/samples here when the visitor holds the access cookie, and
@@ -23,6 +24,7 @@ export default async function SamplesLibraryPage() {
   const categories = await getSampleCategories();
   return (
     <>
+      <SamplesRenderedBeacon />
       <SamplesHeader>
         <SamplesLibrary categories={categories} />
       </SamplesHeader>

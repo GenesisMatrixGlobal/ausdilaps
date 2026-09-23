@@ -15,6 +15,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: "/dilapidation-reports/samples", priority: 0.7 },
     { path: "/quote", priority: 0.7 },
     { path: "/faq", priority: 0.6 },
+    { path: "/terms-and-conditions", priority: 0.3 },
+    { path: "/privacy-policy", priority: 0.3 },
     ...SERVICE_SLUGS.map((s) => ({ path: `/our-services/${s}`, priority: 0.8 })),
     ...LOCATION_SLUGS.map((s) => ({ path: `/dilapidation-reports/${s}`, priority: 0.8 })),
     ...PORTFOLIO_SLUGS.map((s) => ({ path: `/portfolio/${s}`, priority: 0.6 })),

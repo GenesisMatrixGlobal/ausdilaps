@@ -112,6 +112,13 @@ export function SamplesUnlock() {
             Please enter your name and a valid email address.
           </p>
         )}
+        <p className="mt-3 text-xs text-ad-muted">
+          See how we handle your details in our{" "}
+          <a href="/privacy-policy" className="font-medium text-ad-accent hover:brightness-90">
+            Privacy Policy
+          </a>
+          .
+        </p>
       </form>
     </div>
   );

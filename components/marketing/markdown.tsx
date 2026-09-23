@@ -15,7 +15,7 @@ export function Markdown({ source }: { source: string }) {
   return <>{renderBlocks(source)}</>;
 }
 
-function renderInline(text: string): ReactNode[] {
+export function renderInline(text: string): ReactNode[] {
   const nodes: ReactNode[] = [];
   const regex = /(\*\*([^*]+)\*\*)|(\[([^\]]+)\]\(([^)]+)\))/g;
   let last = 0;

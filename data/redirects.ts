@@ -68,6 +68,14 @@ export const REDIRECTS: Redirect[] = [
   { source: "/contact-us/consultation", destination: "/quote", permanent: true },
   { source: "/contact-us/capability", destination: "/quote", permanent: true },
 
+  // Legal pages. Every quote sent before the v2 terms linked to the old WordPress terms
+  // page, so it has to keep resolving — the terms page links version 1 for that work
+  // (data/legal.ts). /terms and /privacy are short aliases for texts and letters.
+  { source: "/contact-us/terms-conditions", destination: "/terms-and-conditions", permanent: true },
+  { source: "/contact-us/privacy-policy", destination: "/privacy-policy", permanent: true },
+  { source: "/terms", destination: "/terms-and-conditions", permanent: true },
+  { source: "/privacy", destination: "/privacy-policy", permanent: true },
+
   // WordPress media. After cutover ausdilaps.com.au IS this site, so every
   // /wp-content/uploads/* URL Google has indexed (and every external link to a
   // sample PDF) would land on a 404. The capability statement is committed to
@@ -97,6 +105,13 @@ export const REDIRECTS: Redirect[] = [
   {
     source: "/wp-content/uploads/2026/06/Email-Banner-GIF-FY26.gif",
     destination: "/email/signature-banner.gif",
+    permanent: true,
+  },
+  // The version 1 terms PDF, linked from the old terms page. Kept unaltered in
+  // /public/legal because work accepted before the v2 terms is still governed by it.
+  {
+    source: "/wp-content/uploads/2023/06/AusDilaps-General-Terms-and-Conditions-20230607.pdf",
+    destination: "/legal/AusDilaps-General-Terms-and-Conditions-2023-06-07.pdf",
     permanent: true,
   },
   {

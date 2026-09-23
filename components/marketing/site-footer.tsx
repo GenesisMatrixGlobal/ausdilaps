@@ -100,7 +100,16 @@ export function SiteFooter() {
         <div className="rule-hairline-dark my-10" />
 
         <div className="flex flex-col gap-2 text-xs text-ad-on-dark-muted sm:flex-row sm:items-center sm:justify-between">
-          <p>© 2026 {SITE.legalName} T/A AusDilaps · ABN {SITE.abn}</p>
+          <p>
+            © 2026 {SITE.legalName} T/A AusDilaps · ABN {SITE.abn} ·{" "}
+            <Link href="/terms-and-conditions" className="transition-colors hover:text-ad-accent-2">
+              Terms
+            </Link>{" "}
+            ·{" "}
+            <Link href="/privacy-policy" className="transition-colors hover:text-ad-accent-2">
+              Privacy
+            </Link>
+          </p>
           <p>
             A company of the{" "}
             <a

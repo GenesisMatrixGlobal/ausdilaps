@@ -513,6 +513,13 @@ export function QuoteForm() {
         <Button type="submit" size="lg" variant="accent" className={cn(isSubmitting && "opacity-70")}>
           {isSubmitting ? "Sending…" : "Submit"}
         </Button>
+        <p className="text-xs text-ad-muted">
+          We use your details to respond to your enquiry. See our{" "}
+          <a href="/privacy-policy" className="font-medium text-ad-accent hover:brightness-90">
+            Privacy Policy
+          </a>
+          .
+        </p>
       </div>
     </form>
   );

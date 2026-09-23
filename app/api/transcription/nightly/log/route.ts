@@ -4,6 +4,7 @@ import { isStaffInAnyDepartment } from "@/lib/auth/is-staff";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { TRANSCRIPTION_ALLOW_UNAUTHED_ENV, TRANSCRIPTION_DEPARTMENTS } from "@/lib/transcription/config";
 import { addDays, isIsoDate, sydneyNow } from "@/lib/transcription/nightly/dates";
+import { selectFolders } from "@/lib/transcription/nightly/run";
 
 // Read side of the Daily runs tab. No date → the last few weeks of nights with their figures;
 // a date → that night in full, transcripts included. Every figure is COUNTED from the rows here
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
     const date = parsed.data.date;
     const [run, folders, files] = await Promise.all([
       db.from("transcription_nightly_runs").select("*").eq("run_date", date).maybeSingle(),
-      db.from("transcription_nightly_folders").select("box_folder_id, folder_name, initials, match_kind, staff_name, staff_email, notes_files").eq("run_date", date).order("folder_name"),
+      selectFolders(date),
       db
         .from("transcription_nightly_files")
         .select("box_file_id, box_folder_id, inspector_folder_id, name, size, status, attempts, error, typing, cleaned, raw, flags, duration_seconds, txt_box_file_id, txt_error, updated_at")

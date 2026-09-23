@@ -167,9 +167,17 @@ async function discover(date: string): Promise<DayListing> {
       };
     });
     // Salesforce down → keep whatever an earlier tick resolved rather than blanking it.
-    const res = staff
-      ? await db.from(FOLDERS).upsert(folderRows, { onConflict: "run_date,box_folder_id" })
-      : await db.from(FOLDERS).upsert(folderRows, { onConflict: "run_date,box_folder_id", ignoreDuplicates: true });
+    const write = (rows: Record<string, unknown>[]) =>
+      staff
+        ? db.from(FOLDERS).upsert(rows, { onConflict: "run_date,box_folder_id" })
+        : db.from(FOLDERS).upsert(rows, { onConflict: "run_date,box_folder_id", ignoreDuplicates: true });
+    let res = await write(folderRows);
+    // notes_files joined 0025 after the first paste of it; a database without the column still
+    // records the folders — just without the notes — rather than failing the whole night.
+    if (res.error && /notes_files/.test(res.error.message)) {
+      console.warn("[transcription-nightly] notes_files missing — re-run migration 0025.");
+      res = await write(folderRows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== "notes_files"))));
+    }
     if (res.error) throw new Error(res.error.message);
   }
 
@@ -289,6 +297,15 @@ async function transcribeQueued(date: string, started: number): Promise<{ transc
   return { transcribed, failed };
 }
 
+/** The folder rows for a night; without notes_files on a database from the first paste of 0025. */
+export async function selectFolders(date: string) {
+  const db = createAdminClient();
+  const cols = "box_folder_id, folder_name, initials, match_kind, staff_name, staff_email";
+  const res = await db.from(FOLDERS).select(`${cols}, notes_files`).eq("run_date", date).order("folder_name");
+  if (res.error && /notes_files/.test(res.error.message)) return db.from(FOLDERS).select(cols).eq("run_date", date).order("folder_name");
+  return res;
+}
+
 // ── 4. report ─────────────────────────────────────────────────────────────────────────────
 
 async function reportAlreadySent(date: string): Promise<boolean> {
@@ -300,7 +317,7 @@ export async function loadReport(date: string, listing?: DayListing | null): Pro
   const db = createAdminClient();
   const [run, folders, files] = await Promise.all([
     db.from(RUNS).select("day_folder_id, day_folder_path").eq("run_date", date).maybeSingle(),
-    db.from(FOLDERS).select("box_folder_id, folder_name, initials, match_kind, staff_name, staff_email, notes_files").eq("run_date", date),
+    selectFolders(date),
     db.from(FILES).select("box_file_id, inspector_folder_id, name, status, attempts, error, flags, duration_seconds, txt_box_file_id, txt_error").eq("run_date", date),
   ]);
   const fileRows = (files.data ?? []) as FileRow[];

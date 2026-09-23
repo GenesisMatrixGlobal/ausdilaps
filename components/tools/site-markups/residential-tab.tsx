@@ -112,6 +112,9 @@ export type MarkupMode = "single" | "multi";
  *  the work and the map is in the way (and a billed Dynamic Maps load nobody looks at). */
 const MANY_ADDRESSES = 10;
 
+/** Handed to the live map when pins are off — one stable empty map, so it draws no bubbles. */
+const NO_PINS: Map<string, number> = new Map();
+
 export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: MarkupMode; dev?: boolean }) {
   const multi = mode === "multi";
   /** The pasted address list — multi mode only. */
@@ -160,6 +163,11 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
    *  `lineItemsOnly` is the checkbox; `mapHidden` is what Generate did with it, so editing the
    *  list afterwards doesn't pop the map in and out under the sheet. DEV tab only for now. */
   const [lineItemsOnly, setLineItemsOnly] = useState(true);
+  /** Numbered pins on the drawing — OFF by default (Rhys, 2026-09-23): a client's copy reads
+   *  cleaner without them. Governs the live map AND the export together, so the map shows what
+   *  the PNG will be. The sheet and sidebar keep their numbers either way — that is the
+   *  operator's index, not the client's. */
+  const [showPins, setShowPins] = useState(false);
   const [mapHidden, setMapHidden] = useState(false);
 
   /** Writes the address list and, past MANY_ADDRESSES, unticks "Pre-select surrounding assets".
@@ -314,6 +322,8 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   // export payload — so all four can never disagree about what item 2 is.
   const rows = rowsFrom(sources, lineDrafts, deselected);
   const numbers = itemNumbers(rows);
+  /** What the DRAWING carries: the item number when pins are on, else nothing ("" = no bubble). */
+  const pinLabel = (key: string) => (showPins ? String(numberFor(key) ?? "") : "");
 
   // Street View's target for the markup as a whole. The resolved parcel wins — it is the actual
   // title boundary rather than a geocoder's guess — but the Places point covers the gap before
@@ -1036,9 +1046,8 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
     });
   }
 
-  // Re-renders without the numbered neighbour pins — those reference numbers are for staff's
-  // own check/uncheck workflow, not something a client needs to see, so the on-screen preview
-  // and the exported file are deliberately different.
+  // Numbered pins follow the "Numbered pins" checkbox (off by default), exactly as the live map
+  // does, so the preview is the export.
   //
   // Shared by Download and Sync To Salesforce so the file filed into Box is byte-identical to
   // the one an operator would have downloaded and uploaded by hand.
@@ -1061,10 +1070,10 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
         subjectAreaSqm: result.subjectAreaSqm ?? null,
         // Item numbers from the SAME rowsFrom() result the sheet renders, so the PNG's bubbles
         // and legend can't disagree with the sheet. "" means drawn but not a line item.
-        subjectLabel: String(numberFor(SUBJECT_KEY) ?? ""),
+        subjectLabel: pinLabel(SUBJECT_KEY),
         neighbours: result.neighbours.map((n) => ({
           ...n,
-          label: String(numberFor(lotKey(n.id)) ?? ""),
+          label: pinLabel(lotKey(n.id)),
         })),
         // The map type the operator actually chose, not the one the snapshot was resolved
         // with — they can switch to Satellite on the live map.
@@ -1082,7 +1091,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
           const key = shapeKey(sh);
           return {
             ...sh,
-            label: String(numberFor(key) ?? ""),
+            label: pinLabel(key),
             // The Street cell the operator typed for this shape — the legend names it that
             // instead of a generic "Shape".
             name: rows.find((r) => r.key === key)?.values.street ?? "",
@@ -1381,6 +1390,17 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
             Line items only, no map
           </label>
         )}
+        {/* Beside Download on purpose: the position says it is about the drawing. */}
+        <label className="flex items-center gap-2 text-sm text-ad-ink">
+          <input
+            type="checkbox"
+            checked={showPins}
+            onChange={(e) => setShowPins(e.target.checked)}
+            disabled={!result || mapHidden}
+            className="h-4 w-4 accent-ad-steel"
+          />
+          Numbered pins
+        </label>
         <button
           className={cn(buttonVariants({ variant: "accent", size: "md" }), downloading && "opacity-60")}
           onClick={download}
@@ -1558,7 +1578,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
               subjectRing={result.subjectRing}
               hideSubject={hideSubject}
               lots={result.neighbours.filter((n) => !excludedIds.has(n.id))}
-              numbers={numbers}
+              numbers={showPins ? numbers : NO_PINS}
               pickMode={picking}
               onPick={handlePick}
               fitRequest={fitRequest}

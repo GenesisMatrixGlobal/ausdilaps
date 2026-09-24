@@ -7,18 +7,18 @@ import { RoadMarkupTab } from "./road-tab";
 import { ResidentialMarkupTab } from "./residential-tab";
 import type { ToolProps } from "@/lib/tools/registry";
 
-// ⚠️ The LABEL and the code name differ, deliberately. "Quote Builder" (was "Building
-// Markup" until 2026-09-24) is what staff call it; the tab key, the component (ResidentialMarkupTab), the route
+// ⚠️ The LABEL and the code name differ, deliberately. "Assets" (was "Building Markup" until
+// 2026-09-24; the tool itself is "Quote Builder" now) is what staff call it; the tab key, the component (ResidentialMarkupTab), the route
 // (/api/kml/standard-markup) and the lib folder all still say residential/standard-markup.
 // Renaming those would touch a live API route and every import for a caption change, so
 // the label is the only thing that moved. Don't "fix" one half of it.
 const TABS = [
-  { key: "residential", label: "Quote Builder" },
-  { key: "road", label: "Road Markup" },
-  // Measure is HIDDEN, not deleted (Rhys, 2026-09-24): Quote Builder covers what estimators
+  { key: "residential", label: "Assets" },
+  { key: "road", label: "Roads" },
+  // Measure is HIDDEN, not deleted (Rhys, 2026-09-24): the Assets tab covers what estimators
   // use it for. measure-tab.tsx and its files are untouched; bringing it back is re-adding
   // `{ key: "measure", label: "Measure" }` here and its `visited.has("measure")` block below.
-  // What it still does that Quote Builder doesn't: 12 shapes (vs 5), a 3 m minimum width
+  // What it still does that Assets doesn't: 12 shapes (vs 5), a 3 m minimum width
   // (vs 5 m), and a PNG listing every measurement with a total.
 ] as const;
 

@@ -38,7 +38,7 @@ import { COVER_PHOTO_DEPARTMENTS, MARKUP_SYNC_DEPARTMENTS } from "@/lib/sync-dep
  *  past conversations. Rename the title on its own; don't chase it through the rest.
  *
  *  Current label/internal-name divergences, all deliberate:
- *    site-markups          -> "Markup and Measure" (its Building Markup tab is still
+ *    site-markups          -> "Quote Builder", tabs "Assets" + "Roads" (the Assets tab is still
  *                             `residential` / standard-markup in code, routes and components)
  *    property-sizing       -> "Bulk Property Sizing"
  *    road-survey-estimator -> "KMZ Analyser"
@@ -93,9 +93,10 @@ export const TOOLS: ToolDefinition[] = [
   {
     slug: "site-markups",
     code: "SMK",
-    title: "Markup and Measure",
+    // "Markup and Measure" until 2026-09-24 (Rhys: it undersold the estimators' main tool).
+    title: "Quote Builder",
     description:
-      "Snapshot a road segment, or one address with its surrounding lots highlighted and a whole list of them, or measure lengths and areas straight off a live aerial map.",
+      "Turn an address, a list of addresses or a road route into a marked-up aerial and priced Quote Line Items, synced straight to Salesforce.",
     // Unassigned from projects 2026-09-16 (Rhys) — Closeout Markup is what that department uses.
     departments: [...MARKUP_SYNC_DEPARTMENTS],
     Component: dynamic(() =>

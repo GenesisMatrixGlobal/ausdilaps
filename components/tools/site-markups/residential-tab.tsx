@@ -170,7 +170,8 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   /** Numbered pins on the drawing — OFF by default (Rhys, 2026-09-23): a client's copy reads
    *  cleaner without them. Governs the live map AND the export together, so the map shows what
    *  the PNG will be. The sheet and sidebar keep their numbers either way — that is the
-   *  operator's index, not the client's. */
+   *  operator's index, not the client's. Saved in the .json, so a reopened markup exports the
+   *  way it was left. */
   const [showPins, setShowPins] = useState(false);
   const [mapHidden, setMapHidden] = useState(false);
 
@@ -337,6 +338,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
         .map(({ id, mode, widthMetres, color, points }) => ({ id, mode, widthMetres, color, points })),
       lineItems: lineDrafts,
       deselected: Array.from(deselected),
+      showPins,
     });
   }
 
@@ -446,6 +448,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
     setAddressError(null);
     setExcludedIds(new Set(f.excludedIds));
     setHideSubject(f.hideSubject);
+    setShowPins(f.showPins === true);
     shapes.replaceAll(f.shapes);
     setCentres([]);
     setMapHidden(false);

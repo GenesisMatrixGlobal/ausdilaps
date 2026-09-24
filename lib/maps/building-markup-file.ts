@@ -88,6 +88,9 @@ export interface BuildingMarkupFile {
    *  off the default is stored, so reopening a markup whose geometry was re-measured picks up
    *  the new area while keeping an overridden rate. */
   lineItems?: Record<string, Record<string, string>>;
+  /** The "Numbered pins" checkbox beside Download .png. Absent = off, which is the tool's
+   *  default — files saved before 2026-09-24 reopen with pins off. */
+  showPins?: boolean;
 }
 
 export function buildBuildingMarkupFile(
@@ -282,6 +285,7 @@ export function parseBuildingMarkupFile(
       zoomAdjust: isFiniteNumber(doc.zoomAdjust) ? Math.max(-3, Math.min(3, doc.zoomAdjust)) : 0,
       excludedIds: Array.isArray(doc.excludedIds) ? doc.excludedIds.filter((v) => typeof v === "string") : [],
       hideSubject: doc.hideSubject === true,
+      showPins: doc.showPins === true,
       shapes,
       deselected: Array.isArray(doc.deselected)
         ? doc.deselected.filter((v) => typeof v === "string")

@@ -21,7 +21,7 @@ import { rate, VITALS_THRESHOLDS, type VitalKey, type WebVitals } from "@/lib/we
  */
 
 export const metadata = {
-  title: "Admin · AusDilaps",
+  title: "Command Centre",
   robots: { index: false, follow: false },
 };
 
@@ -340,7 +340,7 @@ export default async function AdminHomePage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-ad-ink">Admin</h1>
+      <h1 className="text-2xl font-semibold text-ad-ink">Command Centre</h1>
       <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ad-muted">
         Enquiry volume, portal usage and anything that needs attention. Lead outcomes live in Salesforce.
       </p>

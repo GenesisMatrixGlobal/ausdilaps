@@ -5,7 +5,7 @@ import { Container } from "@/components/marketing/container";
 import { AdminNav } from "@/components/staff/admin-nav";
 
 export const metadata = {
-  title: "Admin · AusDilaps",
+  title: "Command Centre",
   robots: { index: false, follow: false },
 };
 
@@ -18,7 +18,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <header className="sticky top-0 z-50 border-b border-ad-border bg-white/90 backdrop-blur-md">
         <Container className="flex h-16 items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
-            <Link href="/admin" className="flex shrink-0 items-center" aria-label="Admin home">
+            {/* The logo is the company's: it goes to the website. The label beside it is this
+                section's, and goes to its overview. */}
+            <Link href="/" className="flex shrink-0 items-center" aria-label="AusDilaps website">
               <Image
                 src="/logo/ad-logo.png"
                 alt="AusDilaps"
@@ -29,9 +31,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               />
             </Link>
             <span className="hidden h-5 w-px shrink-0 bg-ad-border sm:block" />
-            <span className="hidden shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-ad-orange sm:block">
-              Admin
-            </span>
+            <Link
+              href="/admin"
+              className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-ad-orange transition-opacity hover:opacity-80"
+            >
+              Command Centre
+            </Link>
           </div>
 
           <div className="flex shrink-0 items-center gap-4">

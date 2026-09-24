@@ -3,6 +3,7 @@ import Image from "next/image";
 import { Container } from "./container";
 import { Button } from "@/components/ui/button";
 import { MobileNav } from "./mobile-nav";
+import { CommandCentreLink } from "./command-centre-link";
 import { ServicesMenu } from "./services-menu";
 import { NAV, SITE, QUOTE_HREF } from "@/lib/site";
 
@@ -38,6 +39,7 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
+          <CommandCentreLink />
           <a
             href={`tel:${SITE.phone.replace(/\s/g, "")}`}
             className="hidden text-sm font-medium text-ad-muted transition-colors hover:text-ad-ink lg:block"

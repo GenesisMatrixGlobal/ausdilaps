@@ -33,9 +33,9 @@ export function StaffHeader({ user }: { user: StaffUser }) {
           {isAdmin(user) && (
             <Link
               href="/admin"
-              className="hidden text-sm font-medium text-ad-muted transition-colors hover:text-ad-ink sm:block"
+              className="text-sm font-medium text-ad-muted transition-colors hover:text-ad-ink"
             >
-              Admin
+              Command Centre
             </Link>
           )}
           <span className="hidden max-w-[16ch] truncate text-sm text-ad-muted lg:block">

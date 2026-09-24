@@ -47,16 +47,6 @@ function Hero() {
               Download Capability Statement
             </Button>
           </div>
-          <div className="mt-10">
-            <p className="text-xs font-medium uppercase tracking-[0.16em] text-ad-muted">
-              Trusted on
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 font-heading text-sm font-semibold text-ad-ink/80">
-              {TIER1_PROJECTS.map((p) => (
-                <span key={p.name}>{p.name}</span>
-              ))}
-            </div>
-          </div>
         </div>
 
         <div className="relative">

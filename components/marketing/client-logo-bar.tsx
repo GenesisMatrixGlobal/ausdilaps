@@ -12,10 +12,14 @@ export function ClientLogoBar() {
     <section aria-labelledby="clients-heading" className="border-b border-ad-border py-12">
       <Container>
         <Eyebrow className="text-ad-accent">
-          <span id="clients-heading">Clients we&apos;ve worked with</span>
+          <span id="clients-heading">Trusted by</span>
         </Eyebrow>
       </Container>
-      <div className={`${styles.marquee} mt-8`}>
+      {/* Speed stays constant as logos are added: the loop gets longer, not faster. */}
+      <div
+        className={`${styles.marquee} mt-8`}
+        style={{ "--marquee-duration": `${CLIENTS.length * SECONDS_PER_LOGO}s` } as React.CSSProperties}
+      >
         <div className={styles.track}>
           <LogoSet clients={CLIENTS} />
           <LogoSet clients={CLIENTS} hidden />
@@ -28,6 +32,7 @@ export function ClientLogoBar() {
 /* Logo shapes run from the waratah (taller than wide) to Bennett + Bennett (9:1),
    so one fixed height makes one tiny and the other huge. Sizing each to the same
    AREA gives them the same visual weight; the clamp stops the extremes running away. */
+const SECONDS_PER_LOGO = 6;
 const LOGO_AREA = 7000; // px² at 1x
 const MIN_HEIGHT = 24;
 const MAX_HEIGHT = 56;

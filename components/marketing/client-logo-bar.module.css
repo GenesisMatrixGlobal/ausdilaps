@@ -12,7 +12,7 @@
 .track {
   display: flex;
   width: max-content;
-  animation: marquee 40s linear infinite;
+  animation: marquee var(--marquee-duration, 40s) linear infinite;
 }
 .marquee:hover .track { animation-play-state: paused; }
 .set {

@@ -112,6 +112,10 @@ export type MarkupMode = "single" | "multi";
  *  the work and the map is in the way (and a billed Dynamic Maps load nobody looks at). */
 const MANY_ADDRESSES = 10;
 
+/** The `+` that asks bulk-parcels for an address's adjoining lots — WITH_NEIGHBOURS_MARKER there,
+ *  repeated because that module is server-only. */
+const NEIGHBOURS_MARKER = "+";
+
 /** Handed to the live map when pins are off — one stable empty map, so it draws no bubbles. */
 const NO_PINS: Map<string, number> = new Map();
 
@@ -178,6 +182,35 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   function setAddressList(next: string) {
     setAddressBlock(next);
     if (dev && next.split(/\r?\n/).filter((l) => l.trim()).length > MANY_ADDRESSES) setPreselectSurrounding(false);
+  }
+  /** The lines the checkbox last took the `+` off, so ticking it again puts it back on exactly
+   *  those — not on a pasted list that never had one. */
+  const unmarkedLines = useRef<string[]>([]);
+  /** The operator's own tick/untick of "Pre-select surrounding assets". It used to affect only the
+   *  NEXT search-bar pick, so picking an address and then unticking did nothing to the `+` line
+   *  already in the list (Rhys, 2026-09-24). Now unticking strips the marker from the list, and
+   *  re-ticking restores it on the lines it stripped. The automatic unticks (a place pick, a long
+   *  list) don't come through here — they must not rewrite addresses already added. */
+  function togglePreselect(on: boolean) {
+    setPreselectSurrounding(on);
+    const lines = addressBlock.split(/\r?\n/);
+    if (!on) {
+      const stripped: string[] = [];
+      const next = lines.map((l) => {
+        const t = l.trim();
+        if (!t.startsWith(NEIGHBOURS_MARKER)) return l;
+        const bare = t.slice(NEIGHBOURS_MARKER.length).trim();
+        stripped.push(bare);
+        return bare;
+      });
+      unmarkedLines.current = stripped;
+      if (stripped.length) setAddressBlock(next.join("\n"));
+    } else {
+      const restore = new Set(unmarkedLines.current);
+      unmarkedLines.current = [];
+      if (!restore.size) return;
+      setAddressBlock(lines.map((l) => (restore.has(l.trim()) ? `${NEIGHBOURS_MARKER} ${l.trim()}` : l)).join("\n"));
+    }
   }
   /** Addresses that resolved to nothing, for the "Map hidden" bar — the flags box that would
    *  otherwise carry them is off in multi mode, and a row that isn't there is invisible. */
@@ -1203,7 +1236,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
               <input
                 type="checkbox"
                 checked={preselectSurrounding}
-                onChange={(e) => setPreselectSurrounding(e.target.checked)}
+                onChange={(e) => togglePreselect(e.target.checked)}
                 className="h-4 w-4 accent-ad-steel"
               />
               Pre-select surrounding assets

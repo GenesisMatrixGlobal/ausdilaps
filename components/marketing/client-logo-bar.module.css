@@ -1,0 +1,32 @@
+/* The track is two identical sets; sliding it by -50% moves exactly one set, so
+   the join never shows. Each set is at least the viewport wide, so a short list
+   never leaves a gap. The edges fade out so logos don't clip hard. */
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.marquee {
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+}
+.track {
+  display: flex;
+  width: max-content;
+  animation: marquee 40s linear infinite;
+}
+.marquee:hover .track { animation-play-state: paused; }
+.set {
+  display: flex;
+  min-width: 100vw;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-around;
+  gap: 4rem;
+  padding-right: 4rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .marquee { mask-image: none; }
+  .track { animation: none; width: auto; justify-content: center; }
+  .set { min-width: 0; flex-wrap: wrap; justify-content: center; gap: 2rem 3rem; padding: 0 1.5rem; }
+  .set[aria-hidden] { display: none; }
+}

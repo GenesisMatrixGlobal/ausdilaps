@@ -4,6 +4,7 @@ import { Container } from "@/components/marketing/container";
 import { Eyebrow } from "@/components/marketing/eyebrow";
 import { Button } from "@/components/ui/button";
 import { CtaBand } from "@/components/marketing/cta-band";
+import { ClientLogoBar } from "@/components/marketing/client-logo-bar";
 import { SITE, STATS, SERVICES, PROCESS, TEAM, TIER1_PROJECTS, QUOTE_HREF, CAPABILITY_HREF } from "@/lib/site";
 import { CASE_STUDIES } from "@/data/case-studies";
 
@@ -12,6 +13,7 @@ export default function HomePage() {
     <>
       <Hero />
       <StatsBand />
+      <ClientLogoBar />
       <Problem />
       <Process />
       <Services />

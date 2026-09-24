@@ -5,18 +5,21 @@ import { TabBar } from "@/components/ui/tab-bar";
 import { ToolHeaderSlot } from "@/components/staff/tool-header-slot";
 import { RoadMarkupTab } from "./road-tab";
 import { ResidentialMarkupTab } from "./residential-tab";
-import { MeasureTab } from "./measure-tab";
 import type { ToolProps } from "@/lib/tools/registry";
 
-// ⚠️ The LABEL and the code name differ, deliberately. "Building Markup" is what staff
-// call it; the tab key, the component (ResidentialMarkupTab), the route
+// ⚠️ The LABEL and the code name differ, deliberately. "Quote Builder" (was "Building
+// Markup" until 2026-09-24) is what staff call it; the tab key, the component (ResidentialMarkupTab), the route
 // (/api/kml/standard-markup) and the lib folder all still say residential/standard-markup.
 // Renaming those would touch a live API route and every import for a caption change, so
 // the label is the only thing that moved. Don't "fix" one half of it.
 const TABS = [
-  { key: "residential", label: "Building Markup" },
+  { key: "residential", label: "Quote Builder" },
   { key: "road", label: "Road Markup" },
-  { key: "measure", label: "Measure" },
+  // Measure is HIDDEN, not deleted (Rhys, 2026-09-24): Quote Builder covers what estimators
+  // use it for. measure-tab.tsx and its files are untouched; bringing it back is re-adding
+  // `{ key: "measure", label: "Measure" }` here and its `visited.has("measure")` block below.
+  // What it still does that Quote Builder doesn't: 12 shapes (vs 5), a 3 m minimum width
+  // (vs 5 m), and a PNG listing every measurement with a total.
 ] as const;
 
 /** Rhys's sandbox. Admins only. It runs the SAME component and mode as Building Markup, so
@@ -74,13 +77,6 @@ export function SiteMarkupsTool({ isAdmin = false }: ToolProps) {
       {visited.has("road") && (
         <div hidden={tab !== "road"}>
           <RoadMarkupTab />
-        </div>
-      )}
-      {visited.has("measure") && (
-        <div hidden={tab !== "measure"}>
-          {/* The map needs to know it's back on screen — a Google map sized against a
-              display:none container returns grey until it re-measures. */}
-          <MeasureTab active={tab === "measure"} />
         </div>
       )}
       {isAdmin && visited.has("dev") && (

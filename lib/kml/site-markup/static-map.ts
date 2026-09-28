@@ -22,7 +22,20 @@ const STATIC_MAP_URL = "https://maps.googleapis.com/maps/api/staticmap";
 export const IMAGE_SIZE = 500;
 export const SCALE = 2;
 const DEFAULT_WEIGHT = 14;
-const MAX_ZOOM = 20; // satellite imagery in most AU suburbs stays sharp to ~20-21
+/**
+ * The deepest zoom a Static Maps URL will ever carry.
+ *
+ * ⚠️ EXPORTED, and static-map-plan.ts imports it — the tiler MUST NOT plan a frame at a zoom
+ * this builder will not honour. It had its own `MAX_ZOOM = 21` and this clamped to 20 SILENTLY:
+ * every tile then showed twice the ground it was planned for, so the stitched image repeated
+ * the same houses and the outline (projected at the planned zoom) came out twice too big over
+ * them. Reported 2026-09-29 on 34 and 38 Rainwood Street, Bracken Ridge.
+ *
+ * 20, not 21, because AU satellite imagery past 20 is upsampled — the same ceiling the live
+ * maps use.
+ */
+export const MAX_STATIC_ZOOM = 20;
+const MAX_ZOOM = MAX_STATIC_ZOOM;
 
 export class GoogleMapsConfigError extends Error {}
 

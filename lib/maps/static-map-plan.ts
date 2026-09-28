@@ -10,10 +10,14 @@
 import type { LatLngBox } from "@/lib/kml/standard-markup/projection";
 import { mercatorSpan } from "@/lib/kml/standard-markup/projection";
 import type { LatLng } from "@/lib/kml/types";
+import { MAX_STATIC_ZOOM } from "@/lib/kml/site-markup/static-map";
 /** Google's hard cap on either `size` dimension. */
 export const MAX_STATIC_DIMENSION = 640;
-/** Past this, AU aerial imagery is upsampled — the same ceiling the live map uses. */
-const MAX_ZOOM = 21;
+/** ⚠️ The SAME constant buildStaticMapUrl clamps its URL to, imported rather than repeated.
+ *  Planning past it is not "a bit more detail" — the builder silently drops the zoom, every
+ *  tile comes back showing twice the planned ground, and the stitched frame repeats itself
+ *  with the outline drawn twice too big over it. See MAX_STATIC_ZOOM. */
+const MAX_ZOOM = MAX_STATIC_ZOOM;
 /**
  * Extra ground framed along the bottom, in logical (pre-`scale`) pixels, for Google's
  * attribution bar to sit on.

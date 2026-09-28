@@ -13,10 +13,12 @@
 import type { LatLng } from "@/lib/kml/types";
 import { mercatorSpan } from "@/lib/kml/standard-markup/projection";
 import { planTiles } from "@/lib/maps/static-map-plan";
+import { MAX_STATIC_ZOOM } from "@/lib/kml/site-markup/static-map";
 import { MIN_FRAME_METRES, coverFrameBounds, coverViewFor } from "@/lib/cover-photo/frame";
 import { COVER_ASPECT, COVER_BOX_HEIGHT, COVER_BOX_WIDTH, COVER_SCALES, coverSizeFor } from "@/lib/cover-photo/style";
 
 let failures = 0;
+let worstSource = Infinity;
 function fail(msg: string) {
   failures++;
   console.error(`✗ ${msg}`);
@@ -136,13 +138,29 @@ for (const [city, centre] of CITIES) {
       `${city} ${name}: export frame is smaller than the view — something framed was cropped`
     );
 
-    // 5. The resize is a DOWNSCALE at every offered size, so the output is supersampled
-    //    rather than blown up. The largest size is the binding one.
-    const largest = coverSizeFor(COVER_SCALES[COVER_SCALES.length - 1]).width;
+    // 5. ⚠️ The planned zoom must be one buildStaticMapUrl will actually REQUEST. It clamps to
+    //    MAX_STATIC_ZOOM silently, so a deeper plan comes back with every tile showing twice
+    //    the planned ground: the stitched frame repeats itself and the outline is drawn twice
+    //    too big over it. Shipped for two weeks and reported from the field.
     ok(
-      plan.width * 2 >= largest,
-      `${city} ${name}: rendered ${plan.width * 2}px wide, below the ${largest}px output`
+      plan.zoom <= MAX_STATIC_ZOOM,
+      `${city} ${name}: planned zoom ${plan.zoom} exceeds MAX_STATIC_ZOOM ${MAX_STATIC_ZOOM} — tiles would silently duplicate`
     );
+
+    // 6. The source must at least cover the SMALLEST offered size, so the 1x output is never
+    //    an upscale.
+    //
+    //    ⚠️ Deliberately NOT asserted against the largest. Zoom 20 is where real AU satellite
+    //    imagery stops (MAX_STATIC_ZOOM), so on a tight frame the tiler simply cannot produce
+    //    1200px of genuine detail — Cairns bottoms out around 1148. Asking Google for more is
+    //    what the zoom-21 bug was doing, and those pixels were never real: the request was
+    //    clamped to 20 regardless. A few percent of upscale at 2x is the honest ceiling.
+    const smallest = coverSizeFor(COVER_SCALES[0]).width;
+    ok(
+      plan.width * 2 >= smallest,
+      `${city} ${name}: rendered ${plan.width * 2}px wide, below even the ${smallest}px output`
+    );
+    worstSource = Math.min(worstSource, plan.width * 2);
   }
 }
 
@@ -192,4 +210,7 @@ if (failures) {
   console.error(`\n${failures} failure(s)`);
   process.exit(1);
 }
-console.log("✓ cover photo framing lands on the report template's aspect at every tested size and latitude");
+console.log(
+  `✓ cover photo framing lands on the report template's aspect at every tested size and latitude` +
+    ` (tightest source ${worstSource}px wide)`
+);

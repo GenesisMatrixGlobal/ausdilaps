@@ -185,7 +185,7 @@ function apiSpendTile(u: ApiUsage): Stat {
     label: "API spend · month",
     href: "/admin/usage",
     value: dollars(u.month.totalCents),
-    sub: `${u.month.totalCalls} calls · ${dollars(u.lastMonth.totalCents)} last month`,
+    sub: `${dollars(u.lastMonth.totalCents)} last month`,
   };
 }
 
@@ -212,9 +212,9 @@ function tenderTile(t: TenderReview): Stat {
   // when there is one. Without it the tile says how much work there is but never how soon.
   const sub =
     t.closingThisWeek > 0
-      ? `${t.closingThisWeek} closing within 7 days`
+      ? `${t.closingThisWeek} close within 7d`
       : t.closesSoonest
-        ? `soonest closes ${new Date(t.closesSoonest).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Brisbane" })}`
+        ? `closes ${new Date(t.closesSoonest).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Brisbane" })}`
         : "waiting for a decision";
   return { label: "Tenders to review", href, value: t.pending, sub, tone: "warn" };
 }
@@ -229,18 +229,15 @@ function samplesTile(s: SamplesStats): Stat {
   if (s.unavailable) {
     return { label: "Samples viewed · 7d", value: "—", sub: s.unavailable, tone: "warn", href: "/admin/samples" };
   }
-  const unlocks = s.unlocksCode7d + s.unlocksEmail7d;
   const delta = s.views7d - s.viewsPrev7d;
-  const parts = [
-    unlocks === 0 ? "no unlocks" : `${unlocks} unlock${unlocks === 1 ? "" : "s"}`,
-    s.views7d === 0 && s.viewsPrev7d === 0 ? null : `${delta >= 0 ? "+" : ""}${delta} vs last week`,
-    // Named plainly. "Filtered" would read as a problem; this is the filter working.
-    s.unrendered7d > 0 ? `${s.unrendered7d} automated ignored` : null,
-  ].filter(Boolean);
+  // ONE fact, matching the two Enquiries tiles: the week-on-week change. Unlocks and the
+  // automated-request count were both here and are both on /admin/samples, which this tile
+  // links to — at a seventh of the row's width three facts wrapped to three lines and the
+  // tile stopped being scannable, which is the only thing a tile is for.
   return {
     label: "Samples viewed · 7d",
     value: s.views7d,
-    sub: parts.join(" · "),
+    sub: s.views7d === 0 && s.viewsPrev7d === 0 ? "none last week either" : `${delta >= 0 ? "+" : ""}${delta} vs last week`,
     tone: delta > 0 ? "ok" : delta < 0 ? "warn" : "default",
     // The people behind the number — who came, how they got in, what they opened.
     href: "/admin/samples",
@@ -356,16 +353,16 @@ export default async function AdminHomePage() {
       sub:
         e.daysSinceLast === null
           ? "none yet"
-          : `last one ${e.daysSinceLast} day${e.daysSinceLast === 1 ? "" : "s"} ago`,
+          : `last ${e.daysSinceLast}d ago`,
       tone: e.daysSinceLast !== null && e.daysSinceLast >= 14 ? "warn" : "default",
     },
     samplesTile(d.samples),
-    { label: "Tool uses · 7d", value: tools.usedThisWeek, sub: `${tools.usedLast30} in the last 30 days` },
+    { label: "Tool uses · 7d", value: tools.usedThisWeek, sub: `${tools.usedLast30} in 30 days` },
     apiSpendTile(apiUsage),
     {
       label: "Staff active · 7d",
       value: staff.activeThisWeek,
-      sub: `of ${staff.active} active account${staff.active === 1 ? "" : "s"}`,
+      sub: `of ${staff.active} active`,
       tone: staff.neverSignedIn > 0 ? "warn" : "default",
     },
   ];
@@ -386,10 +383,11 @@ export default async function AdminHomePage() {
 
       <div className="mt-8 space-y-6">
         <AttentionPanel alerts={d.alerts} />
-        {/* FOUR, not six: seven tiles across six columns leaves one on a row by itself, which
-            reads as something failing to render rather than a wrap. 4 + 3 is an ordinary
-            ragged end. */}
-        <StatTiles stats={tiles} columns={4} />
+        {/* All seven on ONE row from xl, dropping to 4 + 3 on a narrower screen. The
+            sub-lines below are deliberately SHORT for this: at a seventh of the width a
+            tile holds about four words, and the detail lives on the page each one links
+            to. */}
+        <StatTiles stats={tiles} columns={7} />
       </div>
 
       {/* Two columns from lg up. Enquiries takes the wider one because the trend line needs

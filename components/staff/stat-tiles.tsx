@@ -24,9 +24,19 @@ const TONE = {
   critical: "text-ad-amber font-medium",
 } as const;
 
-export function StatTiles({ stats, columns = 4 }: { stats: Stat[]; columns?: 3 | 4 | 5 | 6 }) {
+export function StatTiles({ stats, columns = 4 }: { stats: Stat[]; columns?: 3 | 4 | 5 | 6 | 7 }) {
   // Explicit strings, not a template — Tailwind only ships classes it can see in source.
-  const cols = { 3: "sm:grid-cols-3", 4: "sm:grid-cols-4", 5: "sm:grid-cols-5", 6: "sm:grid-cols-6" }[columns];
+  //
+  // ⚠️ 7 RAMPS rather than jumping: a seven-column grid on a 640px tablet is 80px a tile,
+  // which cannot hold a label, so it stays at 4 until xl. Every other count is wide enough
+  // at sm to go straight there.
+  const cols = {
+    3: "sm:grid-cols-3",
+    4: "sm:grid-cols-4",
+    5: "sm:grid-cols-5",
+    6: "sm:grid-cols-6",
+    7: "sm:grid-cols-4 xl:grid-cols-7",
+  }[columns];
   // An odd count leaves a hole beside the last tile on the 2-up phone grid. Widening that
   // tile reads as deliberate; a gap reads as something failed to render.
   const orphan = stats.length % 2 === 1 ? "max-sm:last:col-span-2" : "";

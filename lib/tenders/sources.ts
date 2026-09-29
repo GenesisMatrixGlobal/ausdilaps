@@ -23,9 +23,22 @@ export const SOURCES: SourceDefinition[] = [
     slug: "austender-atm",
     label: "AusTender — ATM feed",
     kind: "rss",
-    configured: () => !!process.env.TENDER_AUSTENDER_FEED_URL,
+    /**
+     * Commonwealth ATMs. The URL is HARDCODED like VendorPanel's below, because gating it on
+     * an env var is what kept this source at zero items from the day it was written — nobody
+     * ever set it, and the dashboard showed a source that looked merely quiet.
+     *
+     * ⚠️ `/public_data/rss/rss.xml`, NOT `/atm/rss` or the other forms tried first — all of
+     * those 403. robots.txt disallows /Search/*, /Reports/*, /Cn/List*, /Son/List* and
+     * /admin*; /public_data/ is permitted, and the site links this feed from its own help
+     * page. The 403s were the WAF's User-Agent rule, not the path — see feed.ts.
+     */
+    configured: () => true,
     fetch: async () =>
-      fetchFeed(process.env.TENDER_AUSTENDER_FEED_URL as string, "austender-atm"),
+      fetchFeed(
+        process.env.TENDER_AUSTENDER_FEED_URL ?? "https://www.tenders.gov.au/public_data/rss/rss.xml",
+        "austender-atm"
+      ),
   },
   {
     slug: "vendorpanel-public",

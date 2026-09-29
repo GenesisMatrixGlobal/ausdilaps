@@ -10,14 +10,26 @@ import type { FetchResult, RawItem } from "../types";
  * small, well-understood shape, and the repo has no XML dependency to reuse. If a third
  * feed format ever shows up, that is the moment to add fast-xml-parser — not before.
  *
- * A descriptive User-Agent is not optional. Both tenders.gov.au and data.gov.au returned
- * 403 to an unidentified automated fetch during research, and Vercel's datacenter IPs are
- * more likely to be filtered than a laptop. Verify any new feed from a deployed preview,
- * not just localhost.
+ * A descriptive User-Agent is not optional, and its FORMAT matters as much as its content —
+ * see USER_AGENT below. Vercel's datacenter IPs are also more likely to be filtered than a
+ * laptop, so verify any new feed from a DEPLOYED preview, never just localhost.
  */
 
-const USER_AGENT =
-  "AusDilapsTenderWatch/1.0 (+https://ausdilaps.com.au; tender monitoring; contact info@ausdilaps.com.au)";
+/**
+ * ⚠️ The `Mozilla/5.0 (compatible; <name>; +<url>)` SHAPE is load-bearing, not decoration.
+ *
+ * tenders.gov.au sits behind a CloudFront WAF that 403s on User-Agent. Measured against the
+ * live feed: our old honest-but-unconventional string 403s, `Feedly/1.0 (+…)` 403s,
+ * `curl/8.7.1` 403s, `Mozilla/5.0 AusDilapsTenderWatch/1.0` 403s — and this exact form
+ * returns 200. The rule is matching the recognised crawler convention that Googlebot and
+ * bingbot use, so a well-behaved reader that does not follow it is blocked along with the
+ * bad ones. That, not the missing env var, is why AusTender has never returned an item.
+ *
+ * It still says truthfully who we are and where to complain, and it does NOT impersonate a
+ * browser — the Chrome string was tested, works, and was deliberately not used. Do not
+ * "tidy" the Mozilla prefix away.
+ */
+const USER_AGENT = "Mozilla/5.0 (compatible; AusDilapsTenderWatch/1.0; +https://ausdilaps.com.au)";
 
 /** Pulls the text of the first matching tag, unwrapping CDATA. */
 function tag(block: string, ...names: string[]): string | null {

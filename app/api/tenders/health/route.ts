@@ -3,7 +3,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireBearerSecret } from "@/lib/auth/shared-secret";
 import { isApiAdmin } from "@/lib/auth/is-staff";
 import { safeText } from "@/lib/html";
-import { STALE_TRIAGE_DAYS, STALLED_RUN_MS } from "@/lib/tenders/config";
+import { STALE_TRIAGE_DAYS, STALLED_RUN_MS, WINDOW_DAYS } from "@/lib/tenders/config";
+import { findRedundant } from "@/lib/tenders/redundancy";
 
 /**
  * The morning invariant check — 9am Brisbane, before anyone opens the inbox.
@@ -37,7 +38,7 @@ async function handle(req: NextRequest, allowSession: boolean) {
   const checks: Check[] = [];
 
   try {
-    const [lastRun, sources, untriaged, stale, pending, stalled] = await Promise.all([
+    const [lastRun, sources, untriaged, stale, pending, stalled, sweep] = await Promise.all([
       db.from("tender_scan_runs").select("started_at, status").eq("status", "succeeded").order("started_at", { ascending: false }).limit(1),
       db.from("tender_sources").select("slug, label, is_enabled, consecutive_empty, consecutive_failures, last_error, alert_on_quiet"),
       db.from("tender_items").select("id", { count: "exact", head: true }).in("relevance", ["match", "maybe"]).is("forwarded_at", null).neq("status", "archived"),
@@ -56,6 +57,15 @@ async function handle(req: NextRequest, allowSession: boolean) {
         .select("id", { count: "exact", head: true })
         .eq("status", "running")
         .lt("started_at", new Date(Date.now() - STALLED_RUN_MS).toISOString()),
+      // The daily redundancy sweep's input: everything that has reached, or could still
+      // reach, a reviewer. Forwarded rows are deliberately INCLUDED — "we sent this last
+      // week and here it is again from another portal" is the expensive version of this.
+      db
+        .from("tender_items")
+        .select("id, title, source_slug, closes_at")
+        .in("relevance", ["match", "maybe"])
+        .neq("status", "archived")
+        .gte("created_at", new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString()),
     ]);
 
     // 1. Has the cron stopped firing? The single most important check here.
@@ -145,6 +155,35 @@ async function handle(req: NextRequest, allowSession: boolean) {
       });
     }
 
+    // 5. Is the same tender reaching us from more than one source?
+    //
+    // A WARNING, never critical, and it names the pair rather than suppressing either one.
+    // Nothing is broken when this fires — it means two portals we subscribed to both carry a
+    // council's tender, which is exactly what we asked for by adding them. What it buys is
+    // that the overlap is visible the morning it starts, instead of being discovered by an
+    // estimator reviewing the same job twice. Zero on the day it was written; VendorPanel,
+    // Buying for Victoria and TenderSearch all reach the same councils, so it will not stay
+    // zero. See lib/tenders/redundancy.ts for why this reports instead of merging.
+    const redundant = findRedundant(
+      (sweep.data ?? []).map((r) => ({
+        id: r.id as string,
+        title: (r.title as string) ?? "",
+        source_slug: r.source_slug as string,
+        closes_at: (r.closes_at as string | null) ?? null,
+      }))
+    );
+    if (redundant.length > 0) {
+      const examples = redundant
+        .slice(0, 3)
+        .map((p) => `${p.left.source} / ${p.right.source}: ${p.left.title.slice(0, 50)}`)
+        .join("; ");
+      checks.push({
+        level: "warning",
+        title: `${redundant.length} tender(s) arriving from more than one source`,
+        detail: `Same closing date, near-identical title. ${examples}`,
+      });
+    }
+
     // Monday = 1. The all-clear makes silence meaningful the rest of the week.
     const isMonday =
       new Date().toLocaleDateString("en-AU", { weekday: "short", timeZone: "Australia/Brisbane" }) === "Mon";
@@ -153,7 +192,7 @@ async function handle(req: NextRequest, allowSession: boolean) {
     let emailed = false;
     if (shouldEmail) emailed = await sendHealthEmail(checks, isMonday, hours, waiting);
 
-    return NextResponse.json({ ok: true, checks, emailed, waiting, stale: stuck });
+    return NextResponse.json({ ok: true, checks, emailed, waiting, stale: stuck, redundant: redundant.length });
   } catch (e) {
     const error = (e as Error).message;
     console.error("[tenders] health check failed:", error);

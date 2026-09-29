@@ -26,6 +26,7 @@ import { displayTitle, groupItems, groupKey } from "../lib/tenders/group";
 import { extractNotices, extractorFor } from "../lib/tenders/sources/extract";
 import type { ExtractSource } from "../lib/tenders/sources/extract/types";
 import { parseDayMonthYear } from "../lib/tenders/sources/extract/date";
+import { findRedundant, titleSimilarity, SAME_TENDER_AT } from "../lib/tenders/redundancy";
 import { readFileSync } from "node:fs";
 
 let fails = 0;
@@ -299,6 +300,60 @@ for (const [raw, expect] of [
 ] as [string, string | null][]) {
   ok(`date ${raw.padEnd(22)} -> ${expect}`, parseDayMonthYear(raw) === expect, String(parseDayMonthYear(raw)));
 }
+
+
+// ── Buying for Victoria ──────────────────────────────────────────────────────────────────
+//
+// The generic parser took the reference CODE as the title, so the queue showed rows called
+// "T2026-0816" with no project name, no agency and no closing date — every one no_match.
+const vicMsg = FIXTURES.find((m) => (m.from ?? "").includes("tenders.vic.gov.au"))!;
+const vicNotices = run(vicMsg) ?? [];
+ok("the VIC alert yields its tender rows", vicNotices.length >= 4, `${vicNotices.length}`);
+ok("...with a project name, never the reference code",
+   vicNotices.every((n) => n.title.length > 12 && !/^[A-Z]{2,4}\d{4}-\d+$/.test(n.title)),
+   vicNotices.map((n) => n.title.slice(0, 30)).join(" | "));
+ok("...a buying agency", vicNotices.every((n) => n.agency && n.agency.length > 3));
+ok("...never a UNSPSC classification line as the agency",
+   vicNotices.every((n) => !/^\d{6,8}\s*-\s/.test(n.agency ?? "")));
+ok("...a closing date", vicNotices.every((n) => n.closesAt !== null),
+   vicNotices.map((n) => String(n.closesAt)).join(" "));
+ok("...its OWN link, not one shared across the bulletin",
+   new Set(vicNotices.map((n) => n.url)).size === vicNotices.length);
+ok("...keyed on Victoria's own record id",
+   vicNotices.every((n) => /^vic:\d+$/.test(n.externalRef)),
+   vicNotices.map((n) => n.externalRef).join(" "));
+// The subscriber token identifies the tenders@ account and must never reach the repo.
+ok("the stored fixture carries no account token",
+   !/ctid=(?!REDACTED)/.test(vicMsg.html));
+
+// ── The daily redundancy sweep ───────────────────────────────────────────────────────────
+//
+// Cross-source only, and bucketed by closing date. Measured zero on real data the day it was
+// written (43 cross-source pairs share a deadline, none are the same job), so these cases are
+// synthetic on purpose — the point is that the rule discriminates, not that today's intake
+// happens to be clean.
+const sweep = findRedundant([
+  { id: "a", title: "Pre and post construction dilapidation survey — Hume Highway", source_slug: "email:tendersearch.com.au", closes_at: "2026-10-07T04:00:00Z" },
+  { id: "b", title: "Dilapidation survey, pre and post construction, Hume Highway", source_slug: "vendorpanel", closes_at: "2026-10-07T23:59:00Z" },
+  { id: "c", title: "Supply and install playground equipment", source_slug: "vendorpanel", closes_at: "2026-10-07T09:00:00Z" },
+  { id: "d", title: "Pre and post construction dilapidation survey — Hume Highway", source_slug: "email:tendersearch.com.au", closes_at: "2026-10-07T04:00:00Z" },
+  { id: "e", title: "Dilapidation survey, pre and post construction, Hume Highway", source_slug: "vendorpanel", closes_at: "2026-11-30T00:00:00Z" },
+  { id: "f", title: "Bridge deck rehabilitation", source_slug: "austender", closes_at: null },
+]);
+ok("the same tender from two portals is flagged", sweep.some((p) => p.left.id === "a" && p.right.id === "b") || sweep.some((p) => p.left.id === "b" && p.right.id === "a"));
+ok("...and an unrelated tender closing the same day is not",
+   !sweep.some((p) => [p.left.id, p.right.id].includes("c")),
+   sweep.map((p) => `${p.left.id}~${p.right.id}`).join(" "));
+ok("two copies WITHIN one source are left to group.ts",
+   !sweep.some((p) => p.left.source === p.right.source));
+ok("a different closing date is a different tender",
+   !sweep.some((p) => [p.left.id, p.right.id].includes("e")));
+ok("an item with no closing date is never paired",
+   !sweep.some((p) => [p.left.id, p.right.id].includes("f")));
+ok("the threshold is not so low that any two tenders match",
+   titleSimilarity("Supply and install playground equipment", "Bridge deck rehabilitation works") < SAME_TENDER_AT);
+ok("an identical title scores 1", titleSimilarity("Roadworks package B", "Roadworks package B") === 1);
+ok("an empty title never matches", titleSimilarity("", "anything at all here") === 0);
 
 console.log(fails === 0 ? "\nAll passed." : `\n${fails} FAILED`);
 process.exit(fails === 0 ? 0 : 1);

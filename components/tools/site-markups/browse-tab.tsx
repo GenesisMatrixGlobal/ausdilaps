@@ -84,12 +84,63 @@ export function BrowseTab({ active }: { active: boolean }) {
     [goToTarget]
   );
 
+  // Stable (useCallback inside useMeasurements), so the search callback below can depend on them.
+  const { addLot, listRef } = state;
+  /** Bumped by every pick, so a slow lookup for the previous address never lands after this one. */
+  const lookupRun = useRef(0);
+
+  /** Measures the searched address's own lot and SELECTS it, so its corners can be dragged to
+   *  the inspection area straight away (Rhys, 2026-09-29). Through the bulk-parcels route —
+   *  the Assets tab's per-address pipeline — rather than "the lot under Google's pin": that
+   *  pipeline checks the geocode against the state address layer, and Google puts a house
+   *  number on the NEIGHBOUR's lot often enough to matter (4 of 6 at Vaucluse). */
+  const measureAddressLot = useCallback(
+    async (place: PlaceSelection) => {
+      const run = ++lookupRun.current;
+      if (place.location && listRef.current.some((m) => m.lot && pointInRing(place.location!, m.points))) {
+        setLotNote("That lot is already measured.");
+        return;
+      }
+      setLotNote("Finding the lot…");
+      try {
+        const res = await fetch("/api/kml/standard-markup/bulk-parcels", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            text: `${place.street}, ${place.suburb} ${place.state} ${place.postcode}`.trim(),
+          }),
+        });
+        const json = (await res.json().catch(() => null)) as
+          | { ok: boolean; parcels?: { ring: LatLng[] }[]; unresolved?: { reason: string }[]; error?: string }
+          | null;
+        if (run !== lookupRun.current) return;
+        const parcel = json?.ok ? json.parcels?.[0] : undefined;
+        if (!parcel || parcel.ring.length < 3) {
+          setLotNote(
+            `Couldn't find the lot for that address${json?.unresolved?.[0] ? ` (${json.unresolved[0].reason})` : ""} — press Lot and click it.`
+          );
+          return;
+        }
+        if (!addLot(parcel.ring, { select: true })) {
+          setLotNote(`That's the maximum of ${MAX_MEASUREMENTS} measurements — remove one first.`);
+          return;
+        }
+        setLotNote("Lot measured — drag its corners to adjust the inspection area.");
+      } catch (e) {
+        if (run === lookupRun.current) setLotNote((e as Error).message);
+      }
+    },
+    [addLot, listRef]
+  );
+
   const handleSelect = useCallback((place: PlaceSelection) => {
     setNote(null);
     // A street address lands ON the house. Google's viewport for one is a whole block or
     // more, which is right for a suburb or a park and wrong for looking at a property.
     if (place.street && place.location && !place.place) {
       commands.current?.goTo({ lat: place.location.lat, lng: place.location.lng, zoom: 19 });
+      // Cadastre lookups cover these three; anywhere else the operator draws the area.
+      if (["QLD", "NSW", "VIC"].includes(place.state)) void measureAddressLot(place);
       return;
     }
     if (place.viewport) {
@@ -97,7 +148,7 @@ export function BrowseTab({ active }: { active: boolean }) {
       return;
     }
     if (place.location) commands.current?.goTo({ lat: place.location.lat, lng: place.location.lng });
-  }, []);
+  }, [measureAddressLot]);
 
   // ---------------------------------------------------------------------- Street View
 

@@ -126,7 +126,19 @@ function Row({
         </button>
       </div>
 
-      {isActive && (
+      {isActive && m.lot && (
+        // A lot is a finished boundary: no mode, no undo — it is adjusted on the map.
+        <div className="border-t border-ad-steel/20 p-2 text-[0.7rem] leading-snug text-ad-muted">
+          Drag a corner to adjust the area, drag a faint midpoint to add a corner, right-click a
+          corner to delete it.
+          {bowtie && (
+            <p className="mt-1 text-ad-orange">
+              This outline crosses itself, so the area isn&apos;t meaningful — drag the corner back.
+            </p>
+          )}
+        </div>
+      )}
+      {isActive && !m.lot && (
         <div className="border-t border-ad-steel/20 p-2">
           <div className="flex rounded-lg border border-ad-border bg-white p-0.5">
             {MODES.map((mode) => (

@@ -56,7 +56,7 @@ export interface MeasureState {
   /** Adds a finished lot boundary as an area measurement, NOT selected, so the next map
    *  click starts something new rather than extending the lot. Null at the cap. Not held to
    *  MAX_POINTS — a cadastre ring can carry more vertices than anyone would click. */
-  addLot: (ring: LatLng[]) => string | null;
+  addLot: (ring: LatLng[], options?: { select?: boolean }) => string | null;
   remove: (id: string) => void;
   setMode: (id: string, mode: ShapeMode) => void;
   setWidth: (id: string, widthMetres: number) => void;
@@ -130,7 +130,7 @@ export function useMeasurements(): MeasureState {
   );
 
   const addLot = useCallback(
-    (ring: LatLng[]): string | null => {
+    (ring: LatLng[], options?: { select?: boolean }): string | null => {
       if (listRef.current.length >= MAX_MEASUREMENTS) return null;
       // Cadastre rings come back closed (last point = first); the overlay closes its own.
       const first = ring[0];
@@ -145,14 +145,20 @@ export function useMeasurements(): MeasureState {
         lot: true,
       };
       write((prev) => [...prev, created]);
-      select(null);
+      // Selected = its corners are draggable straight away (the address search's lot).
+      select(options?.select ? created.id : null);
       return created.id;
     },
     [select, write]
   );
 
+  // A selected LOT is adjusted by dragging, never by clicking: a click appends a vertex at
+  // the end of the ring, which on a finished boundary is a spike to the last corner. So a
+  // map click with a lot selected starts a new measurement instead.
   const ensureActive = useCallback((): string | null => {
-    return activeIdRef.current ?? add();
+    const id = activeIdRef.current;
+    if (id && !listRef.current.find((m) => m.id === id)?.lot) return id;
+    return add();
   }, [add]);
 
   const appendPoint = useCallback(

@@ -410,6 +410,8 @@ export function MeasureMap({
             state.select(id);
             return;
           }
+          // Clicking inside a selected lot does nothing — see ensureActive.
+          if (state.listRef.current.find((m) => m.id === id)?.lot) return;
           if (mvc.getLength() >= MAX_POINTS) return;
           mvc.push(e.latLng);
         }),

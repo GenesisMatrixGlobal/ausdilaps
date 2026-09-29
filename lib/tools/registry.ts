@@ -210,6 +210,17 @@ export const TOOLS: ToolDefinition[] = [
       import("@/components/tools/site-snap").then((m) => m.SiteSnapTool)
     ),
   },
+  {
+    slug: "crack-blast",
+    code: "CRK",
+    kind: "game",
+    title: "CrackBlast",
+    description:
+      "An AusDilaps Challenge \u2014 drag blocks onto the grid, finish a row or column and watch it crack. Staff-wide leaderboard.",
+    Component: dynamic(() =>
+      import("@/components/tools/crack-blast").then((m) => m.CrackBlastTool)
+    ),
+  },
 ];
 
 export function getTool(slug: string): ToolDefinition | undefined {

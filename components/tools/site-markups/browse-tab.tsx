@@ -126,6 +126,11 @@ export function BrowseTab({ active }: { active: boolean }) {
           setLotNote(`That's the maximum of ${MAX_MEASUREMENTS} measurements — remove one first.`);
           return;
         }
+        // Frame the LOT, not Google's pin. The lot is address-layer verified; the pin is
+        // whatever Places geocoded, and when that is wrong the map showed one place and
+        // selected another (37 Bells Line of Road, 2026-09-29). Padded so the street and the
+        // neighbours are in shot, not just the boundary.
+        commands.current?.fit(paddedBounds(parcel.ring));
         setLotNote("Lot measured — drag its corners to adjust the inspection area.");
       } catch (e) {
         if (run === lookupRun.current) setLotNote((e as Error).message);
@@ -309,4 +314,24 @@ export function BrowseTab({ active }: { active: boolean }) {
       </div>
     </div>
   );
+}
+
+/** The ring's box, grown by 40% of its size a side with a 20 m floor — a 15 m-wide suburban
+ *  lot would otherwise fill the screen edge to edge with no street in view. */
+function paddedBounds(ring: LatLng[]) {
+  const lats = ring.map((p) => p.lat);
+  const lngs = ring.map((p) => p.lng);
+  let south = Math.min(...lats);
+  let north = Math.max(...lats);
+  let west = Math.min(...lngs);
+  let east = Math.max(...lngs);
+  const mPerDegLat = 111_320;
+  const mPerDegLng = mPerDegLat * Math.cos((((south + north) / 2) * Math.PI) / 180);
+  const padLat = Math.max(((north - south) * mPerDegLat * 0.4), 20) / mPerDegLat;
+  const padLng = Math.max(((east - west) * mPerDegLng * 0.4), 20) / mPerDegLng;
+  south -= padLat;
+  north += padLat;
+  west -= padLng;
+  east += padLng;
+  return { south, west, north, east };
 }

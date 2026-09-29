@@ -93,12 +93,6 @@ export const extractTenderSearch: Extractor = (message: ExtractSource) => {
   const marks = [...text.matchAll(REF)];
   if (marks.length === 0) return null; // not the format we think it is — fall back
 
-  // One portal link per bulletin, not per notice: within a bulletin every "Web Document
-  // Location" is the same subscriber token. So it is found once and shared, and the honest
-  // description of it is "the bulletin this notice came in", which is still the only place a
-  // recipient can read the full notice.
-  const bulletinUrl = /https?:\/\/link\.tendersearch\.com\.au\/[^\s"'<>]+/i.exec(text)?.[0] ?? null;
-
   const notices: ExtractedNotice[] = [];
 
   for (let i = 0; i < marks.length; i++) {
@@ -123,6 +117,16 @@ export const extractTenderSearch: Extractor = (message: ExtractSource) => {
     const returnToTop = block.search(/Return to Top/i);
     if (returnToTop !== -1) block = block.slice(0, returnToTop);
 
+    // ⚠️ The link is taken from THIS NOTICE'S BLOCK, never once for the bulletin.
+    //
+    // This was wrong when the extractor shipped. The comment here used to claim every "Web
+    // Document Location" in a bulletin carried the same subscriber token, so one was found
+    // and shared — that was read off a two-notice bulletin and is simply false. The 28-Sep
+    // bulletin has 10 notices and 10 DISTINCT tokens, so nine of its ten items linked to
+    // somebody else's tender. Reported from the queue: the Wellington Shire item opened the
+    // wrong notice.
+    const noticeUrl = /https?:\/\/link\.tendersearch\.com\.au\/[^\s"'<>]+/i.exec(block)?.[0] ?? null;
+
     const closesRaw = labelled(block, "Closing Date");
     const location = realLocation(labelled(block, "Location"));
     const contact = cleanContact(labelled(block, "Contact"));
@@ -133,7 +137,7 @@ export const extractTenderSearch: Extractor = (message: ExtractSource) => {
       siteLocation: location,
       contact,
       closesAt: closesRaw ? parseDayMonthYear(closesRaw) : null,
-      url: bulletinUrl ? canonicalUrl(bulletinUrl) : null,
+      url: noticeUrl ? canonicalUrl(noticeUrl) : null,
       agency: contact,
       excerpt: `${title}\n\n${block}`.replace(/\n{3,}/g, "\n\n").trim().slice(0, 6_000),
     });

@@ -622,6 +622,8 @@ function SourceHealth({
   // sends, or the portals get buried under people who emailed once.
   const ordered = [...sources].sort(
     (a, b) =>
+      // Ignored sinks below everything: it is a decision already made, not news.
+      Number(b.isEnabled) - Number(a.isEnabled) ||
       Number(b.alertOnQuiet) - Number(a.alertOnQuiet) ||
       b.dailyAverage - a.dailyAverage ||
       b.itemsLastRun - a.itemsLastRun ||
@@ -644,7 +646,8 @@ function SourceHealth({
             key={s.slug}
             className={cn(
               "flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-ad-border bg-white p-3.5 last:border-b-0",
-              s.configured && s.health !== "healthy" && "bg-ad-orange/5"
+              s.configured && s.health !== "healthy" && s.isEnabled && "bg-ad-orange/5",
+              !s.isEnabled && "opacity-45"
             )}
           >
             <div className="flex min-w-[13rem] flex-1 items-center gap-2">
@@ -658,7 +661,9 @@ function SourceHealth({
             </span>
             <span className="text-xs tabular-nums text-ad-muted">{s.dailyAverage}/run avg</span>
             <span className="text-xs text-ad-muted">Item {ago(s.lastItemAt, now)}</span>
-            {!s.configured ? (
+            {!s.isEnabled ? (
+              <Pill tone="muted">Ignored</Pill>
+            ) : !s.configured ? (
               <Pill tone="muted">Not configured</Pill>
             ) : s.health === "failing" ? (
               <Pill tone="critical">{s.consecutiveFailures} failed</Pill>
@@ -690,6 +695,23 @@ function SourceHealth({
                   }
                 >
                   Trusted
+                </Toggle>
+                {/* Auto-discovery tracks EVERY sender, so spam that reaches tenders@ becomes
+                    a "source" and sits in this list forever. Ignoring one stops it being
+                    fetched or parsed at all. Deleting the row would not work: the next scan
+                    re-discovers the domain the moment it emails again, whereas
+                    discoverMailboxSources() upserts with ignoreDuplicates, so it never
+                    overwrites this flag. */}
+                <Toggle
+                  on={!s.isEnabled}
+                  onClick={() => void onUpdate(s.slug, { isEnabled: !s.isEnabled })}
+                  title={
+                    s.isEnabled
+                      ? "Ignore this sender \u2014 stop fetching and parsing its mail. For spam that reached tenders@."
+                      : "Ignored. Its mail is not read at all. Click to start watching it again."
+                  }
+                >
+                  {s.isEnabled ? "Ignore" : "Ignored"}
                 </Toggle>
               </div>
             )}

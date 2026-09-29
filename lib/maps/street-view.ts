@@ -23,12 +23,17 @@ import type { LatLng } from "@/lib/kml/types";
  *
  * Six decimals is ~0.11 m, well inside the accuracy of a cadastre outline.
  */
-export function streetViewUrl(at: LatLng, heading?: number | null): string {
+export function streetViewUrl(at: LatLng, heading?: number | null, pano?: string | null): string {
   const url = new URL("https://www.google.com/maps/@");
   url.searchParams.set("api", "1");
   url.searchParams.set("map_action", "pano");
   // Percent-encoded to %2C by URLSearchParams, exactly as Google's own documented example is.
   url.searchParams.set("viewpoint", `${at.lat.toFixed(6)},${at.lng.toFixed(6)}`);
+  // The exact camera /api/maps/street-view chose. Without it Google opens the panorama
+  // NEAREST the viewpoint — for a shop that is often its own indoor photosphere, which is
+  // what 55-59 Bells Line of Road did (2026-09-29). Google falls back to the viewpoint if the
+  // id is ever unknown.
+  if (pano) url.searchParams.set("pano", pano);
   if (heading !== undefined && heading !== null && Number.isFinite(heading)) {
     url.searchParams.set("heading", String(Math.round(heading * 10) / 10));
   }

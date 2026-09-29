@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { pointInRing } from "@/lib/kml/standard-markup/geometry";
+import { ringAnchor } from "@/lib/kml/standard-markup/measure";
 import { parseGoogleMapsUrl } from "@/lib/maps/parse-google-maps-url";
 import type { GoogleMapsTarget } from "@/lib/maps/parse-google-maps-url";
 import type { LatLng } from "@/lib/kml/types";
@@ -158,22 +159,33 @@ export function BrowseTab({ active }: { active: boolean }) {
    *  from, so a stale heading can never be paired with a new centre. A plain link, not a
    *  window.open after a fetch: that is a pop-up to a browser, and gets blocked. */
   const [centre, setCentre] = useState<LatLng | null>(null);
-  const [aim, setAim] = useState<{ key: string; heading: number } | null>(null);
+  const [aim, setAim] = useState<{ key: string; heading: number; pano: string | null; at: LatLng } | null>(null);
   const centreKey = centre ? `${centre.lat.toFixed(6)},${centre.lng.toFixed(6)}` : null;
+  // Re-aim when a lot lands (the address search's lot arrives a few seconds after the map
+  // has settled on it). Ids only — dragging a corner shouldn't refetch.
+  const lotIds = state.list.filter((m) => m.lot).map((m) => m.id).join(",");
 
   useEffect(() => {
     if (!centreKey) return;
     let live = true;
     const timer = setTimeout(() => {
       const [lat, lng] = centreKey.split(",").map(Number);
+      const middle = { lat, lng };
+      // A measured lot under the middle of the map is what the operator is looking at: aim at
+      // IT, and send its boundary so the route refuses a camera standing inside it — a shop's
+      // own indoor photosphere, which is where 55-59 Bells Line of Road used to open.
+      const lot = state.listRef.current.find((m) => m.lot && pointInRing(middle, m.points));
+      const at = (lot && ringAnchor(lot.points)) ?? middle;
       void fetch("/api/maps/street-view", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ lat, lng }),
+        body: JSON.stringify({ lat: at.lat, lng: at.lng, ring: lot?.points }),
       })
         .then((r) => r.json())
-        .then((j: { ok?: boolean; heading?: number | null }) => {
-          if (live && j?.ok && typeof j.heading === "number") setAim({ key: centreKey, heading: j.heading });
+        .then((j: { ok?: boolean; heading?: number | null; pano?: string | null }) => {
+          if (live && j?.ok && typeof j.heading === "number") {
+            setAim({ key: centreKey, heading: j.heading, pano: j.pano ?? null, at });
+          }
         })
         // Silent: an unaimed Street View link still works.
         .catch(() => {});
@@ -182,7 +194,8 @@ export function BrowseTab({ active }: { active: boolean }) {
       live = false;
       clearTimeout(timer);
     };
-  }, [centreKey]);
+  }, [centreKey, lotIds, state.listRef]);
+  const liveAim = aim && aim.key === centreKey ? aim : null;
 
   // ------------------------------------------------------------------------------ Lot
 
@@ -260,8 +273,9 @@ export function BrowseTab({ active }: { active: boolean }) {
           />
         </div>
         <StreetViewLink
-          at={centre}
-          heading={aim && aim.key === centreKey ? aim.heading : null}
+          at={liveAim?.at ?? centre}
+          heading={liveAim?.heading ?? null}
+          pano={liveAim?.pano ?? null}
           label="the centre of the map"
           className={cn(buttonVariants({ variant: "outline", size: "md" }), "gap-1.5")}
           iconSize={15}

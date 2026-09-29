@@ -151,7 +151,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
    *  change address and the old key no longer matches, so it is ignored rather than having to be
    *  cleared. Which also keeps the effect free of a synchronous setState, the thing the React
    *  compiler lint rejects. */
-  const [siteHeadingFor, setSiteHeadingFor] = useState<{ key: string; heading: number } | null>(null);
+  const [siteHeadingFor, setSiteHeadingFor] = useState<{ key: string; heading: number; pano: string | null } | null>(null);
   const [addressError, setAddressError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -381,6 +381,9 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
       ? layerAnchor(singleLotLayer)
       : (singleCentre?.point ?? null)
     : ((subjectLayer ? layerAnchor(subjectLayer) : null) ?? addressPoint);
+  // The site's boundary, so the Street View route can refuse a camera standing inside it
+  // (a shop's own indoor photosphere). Stable identities off `result`, so safe as a dependency.
+  const siteRing = multi ? (singleLot?.ring ?? null) : (result?.subjectRing ?? null);
   const streetViewLabel = multi
     ? (singleLot?.street ?? singleCentre?.label ?? "the property")
     : (street.trim() || "the project site");
@@ -398,12 +401,12 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
     void fetch("/api/maps/street-view", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ lat, lng }),
+      body: JSON.stringify({ lat, lng, ring: siteRing && siteRing.length >= 3 ? siteRing : undefined }),
     })
       .then((r) => r.json())
-      .then((j: { ok?: boolean; heading?: number | null }) => {
+      .then((j: { ok?: boolean; heading?: number | null; pano?: string | null }) => {
         if (live && j?.ok && typeof j.heading === "number") {
-          setSiteHeadingFor({ key: sitePointKey, heading: j.heading });
+          setSiteHeadingFor({ key: sitePointKey, heading: j.heading, pano: j.pano ?? null });
         }
       })
       // Silent: an unaimed Street View link is a fine outcome, and there is nothing the operator
@@ -412,9 +415,10 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
     return () => {
       live = false;
     };
-  }, [sitePointKey]);
+  }, [sitePointKey, siteRing]);
 
-  const siteHeading = siteHeadingFor?.key === sitePointKey ? siteHeadingFor.heading : null;
+  const siteAim = siteHeadingFor?.key === sitePointKey ? siteHeadingFor : null;
+  const siteHeading = siteAim?.heading ?? null;
 
   function saveJson() {
     const doc = saveFileJson();
@@ -1465,6 +1469,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
         <StreetViewLink
           at={sitePoint}
           heading={siteHeading}
+          pano={siteAim?.pano ?? null}
           label={streetViewLabel}
           className={cn(buttonVariants({ variant: "outline", size: "md" }), "gap-1.5")}
           iconSize={15}

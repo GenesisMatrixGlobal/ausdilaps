@@ -53,6 +53,7 @@ function PegmanIcon({ size = 14 }: { size?: number }) {
 export function StreetViewLink({
   at,
   heading,
+  pano,
   label,
   className,
   iconSize,
@@ -63,6 +64,8 @@ export function StreetViewLink({
    *  camera opens unaimed — see streetViewUrl for why that is a real downgrade rather than a
    *  cosmetic one. */
   heading?: number | null;
+  /** The exact camera to open, when /api/maps/street-view picked one — see streetViewUrl. */
+  pano?: string | null;
   /** What the operator would call this thing, for the hover title and the screen reader. */
   label: string;
   className?: string;
@@ -84,7 +87,7 @@ export function StreetViewLink({
   }
   return (
     <a
-      href={streetViewUrl(at, heading)}
+      href={streetViewUrl(at, heading, pano)}
       target="_blank"
       rel="noopener noreferrer"
       title={`Street View — ${label}`}

@@ -82,6 +82,9 @@ interface Meta {
   copyright?: string;
   location?: { lat: number; lng: number };
   pano_id?: string;
+  /** Capture month ("2025-02"). Every street-car panorama has one; a business's indoor
+   *  photosphere can carry "© Google" and still have none (2026-09-29). */
+  date?: string;
 }
 
 async function metadata(location: string, key: string): Promise<Meta> {
@@ -124,7 +127,7 @@ export async function findStreetCameras(target: LatLng, parcel: LatLng[] | null,
   const found: Camera[] = [];
   for (const o of offsets) {
     const data = await metadata(`${o.lat.toFixed(7)},${o.lng.toFixed(7)}`, key);
-    if (data.status !== "OK" || !data.location || !/google/i.test(data.copyright ?? "")) continue;
+    if (data.status !== "OK" || !data.location || !/google/i.test(data.copyright ?? "") || !data.date) continue;
     if (data.pano_id && seen.has(data.pano_id)) continue;
     if (data.pano_id) seen.add(data.pano_id);
     if (parcel && parcel.length >= 3 && pointInRing(data.location, parcel)) continue; // indoors, or in the yard

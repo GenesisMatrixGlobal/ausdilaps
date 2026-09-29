@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { LatLng } from "@/lib/kml/types";
+import { closeRing, simplifyRing } from "@/lib/kml/standard-markup/geometry";
 import {
   MIN_POINTS,
   measureShape,
@@ -18,6 +19,9 @@ export const MAX_MEASUREMENTS = 12;
  *  length limit, and the Measure tab's never were. `overlayOutlines` retired that limit, so
  *  both tools now let a road frontage run to 100 clicks. */
 export const MAX_POINTS = 100;
+
+/** How far a lot's survey point may sit off a straight edge before it counts as a corner. */
+const LOT_SIMPLIFY_M = 0.5;
 
 export const MIN_WIDTH_M = 3;
 export const MAX_WIDTH_M = 30;
@@ -132,11 +136,14 @@ export function useMeasurements(): MeasureState {
   const addLot = useCallback(
     (ring: LatLng[], options?: { select?: boolean }): string | null => {
       if (listRef.current.length >= MAX_MEASUREMENTS) return null;
-      // Cadastre rings come back closed (last point = first); the overlay closes its own.
-      const first = ring[0];
-      const last = ring[ring.length - 1];
-      const open =
-        ring.length > 1 && first.lat === last.lat && first.lng === last.lng ? ring.slice(0, -1) : ring;
+      // Corners only (Rhys, 2026-09-29): a cadastre ring carries every survey point, most of
+      // them on a straight edge — 47 Bells Line of Road is 15 points for a 4-corner lot, and
+      // each one is a handle to drag. Simplified to LOT_SIMPLIFY_M, which moved no measured
+      // area on the lots checked (0.0%); Google's faint midpoints add a corner back wherever
+      // one is wanted.
+      const simplified = simplifyRing(closeRing(ring), LOT_SIMPLIFY_M);
+      // The ring comes back closed (last point = first); the overlay closes its own.
+      const open = simplified.length > 3 ? simplified.slice(0, -1) : ring;
       const created: Measurement = {
         id: crypto.randomUUID(),
         points: open,

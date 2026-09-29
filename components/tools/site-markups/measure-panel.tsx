@@ -108,7 +108,9 @@ function Row({
             <span className="block truncate text-[0.7rem] text-ad-muted">
               {m.mode === "line" && measured.lengthMetres !== null
                 ? `${formatLength(measured.lengthMetres)} × ${widthLabel(m.widthMetres)}`
-                : `${m.points.length} ${m.points.length === 1 ? "point" : "points"}`}
+                : m.lot
+                  ? "Lot boundary"
+                  : `${m.points.length} ${m.points.length === 1 ? "point" : "points"}`}
             </span>
           </span>
         </button>
@@ -202,12 +204,24 @@ function Row({
 /** Floats over the map rather than sitting beside it, so the imagery keeps the full width
  *  of the page — on a measuring tool the map IS the interface, and a fixed sidebar was
  *  taking a third of it to show numbers that are also drawn on each shape. */
+/** "Click a lot to measure it". Stays on until turned off, like Quote Builder's
+ *  "+ Add lot from map", so several lots don't each need the button pressed again. */
+export interface LotPicker {
+  on: boolean;
+  busy: boolean;
+  toggle: () => void;
+  /** The running feedback — what the last click found, or why it found nothing. */
+  note: string | null;
+}
+
 export function MeasurePanel({
   state,
   commands,
+  lot,
 }: {
   state: MeasureState;
   commands: React.RefObject<MapCommands | null>;
+  lot?: LotPicker;
 }) {
   const drawn = state.list.filter((m) => m.points.length >= MIN_POINTS[m.mode]).length;
 
@@ -237,6 +251,7 @@ export function MeasurePanel({
           <p className="rounded-lg bg-ad-surface p-3 text-xs leading-relaxed text-ad-muted">
             Click the map to drop points. Drag a point to adjust, drag the faint midpoint to
             insert one, right-click a point to delete it.
+            {lot && " Or press Lot and click a property to measure its boundary."}
           </p>
         ) : (
           <ul className="space-y-1.5">
@@ -247,11 +262,16 @@ export function MeasurePanel({
         )}
       </div>
 
+      {lot?.note && (
+        <p className="border-t border-ad-border px-3 py-2 text-[0.7rem] leading-snug text-ad-muted">
+          {lot.note}
+        </p>
+      )}
       <div className="flex gap-1.5 border-t border-ad-border p-2">
         <button
           type="button"
           onClick={() => state.add()}
-          disabled={state.atMax}
+          disabled={state.atMax || lot?.on}
           title={state.atMax ? `Maximum ${MAX_MEASUREMENTS} measurements` : undefined}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-ad-steel px-2 py-1.5 text-xs font-medium text-white hover:bg-ad-steel/90 disabled:bg-ad-border disabled:text-ad-muted"
         >
@@ -260,6 +280,23 @@ export function MeasurePanel({
           </svg>
           New
         </button>
+        {lot && (
+          // Never disabled while a lookup is in flight — it is the only way out of the mode.
+          <button
+            type="button"
+            onClick={lot.toggle}
+            aria-pressed={lot.on}
+            title={lot.on ? "Stop picking lots" : "Click a property on the map to measure its boundary"}
+            className={cn(
+              "rounded-lg border px-2 py-1.5 text-xs font-medium",
+              lot.on
+                ? "border-ad-orange bg-ad-orange text-white hover:bg-ad-orange/90"
+                : "border-ad-border text-ad-ink hover:bg-ad-border/20"
+            )}
+          >
+            {lot.on ? (lot.busy ? "Looking…" : "Done") : "Lot"}
+          </button>
+        )}
         <button
           type="button"
           onClick={state.reset}

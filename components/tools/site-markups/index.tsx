@@ -5,6 +5,7 @@ import { TabBar } from "@/components/ui/tab-bar";
 import { ToolHeaderSlot } from "@/components/staff/tool-header-slot";
 import { RoadMarkupTab } from "./road-tab";
 import { ResidentialMarkupTab } from "./residential-tab";
+import { BrowseTab } from "./browse-tab";
 import type { ToolProps } from "@/lib/tools/registry";
 
 // ⚠️ The LABEL and the code name differ, deliberately. "Assets" (was "Building Markup" until
@@ -15,11 +16,9 @@ import type { ToolProps } from "@/lib/tools/registry";
 const TABS = [
   { key: "residential", label: "Assets" },
   { key: "road", label: "Roads" },
-  // Measure is HIDDEN, not deleted (Rhys, 2026-09-24): the Assets tab covers what estimators
-  // use it for. measure-tab.tsx and its files are untouched; bringing it back is re-adding
-  // `{ key: "measure", label: "Measure" }` here and its `visited.has("measure")` block below.
-  // What it still does that Assets doesn't: 12 shapes (vs 5), a 3 m minimum width
-  // (vs 5 m), and a PNG listing every measurement with a total.
+  // The old Measure tab, cut down to a Google Maps replacement (Rhys, 2026-09-29): search,
+  // Street View, draw-to-measure and click-a-lot. No save, export or sync — see browse-tab.
+  { key: "browse", label: "Browse" },
 ] as const;
 
 /** Rhys's sandbox. Admins only. It runs the SAME component and mode as Building Markup, so
@@ -77,6 +76,13 @@ export function SiteMarkupsTool({ isAdmin = false }: ToolProps) {
       {visited.has("road") && (
         <div hidden={tab !== "road"}>
           <RoadMarkupTab />
+        </div>
+      )}
+      {visited.has("browse") && (
+        <div hidden={tab !== "browse"}>
+          {/* The map needs to know it's back on screen — a Google map sized against a
+              display:none container returns grey until it re-measures. */}
+          <BrowseTab active={tab === "browse"} />
         </div>
       )}
       {isAdmin && visited.has("dev") && (

@@ -54,6 +54,8 @@ export interface MapCommands {
   } | null;
   /** Fly to a point, or fit a viewport. The only way the parent moves the camera. */
   goTo: (target: { lat: number; lng: number; zoom?: number | null }) => void;
+  /** The middle of the view — what Street View opens on. Null before the map exists. */
+  getCenter: () => LatLng | null;
   fit: (bounds: { south: number; west: number; north: number; east: number }) => void;
 }
 
@@ -184,9 +186,18 @@ function readPath(overlay: google.maps.Polygon | google.maps.Polyline): LatLng[]
 export function MeasureMap({
   shapes,
   active,
+  pickMode = false,
+  onPick,
+  onCentre,
   ref,
 }: {
   shapes: MeasureState;
+  /** On: a click anywhere — empty map or an existing shape — is handed to onPick instead of
+   *  placing a point. The "click a lot to measure it" mode. */
+  pickMode?: boolean;
+  onPick?: (point: LatLng) => void;
+  /** Where the view settled (Google's `idle`: once after each pan or zoom, never mid-drag). */
+  onCentre?: (centre: LatLng) => void;
   /** False while another tab is showing. The map stays mounted (so measurements and the
    *  paid map load survive a tab switch) but a hidden map needs a nudge on the way back. */
   active: boolean;
@@ -213,8 +224,10 @@ export function MeasureMap({
   // already run by the time the reconcile effect below reads it — effects run in
   // declaration order.
   const latest = useRef(shapes);
+  const pick = useRef({ pickMode, onPick, onCentre });
   useEffect(() => {
     latest.current = shapes;
+    pick.current = { pickMode, onPick, onCentre };
   });
 
   // ---------------------------------------------------------------- derived + mirror
@@ -384,6 +397,11 @@ export function MeasureMap({
         editor.addListener("click", (e: google.maps.PolyMouseEvent) => {
           e.stop();
           if (!e.latLng) return;
+          // A lot is clicked from INSIDE, which is often inside a shape already drawn there.
+          if (pick.current.pickMode) {
+            pick.current.onPick?.({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+            return;
+          }
           const state = latest.current;
           // Clicking someone else's shape SELECTS it — a better affordance than
           // sidebar-only selection, and it stops a stray click landing a point in the
@@ -494,6 +512,10 @@ export function MeasureMap({
     if (!map) return;
     const listener = map.addListener("click", (e: google.maps.MapMouseEvent) => {
       if (!e.latLng) return;
+      if (pick.current.pickMode) {
+        pick.current.onPick?.({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+        return;
+      }
       const state = latest.current;
       const id = state.ensureActive();
       if (!id) return; // at the cap
@@ -595,6 +617,10 @@ export function MeasureMap({
           mapType,
         };
       },
+      getCenter: () => {
+        const c = map?.getCenter();
+        return c ? { lat: c.lat(), lng: c.lng() } : null;
+      },
       goTo: ({ lat, lng, zoom }) => {
         if (!map) return;
         map.setCenter({ lat, lng });
@@ -637,6 +663,23 @@ export function MeasureMap({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [map]);
+
+  useEffect(() => {
+    if (!map) return;
+    const report = () => {
+      const c = map.getCenter();
+      if (c) pick.current.onCentre?.({ lat: c.lat(), lng: c.lng() });
+    };
+    // Once now as well: the map's first idle can land before this listener exists.
+    report();
+    const listener = map.addListener("idle", report);
+    return () => listener.remove();
+  }, [map]);
+
+  // The cursor says which mode a click is in: a pointer picks a lot, the crosshair drops a point.
+  useEffect(() => {
+    map?.setOptions({ draggableCursor: pickMode ? "pointer" : "crosshair" });
+  }, [map, pickMode]);
 
   // A map built or left in a display:none container comes back with a grey void where
   // tiles should be, because it sized itself against a zero-height div. Re-centring is

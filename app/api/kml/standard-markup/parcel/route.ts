@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isStaff } from "@/lib/auth/is-staff";
 import { fetchLotAddresses } from "@/lib/kml/standard-markup/parcels/addresses";
-import { parcelAtPoint } from "@/lib/kml/standard-markup/parcel-at-point";
+import { parcelAtPoint, parcelAtPointAnyState } from "@/lib/kml/standard-markup/parcel-at-point";
 import { parcelAtPointRequestSchema } from "@/lib/kml/standard-markup/schema";
 
 export const runtime = "nodejs";
@@ -32,7 +32,9 @@ export async function POST(req: NextRequest) {
 
   const { lat, lng, state, street, suburb } = parsed.data;
   try {
-    const parcel = await parcelAtPoint(state, { lat, lng });
+    const parcel = state
+      ? await parcelAtPoint(state, { lat, lng })
+      : await parcelAtPointAnyState({ lat, lng });
     if (!parcel) {
       // Not an error — clicking a road or a park is an ordinary miss, and the UI says so
       // rather than showing a failure.
@@ -42,7 +44,7 @@ export async function POST(req: NextRequest) {
     // blank row on the sheet. Cannot throw, and is skipped entirely without an address to
     // anchor it — see parcels/addresses.ts.
     const addresses =
-      street || suburb
+      state && (street || suburb)
         ? await fetchLotAddresses(state, [{ idKey: parcel.idKey, ring: parcel.ring }], {
             street: street ?? "",
             suburb: suburb ?? "",

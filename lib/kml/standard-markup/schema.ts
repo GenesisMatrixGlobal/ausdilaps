@@ -178,7 +178,8 @@ export type StandardMarkupRenderRequest = z.infer<typeof standardMarkupRenderReq
 export const parcelAtPointRequestSchema = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
-  state: z.enum(["QLD", "NSW", "VIC"]),
+  /** Optional: absent means "work it out" (the Browse tab has a map and no address). */
+  state: z.enum(["QLD", "NSW", "VIC"]).optional(),
   /** The job's own address, used only to look up the picked lot's street address — NSW needs
    *  the suburb to split one glued string, and QLD uses the street to choose between a corner
    *  lot's several frontages. Optional so a caller that doesn't care still works. */

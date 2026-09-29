@@ -27,6 +27,9 @@ export const WIDTH_STEP_M = 0.5;
 
 export interface Measurement extends Measurable {
   id: string;
+  /** Came from clicking a lot (its cadastre boundary), not from drawing. Still an ordinary,
+   *  editable area — the flag only changes what the panel calls it. */
+  lot?: true;
 }
 
 export interface MeasureState {
@@ -50,6 +53,10 @@ export interface MeasureState {
   /** The overlay -> React mirror. The map is the only caller. */
   setPoints: (id: string, points: LatLng[]) => void;
   add: (mode?: ShapeMode) => string | null;
+  /** Adds a finished lot boundary as an area measurement, NOT selected, so the next map
+   *  click starts something new rather than extending the lot. Null at the cap. Not held to
+   *  MAX_POINTS — a cadastre ring can carry more vertices than anyone would click. */
+  addLot: (ring: LatLng[]) => string | null;
   remove: (id: string) => void;
   setMode: (id: string, mode: ShapeMode) => void;
   setWidth: (id: string, widthMetres: number) => void;
@@ -120,6 +127,28 @@ export function useMeasurements(): MeasureState {
       return created.id;
     },
     [defaultMode, select, write]
+  );
+
+  const addLot = useCallback(
+    (ring: LatLng[]): string | null => {
+      if (listRef.current.length >= MAX_MEASUREMENTS) return null;
+      // Cadastre rings come back closed (last point = first); the overlay closes its own.
+      const first = ring[0];
+      const last = ring[ring.length - 1];
+      const open =
+        ring.length > 1 && first.lat === last.lat && first.lng === last.lng ? ring.slice(0, -1) : ring;
+      const created: Measurement = {
+        id: crypto.randomUUID(),
+        points: open,
+        widthMetres: DEFAULT_WIDTH_M,
+        mode: "area",
+        lot: true,
+      };
+      write((prev) => [...prev, created]);
+      select(null);
+      return created.id;
+    },
+    [select, write]
   );
 
   const ensureActive = useCallback((): string | null => {
@@ -207,6 +236,7 @@ export function useMeasurements(): MeasureState {
     appendPoint,
     setPoints,
     add,
+    addLot,
     remove,
     setMode,
     setWidth: useCallback(

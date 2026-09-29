@@ -35,3 +35,18 @@ export async function parcelAtPoint(
   const candidates = await PROVIDERS[state](point.lng, point.lat, ENVELOPE_HALF_WIDTH_M);
   return candidates.find((c) => pointInRing(point, c.ring)) ?? null;
 }
+
+/** The same, when the caller doesn't know the state — the Browse tab, which has a map and
+ *  no address. Asks all three cadastres at once: each only covers its own state, so the
+ *  wrong two answer "nothing here", and three free keyless calls are cheaper than a paid
+ *  reverse geocode to decide which one to ask. One failing (VIC's layer has gone down
+ *  before) doesn't sink the other two; all three failing is reported as a failure, never
+ *  as "no lot here". */
+export async function parcelAtPointAnyState(point: LatLng): Promise<ParcelFeature | null> {
+  const states = Object.keys(PROVIDERS) as StandardMarkupState[];
+  const results = await Promise.allSettled(states.map((s) => parcelAtPoint(s, point)));
+  for (const r of results) if (r.status === "fulfilled" && r.value) return r.value;
+  const failed = results.filter((r) => r.status === "rejected");
+  if (failed.length === results.length) throw (failed[0] as PromiseRejectedResult).reason;
+  return null;
+}

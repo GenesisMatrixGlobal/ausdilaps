@@ -55,11 +55,29 @@ function toIso(value: string | null): string | null {
  * different places, so this reads the common ones and otherwise leaves it null for the
  * classifier to pull out of the body — which it does more reliably than a regex would.
  */
-function agencyOf(block: string): string | null {
-  return tag(block, "dc:creator", "author", "agency", "category");
+function agencyOf(block: string, useCategory: boolean): string | null {
+  return useCategory
+    ? tag(block, "dc:creator", "author", "agency", "category")
+    : tag(block, "dc:creator", "author", "agency");
 }
 
-export function parseFeed(xml: string, sourceSlug: string): RawItem[] {
+export type FeedOptions = {
+  /**
+   * Whether `<category>` may stand in for the buying agency. TRUE by default, because on
+   * the government feeds this was written for it usually IS the agency.
+   *
+   * ⚠️ VendorPanel sets it false: its category is the PROCUREMENT class — "Engineer,
+   * Research, Tech services", "Building Trade, Repairs, M…" — so the fallback would put a
+   * line of taxonomy in front of an estimator where a council's name belongs. Its
+   * descriptions name the council in their first sentence ("Muswellbrook Shire Council is
+   * seeking…"), which the classifier reads far more reliably than a regex would, and
+   * scan.ts keeps the model's answer over the feed's (`extracted.agency ?? row.agency`).
+   */
+  agencyFromCategory?: boolean;
+};
+
+export function parseFeed(xml: string, sourceSlug: string, options: FeedOptions = {}): RawItem[] {
+  const useCategory = options.agencyFromCategory ?? true;
   const blocks = [
     ...xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi),
     ...xml.matchAll(/<entry\b[^>]*>([\s\S]*?)<\/entry>/gi),
@@ -78,7 +96,7 @@ export function parseFeed(xml: string, sourceSlug: string): RawItem[] {
 
     const cleanTitle = htmlToText(title, 300);
     const excerpt = htmlToText(body, 12_000);
-    const agency = agencyOf(block);
+    const agency = agencyOf(block, useCategory);
 
     items.push({
       sourceSlug,
@@ -100,7 +118,7 @@ export function parseFeed(xml: string, sourceSlug: string): RawItem[] {
   return items;
 }
 
-export async function fetchFeed(url: string, sourceSlug: string): Promise<FetchResult> {
+export async function fetchFeed(url: string, sourceSlug: string, options: FeedOptions = {}): Promise<FetchResult> {
   const res = await fetch(url, {
     headers: { "user-agent": USER_AGENT, accept: "application/rss+xml, application/atom+xml, application/xml, text/xml" },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -118,6 +136,6 @@ export async function fetchFeed(url: string, sourceSlug: string): Promise<FetchR
   // items is empty — the empty case is precisely when it matters.
   return {
     raw: { url, status: res.status, bytes: xml.length, body: xml.slice(0, 200_000) },
-    items: parseFeed(xml, sourceSlug),
+    items: parseFeed(xml, sourceSlug, options),
   };
 }

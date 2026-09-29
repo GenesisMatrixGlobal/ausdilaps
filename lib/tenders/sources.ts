@@ -27,6 +27,33 @@ export const SOURCES: SourceDefinition[] = [
     fetch: async () =>
       fetchFeed(process.env.TENDER_AUSTENDER_FEED_URL as string, "austender-atm"),
   },
+  {
+    slug: "vendorpanel-public",
+    label: "VendorPanel — public tenders",
+    kind: "rss",
+    /**
+     * The council aggregator. ~400 open tenders across 250+ councils and agencies, and the
+     * biggest gap in the email sources — most councils publish here and nowhere we watch.
+     *
+     * ⚠️ Registration is NOT needed to read this. The feed is linked from the public
+     * /publictenders.aspx page and robots.txt is `Allow: /`. Checked before building it;
+     * registering only matters when we want to RESPOND to something.
+     *
+     * The URL is HARDCODED rather than env-gated, unlike AusTender above. That one has sat
+     * unconfigured since it was written and has never returned an item — an env var is a
+     * step someone has to take, and a public feed with a stable address does not need one.
+     * `TENDER_VENDORPANEL_FEED_URL` overrides it if the address ever moves.
+     */
+    configured: () => true,
+    fetch: async () =>
+      fetchFeed(
+        process.env.TENDER_VENDORPANEL_FEED_URL ??
+          "https://www.vendorpanel.com.au/PublicTendersRssV2.aspx?mode=all",
+        "vendorpanel-public",
+        // See FeedOptions: VendorPanel's <category> is the procurement class, not the buyer.
+        { agencyFromCategory: false }
+      ),
+  },
 ];
 
 /**

@@ -1,3 +1,4 @@
+import { extractBuyingForVictoria } from "./buyingforvictoria";
 import { extractFelix } from "./felix";
 import { extractTenderSearch } from "./tendersearch";
 import type { ExtractSource, ExtractedNotice, Extractor } from "./types";
@@ -14,6 +15,7 @@ export type { ExtractSource, ExtractedNotice, Extractor } from "./types";
 const EXTRACTORS: Record<string, Extractor> = {
   "tendersearch.com.au": extractTenderSearch,
   "felix.net": extractFelix,
+  "tenders.vic.gov.au": extractBuyingForVictoria,
 };
 
 export function extractorFor(domain: string | null | undefined): Extractor | null {

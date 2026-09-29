@@ -21,7 +21,7 @@ process.env.MS_GRAPH_CLIENT_ID ||= "test";
 process.env.MS_GRAPH_CLIENT_SECRET ||= "test";
 process.env.TENDER_MAILBOX ||= "tenders@ausdilaps.com.au";
 
-import { createAdminClient } from "../lib/supabase/admin";
+import { scriptDb } from "./_db";
 import { loadEmailSources } from "../lib/tenders/sources/mailbox";
 import { loadTenderSummary } from "../lib/tenders/summary";
 
@@ -32,7 +32,7 @@ const QUIET = "email:zztest-quiet.example";
 const PORTAL = "email:zztest-portal.example";
 
 async function main() {
-  const db = createAdminClient();
+  const db = scriptDb();
   try {
     // Rows exactly as discoverMailboxSources() would write them, both with 6 empty runs.
     await db.from("tender_sources").upsert([

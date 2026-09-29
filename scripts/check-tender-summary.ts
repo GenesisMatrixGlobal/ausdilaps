@@ -20,7 +20,7 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
-import { createAdminClient } from "../lib/supabase/admin";
+import { scriptDb } from "./_db";
 import { WINDOW_DAYS } from "../lib/tenders/config";
 import { loadTenderSummary } from "../lib/tenders/summary";
 
@@ -37,7 +37,7 @@ async function main() {
     process.exit(1);
   }
 
-  const db = createAdminClient();
+  const db = scriptDb();
   const since = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString();
 
   /* eslint-disable @typescript-eslint/no-explicit-any */

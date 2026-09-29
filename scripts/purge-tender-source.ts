@@ -26,7 +26,7 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
-import { createAdminClient } from "../lib/supabase/admin";
+import { scriptDb } from "./_db";
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
@@ -39,7 +39,7 @@ if (slugs.length === 0) {
 }
 
 async function main() {
-  const db = createAdminClient();
+  const db = scriptDb();
 
   // Guard 1 — every slug must be a real email source.
   const { data: sources, error: sourceError } = await db

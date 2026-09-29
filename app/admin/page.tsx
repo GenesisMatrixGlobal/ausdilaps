@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { requireAdmin } from "@/lib/auth/session";
 import { loadDashboard, type Alert, type Breakdown } from "@/lib/admin/dashboard";
 import { StatTiles, type Stat } from "@/components/staff/stat-tiles";
+import { loadTenderReview, type TenderReview } from "@/lib/admin/tender-review";
 import { dollars, loadApiUsage, type ApiUsage } from "@/lib/admin/api-usage";
 import { Sparkline } from "@/components/staff/sparkline";
 import { ComingSoon } from "@/components/staff/coming-soon";
@@ -188,6 +189,36 @@ function apiSpendTile(u: ApiUsage): Stat {
   };
 }
 
+/**
+ * Tender opportunities waiting for someone to send or dismiss them.
+ *
+ * ⚠️ The tone is INVERTED against every other tile here: zero is GREEN, anything above is
+ * ORANGE. Elsewhere on this page a bigger number is the business doing well (enquiries,
+ * tool uses, samples viewed). This is a QUEUE — a number on it is work nobody has done, and
+ * the only good reading is none. Rhys asked for exactly this, and it is worth keeping the
+ * distinction sharp rather than "consistent".
+ *
+ * Counts opportunities, not rows: see lib/admin/tender-review.ts for why that matters.
+ */
+function tenderTile(t: TenderReview): Stat {
+  const href = "/staff/accounts/tools/tender-watch";
+  if (t.unavailable) {
+    return { label: "Tenders to review", href, value: "—", sub: t.unavailable, tone: "warn" };
+  }
+  if (t.pending === 0) {
+    return { label: "Tenders to review", href, value: 0, sub: "queue is clear", tone: "ok" };
+  }
+  // The deadline is what turns an open queue into an urgent one, so it leads the sub-line
+  // when there is one. Without it the tile says how much work there is but never how soon.
+  const sub =
+    t.closingThisWeek > 0
+      ? `${t.closingThisWeek} closing within 7 days`
+      : t.closesSoonest
+        ? `soonest closes ${new Date(t.closesSoonest).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Brisbane" })}`
+        : "waiting for a decision";
+  return { label: "Tenders to review", href, value: t.pending, sub, tone: "warn" };
+}
+
 /** Visits to the sample report library this week (migrations 0015 + 0024, lib/page-views.ts).
  *  Counts only views the BROWSER CONFIRMED IT PAINTED — headless scrapers announcing
  *  themselves as desktop Chrome pass every header check there is, and a paint is the thing
@@ -302,11 +333,12 @@ export default async function AdminHomePage() {
     process.env.NEXT_PUBLIC_SITE_URL ??
     (host.startsWith("localhost") ? "https://ausdilaps.vercel.app" : `https://${host}`);
 
-  const [d, apiUsage] = await Promise.all([loadDashboard(origin), loadApiUsage()]);
+  const [d, apiUsage, tenders] = await Promise.all([loadDashboard(origin), loadApiUsage(), loadTenderReview()]);
   const { enquiries: e, staff, tools } = d;
 
   const delta = e.thisWeek - e.lastWeek;
   const tiles: Stat[] = [
+    tenderTile(tenders),
     {
       label: "Enquiries this week",
       href: "/admin/leads",
@@ -354,7 +386,10 @@ export default async function AdminHomePage() {
 
       <div className="mt-8 space-y-6">
         <AttentionPanel alerts={d.alerts} />
-        <StatTiles stats={tiles} columns={6} />
+        {/* FOUR, not six: seven tiles across six columns leaves one on a row by itself, which
+            reads as something failing to render rather than a wrap. 4 + 3 is an ordinary
+            ragged end. */}
+        <StatTiles stats={tiles} columns={4} />
       </div>
 
       {/* Two columns from lg up. Enquiries takes the wider one because the trend line needs

@@ -35,7 +35,8 @@ import type { MarkupLayer } from "@/lib/markup-layers/types";
 import { formatArea } from "@/lib/kml/standard-markup/measure";
 import type { StoreyResult } from "@/lib/storeys/street-view-storeys";
 import { lotPlanFromId } from "@/lib/kml/standard-markup/parcels/parcel-id";
-import { pointInRing } from "@/lib/kml/standard-markup/geometry";
+import { pointInRing, ringAreaSqm } from "@/lib/kml/standard-markup/geometry";
+import { mergedStreet, unionAdjacentRings } from "@/lib/kml/standard-markup/shared-houses";
 
 const STATES = [
   { key: "QLD", label: "QLD", disabled: false },
@@ -257,6 +258,103 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   // selected, so a newly drawn shape arrives ticked without anything having to remember it —
   // the same convention as excludedIds and hideSubject above.
   const [deselected, setDeselected] = useState<Set<string>>(new Set());
+
+  // ------------------------------------------------ DEV: one house on two lots (2026-09-30)
+  // Old Brisbane lots are ~10 m wide and one house was often built across two, so the
+  // cadastre AND the address layer both say "two properties" (26 and 26A Upper Lancaster
+  // Road). OpenStreetMap's building outlines are the one thing that sees the house:
+  // lib/kml/standard-markup/shared-houses.ts, npm run check:shared. The check only FLAGS —
+  // Merge is the operator's call, because OSM can be out of date.
+  const [sharedHouses, setSharedHouses] = useState<{ key: string; groups: string[][] } | null>(null);
+  const [sharedDismissed, setSharedDismissed] = useState<Set<string>>(new Set());
+  const [sharedNote, setSharedNote] = useState<string | null>(null);
+  const sharedLots = dev && multi && result && !mapHidden ? result.neighbours : null;
+  const sharedKey = sharedLots ? sharedLots.map((n) => n.id).sort().join("|") : null;
+  useEffect(() => {
+    if (!sharedKey || !sharedLots || sharedLots.length < 2) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      void fetch("/api/kml/standard-markup/shared-houses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lots: sharedLots.map((n) => ({ id: n.id, ring: n.ring })) }),
+      })
+        .then((r) => r.json())
+        .then((j: { ok?: boolean; groups?: string[][]; buildings?: number }) => {
+          // Only a real answer is kept. No footprints came back = Overpass slow or down (or an
+          // untraced suburb) — remembering that as "no shared houses" would stop the next
+          // change of lots from asking again.
+          if (live && j?.ok && (j.buildings ?? 0) > 0) setSharedHouses({ key: sharedKey, groups: j.groups ?? [] });
+        })
+        // Silent: no hint is the same as no shared houses.
+        .catch(() => {});
+    }, 400);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+    // sharedLots is derived from result every render; the id list is what matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharedKey]);
+  // The last answer's groups stay on screen while a new one is fetched (a Merge changes the
+  // lot list, which re-asks — ~5-15 s on Overpass), as long as every lot in a group still
+  // exists. Keyed on the ids, so a stale group can never point at a lot that has gone.
+  const sharedGroups =
+    sharedHouses && result
+      ? sharedHouses.groups.filter(
+          (g) => !sharedDismissed.has(g.join("+")) && g.every((id) => result.neighbours.some((n) => n.id === id))
+        )
+      : [];
+
+  /** Turns the lots of one flagged house into ONE lot: one outline, one sheet row, the areas
+   *  added up. The old rows' drafts go with them — the merged row seeds fresh, so its Levels
+   *  cell is orange again and gets looked at. */
+  function mergeLots(ids: string[]) {
+    const current = resultRef.current;
+    if (!current) return;
+    const parts = ids.map((id) => current.neighbours.find((n) => n.id === id)).filter((n): n is Neighbour => Boolean(n));
+    if (parts.length < 2) return;
+    let ring: LatLng[] | null = parts[0].ring;
+    for (const p of parts.slice(1)) ring = ring ? unionAdjacentRings(ring, p.ring) : null;
+    if (!ring) {
+      setSharedNote("Those lots don't share a clean boundary, so they can't be merged — untick one instead.");
+      return;
+    }
+    const merged: Neighbour = {
+      id: ids.join("+"),
+      ring,
+      areaSqm: Math.round(ringAreaSqm(ring)),
+      color: parts.some((p) => p.color === "red") ? "red" : parts[0].color,
+      street: mergedStreet(parts.map((p) => p.street)),
+      suburb: parts.find((p) => p.suburb)?.suburb ?? null,
+      storeys: Math.max(0, ...parts.map((p) => p.storeys ?? 0)) || null,
+    };
+    const gone = new Set(ids);
+    setResult((prev) => {
+      if (!prev) return prev;
+      const at = prev.neighbours.findIndex((n) => gone.has(n.id));
+      const rest = prev.neighbours.filter((n) => !gone.has(n.id));
+      rest.splice(Math.max(0, Math.min(at, rest.length)), 0, merged);
+      return { ...prev, neighbours: rest };
+    });
+    const allOff = <T,>(set: Set<T>, key: (id: string) => T) => ids.every((id) => set.has(key(id)));
+    setExcludedIds((prev) => {
+      const next = new Set([...prev].filter((id) => !gone.has(id)));
+      if (allOff(prev, (id) => id)) next.add(merged.id);
+      return next;
+    });
+    setDeselected((prev) => {
+      const next = new Set([...prev].filter((k) => !ids.some((id) => k === lotKey(id))));
+      if (allOff(prev, lotKey)) next.add(lotKey(merged.id));
+      return next;
+    });
+    setLineDrafts((prev) => {
+      const next = { ...prev };
+      for (const id of ids) delete next[lotKey(id)];
+      return next;
+    });
+    setSharedNote(`Merged into one lot: ${merged.street ?? "the house"}, ${formatArea(merged.areaSqm ?? 0)}.`);
+  }
 
   /** How a row in the Detected lots list reads. formatArea() rather than a local template so
    *  the sidebar, the sheet and the exported legend can't quote the same lot differently. */
@@ -1552,6 +1650,40 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
             nothing is pre-selected. Draw the site with the shape tools; each shape becomes a line item.
           </p>
         )}
+        {sharedGroups.length > 0 && (
+          // DEV. Above the map, like the places line: the flags box is off in multi mode.
+          <div className="mt-6 space-y-2 rounded-xl border border-ad-orange/40 bg-ad-orange/5 px-4 py-3">
+            {sharedGroups.map((g) => {
+              const lots = g.map((id) => result.neighbours.find((n) => n.id === id)!);
+              const name = mergedStreet(lots.map((l) => l.street)) ?? `${lots.length} lots`;
+              return (
+                <div key={g.join("+")} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <p className="text-ad-ink">
+                    <span className="font-medium">{name}</span>{" "}
+                    <span className="text-ad-muted">looks like one house across {lots.length} lots.</span>
+                  </p>
+                  <span className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => mergeLots(g)}
+                      className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                    >
+                      Merge into one
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSharedDismissed((prev) => new Set(prev).add(g.join("+")))}
+                      className="text-xs text-ad-muted hover:text-ad-ink"
+                    >
+                      Keep separate
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {dev && sharedNote && <p className="mt-2 text-xs text-ad-muted">{sharedNote}</p>}
         {mapHidden ? (
           // Line items only: no map, no sidebar (both are about drawing), and no Dynamic Maps
           // load. Show map brings the whole block back, framed on the resolved lots.

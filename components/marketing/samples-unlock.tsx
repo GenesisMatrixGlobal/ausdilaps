@@ -12,6 +12,11 @@ import { useSyncExternalStore } from "react";
  * `?code=` still opens the library silently in proxy.ts; nothing here advertises it, and
  * there is no longer anywhere to type one.
  *
+ * ⚠️ NO explanatory copy under the heading, and no reassurance line under the button —
+ * both were written and both were cut on 2026-09-30 (Rhys: "keep the wording to a
+ * minimum"). Three labelled fields and a button that says what it does need no preamble;
+ * the subtext only restated them. The button design stays as it is.
+ *
  * Client component ONLY for the error line: the server page never reads searchParams (that
  * would make it dynamic and lose the ISR cache that survives a Box outage), so `?error=` is
  * read from the browser's own URL — via useSyncExternalStore with a null server snapshot,
@@ -41,11 +46,8 @@ export function SamplesUnlock() {
       <h2 className="font-heading text-xl font-semibold tracking-tight text-ad-ink sm:text-2xl">
         See the full library
       </h2>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-ad-muted">
-        Tell us who you are and every sample report opens straight away — no code, no waiting.
-      </p>
 
-      <div className="mx-auto mt-6 grid max-w-sm gap-2.5 text-left">
+      <div className="mx-auto mt-5 grid max-w-sm gap-2.5 text-left">
         <input
           type="text"
           name="name"
@@ -103,9 +105,6 @@ export function SamplesUnlock() {
         </p>
       )}
 
-      <p className="mx-auto mt-5 max-w-sm text-xs leading-relaxed text-ad-muted">
-        We use this to send the right samples for your project. No newsletter.
-      </p>
     </form>
   );
 }

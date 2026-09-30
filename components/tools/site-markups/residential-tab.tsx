@@ -259,7 +259,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   // the same convention as excludedIds and hideSubject above.
   const [deselected, setDeselected] = useState<Set<string>>(new Set());
 
-  // ------------------------------------------------ DEV: one house on two lots (2026-09-30)
+  // --------------------- One house on two lots (DEV 2026-09-30, promoted to Assets 2026-09-30)
   // Old Brisbane lots are ~10 m wide and one house was often built across two, so the
   // cadastre AND the address layer both say "two properties" (26 and 26A Upper Lancaster
   // Road). OpenStreetMap's building outlines are the one thing that sees the house:
@@ -268,7 +268,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   const [sharedHouses, setSharedHouses] = useState<{ key: string; groups: string[][] } | null>(null);
   const [sharedDismissed, setSharedDismissed] = useState<Set<string>>(new Set());
   const [sharedNote, setSharedNote] = useState<string | null>(null);
-  const sharedLots = dev && multi && result && !mapHidden ? result.neighbours : null;
+  const sharedLots = multi && result && !mapHidden ? result.neighbours : null;
   const sharedKey = sharedLots ? sharedLots.map((n) => n.id).sort().join("|") : null;
   useEffect(() => {
     if (!sharedKey || !sharedLots || sharedLots.length < 2) return;
@@ -1651,7 +1651,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
           </p>
         )}
         {sharedGroups.length > 0 && (
-          // DEV. Above the map, like the places line: the flags box is off in multi mode.
+          // Above the map, like the places line: the flags box is off in multi mode.
           <div className="mt-6 space-y-2 rounded-xl border border-ad-orange/40 bg-ad-orange/5 px-4 py-3">
             {sharedGroups.map((g) => {
               const lots = g.map((id) => result.neighbours.find((n) => n.id === id)!);
@@ -1683,7 +1683,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
             })}
           </div>
         )}
-        {dev && sharedNote && <p className="mt-2 text-xs text-ad-muted">{sharedNote}</p>}
+        {sharedNote && <p className="mt-2 text-xs text-ad-muted">{sharedNote}</p>}
         {mapHidden ? (
           // Line items only: no map, no sidebar (both are about drawing), and no Dynamic Maps
           // load. Show map brings the whole block back, framed on the resolved lots.

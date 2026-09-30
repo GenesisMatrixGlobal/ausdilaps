@@ -28,7 +28,8 @@ import { LineItemsTable } from "@/components/tools/shared/quote-lines/line-items
 import { BREAKOUT_XL } from "@/components/tools/shared/quote-lines/styles";
 import { StreetViewLink } from "./street-view-link";
 import { SUBJECT_KEY, layerAnchor, layersFrom, lotKey, shapeKey } from "@/lib/markup-layers/plan";
-import { initialDeselected, itemNumbers, rowsFrom, type LineItemDraft, type LineItemDrafts } from "@/lib/markup-layers/line-items";
+import { initialDeselected, itemNumbers, rowsFrom, selectAllKeys, type LineItemDraft, type LineItemDrafts } from "@/lib/markup-layers/line-items";
+import { withDerivedSources } from "@/lib/markup-layers/derived";
 import { sourcesFromLayers } from "@/lib/markup-layers/sources/from-layers";
 import { applyCell, toggleDeselected } from "@/lib/markup-layers/drafts";
 import type { MarkupLayer } from "@/lib/markup-layers/types";
@@ -404,7 +405,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   const toggleRow = (key: string) => setDeselected((prev) => toggleDeselected(prev, key));
 
   const toggleAllRows = (select: boolean) =>
-    setDeselected(select ? new Set() : new Set(sources.filter((s) => s.included).map((s) => s.key)));
+    setDeselected(selectAllKeys(sources, select));
 
   /** base64 of a UTF-8 string — plain btoa() throws on an accented address. */
   function toBase64(text: string): string {
@@ -450,10 +451,15 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   // be two different mappings.
   const file = currentFile();
   const layers: MarkupLayer[] = file ? layersFrom(file) : [];
-  const sources = sourcesFromLayers(layers);
+  const propertySources = sourcesFromLayers(layers);
+  // DEV (2026-09-30): Access Letters and Common Areas rows the sheet adds by itself, derived
+  // from the property rows' own products and ticks — lib/markup-layers/derived.ts. Two passes:
+  // the property rows first (that is where the chosen products live), then all of them.
+  const propertyRows = rowsFrom(propertySources, lineDrafts, deselected);
+  const sources = dev ? withDerivedSources(propertySources, propertyRows) : propertySources;
   // ONE numbering, derived once and shared by the sheet, the sidebar badges, the live map and the
   // export payload — so all four can never disagree about what item 2 is.
-  const rows = rowsFrom(sources, lineDrafts, deselected);
+  const rows = dev ? rowsFrom(sources, lineDrafts, deselected) : propertyRows;
   const numbers = itemNumbers(rows);
   /** What the DRAWING carries: the item number when pins are on, else nothing ("" = no bubble). */
   const pinLabel = (key: string) => (showPins ? String(numberFor(key) ?? "") : "");
@@ -488,6 +494,37 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   // A primitive key, not the object: sitePoint is derived every render, so depending on its
   // identity would refetch forever.
   const sitePointKey = sitePoint ? `${sitePoint.lat.toFixed(6)},${sitePoint.lng.toFixed(6)}` : null;
+
+  // DEV (2026-09-30): km and drive time from the nearest CBD, so an estimator doesn't open
+  // Google Maps to measure it. The job's point is the site when there is one, else the middle
+  // of the included lots (a street survey). Rounded to ~100 m for the key: the answer doesn't
+  // move for less, and every lot tick would otherwise re-ask. /api/maps/cbd-distance.
+  const jobRings = result ? result.neighbours.filter((n) => !excludedIds.has(n.id)).map((n) => n.ring) : [];
+  const jobPoint = sitePoint ?? boxCentre(jobRings.flat()) ?? centres[0]?.point ?? null;
+  const jobPointKey = dev && jobPoint ? `${jobPoint.lat.toFixed(3)},${jobPoint.lng.toFixed(3)}` : null;
+  const [cbdFor, setCbdFor] = useState<{ key: string; cbd: string; km: number; minutes: number | null } | null>(null);
+  useEffect(() => {
+    if (!jobPointKey) return;
+    let live = true;
+    const [lat, lng] = jobPointKey.split(",").map(Number);
+    void fetch("/api/maps/cbd-distance", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ lat, lng }),
+    })
+      .then((r) => r.json())
+      .then((j: { ok?: boolean; cbd?: string; km?: number; minutes?: number | null }) => {
+        if (live && j?.ok && j.cbd && typeof j.km === "number") {
+          setCbdFor({ key: jobPointKey, cbd: j.cbd, km: j.km, minutes: j.minutes ?? null });
+        }
+      })
+      // Silent: the line just doesn't show.
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [jobPointKey]);
+  const cbd = cbdFor && cbdFor.key === jobPointKey ? cbdFor : null;
 
   // Which way Street View has to look to see the site. One metadata lookup per target, and the
   // button is a working link before it lands — see streetViewUrl for why the heading has to be
@@ -1759,6 +1796,13 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
           </div>
 
           <div className="w-full space-y-4 xl:w-80 xl:shrink-0">
+            {cbd && (
+              // DEV. One muted line: where the job is from, the way an estimator would say it.
+              <p className="px-1 text-xs text-ad-muted" title="Driving distance and time from the nearest CBD, no traffic">
+                <span className="font-medium text-ad-ink">{cbd.cbd} CBD</span> · {cbd.km.toLocaleString()} km
+                {cbd.minutes !== null ? ` · ${formatDrive(cbd.minutes)} drive` : " (straight line)"}
+              </p>
+            )}
             {/* No Zoom control any more. It existed because the basemap was a fixed Static
                 Maps image, so changing zoom meant refetching the photo — the map pans and
                 zooms directly now, and the export follows whatever frame it is left on. */}
@@ -1909,4 +1953,20 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
       )}
     </div>
   );
+}
+
+/** The middle of a set of points' bounding box, or null for none. */
+function boxCentre(points: LatLng[]): LatLng | null {
+  if (points.length === 0) return null;
+  const lats = points.map((p) => p.lat);
+  const lngs = points.map((p) => p.lng);
+  return { lat: (Math.min(...lats) + Math.max(...lats)) / 2, lng: (Math.min(...lngs) + Math.max(...lngs)) / 2 };
+}
+
+/** 42 → "42 min", 95 → "1 h 35 min". */
+function formatDrive(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
 }

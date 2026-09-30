@@ -11,7 +11,7 @@
 
 import { soqlQuery } from "@/lib/salesforce";
 import { MARKUP_SLOTS, MarkupSyncError, parseQuoteLookup, soqlEscape } from "@/lib/markup-sync";
-import { SHEET_PRODUCTS } from "@/lib/markup-layers/salesforce-picklists";
+import { ALL_PRODUCTS } from "@/lib/markup-layers/salesforce-picklists";
 
 export interface QuoteForLines {
   id: string;
@@ -105,12 +105,12 @@ export async function resolveQuoteForLines(quoteInput: string): Promise<{
     );
   }
 
-  const productIds = SHEET_PRODUCTS.map((p) => `'${p.product2Id}'`).join(", ");
+  const productIds = ALL_PRODUCTS.map((p) => `'${p.product2Id}'`).join(", ");
   const entries = await soqlQuery<{ Id: string; Product2Id: string }>(
     `SELECT Id, Product2Id FROM PricebookEntry WHERE Pricebook2Id = '${soqlEscape(quote.pricebook2Id)}' ` +
       `AND IsActive = true AND Product2Id IN (${productIds})`
   );
-  // Product2Id comes back as the 18-character form; SHEET_PRODUCTS holds the 15-character
+  // Product2Id comes back as the 18-character form; ALL_PRODUCTS holds the 15-character
   // form the org's list page shows. The first 15 are the id; the last 3 are a checksum.
   const pricebookEntryByProduct2Id = new Map(entries.map((e) => [e.Product2Id.slice(0, 15), e.Id]));
   return { quote, pricebookEntryByProduct2Id };

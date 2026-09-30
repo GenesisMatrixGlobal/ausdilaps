@@ -41,8 +41,14 @@ export interface SheetProduct {
   /** Product2 record Id. The line item itself is created against the Quote's price book's
    *  entry for this product — see lib/quote-lines/resolve.ts. */
   product2Id: string;
-  /** The asset type this product FORCES. The operator can still override the row. */
-  assetType: AssetType;
+  /** The asset type this product FORCES. The operator can still override the row. "" for a
+   *  per-job charge — the org's own flow fills it (Access Letters lines read back "Other"). */
+  assetType: AssetType | "";
+  /** A per-job charge (Access Letters): no m² to measure, so the "needs internal or external
+   *  m²" rule doesn't apply. */
+  perJob?: true;
+  /** Sent as UnitPrice instead of the $1 placeholder — for a charge with a fixed price. */
+  unitPrice?: number;
 }
 
 /**
@@ -68,10 +74,23 @@ export const SHEET_PRODUCTS: readonly SheetProduct[] = [
   { name: "Video Roadways", product2Id: "01t96000000GQPJ", assetType: "Video Roadway" },
 ];
 
+/**
+ * Per-job charges the sheet ADDS by itself rather than offering in the dropdown (see
+ * lib/markup-layers/derived.ts). Access Letters: `01t96000000GX8a`, active on the Standard Price
+ * Book at $35 (read from the org 2026-09-30; every existing line is $35 x letters).
+ */
+export const JOB_PRODUCTS: readonly SheetProduct[] = [
+  { name: "Access Letters", product2Id: "01t96000000GX8a", assetType: "", perJob: true, unitPrice: 35 },
+];
+
+/** Every product the sync can create — the price-book lookup needs all of them. */
+export const ALL_PRODUCTS: readonly SheetProduct[] = [...SHEET_PRODUCTS, ...JOB_PRODUCTS];
+
+/** The per-property dropdown. Job products are deliberately NOT in it. */
 export const PRODUCT_NAMES: readonly string[] = SHEET_PRODUCTS.map((p) => p.name);
 
 export function productByName(name: string): SheetProduct | undefined {
-  return SHEET_PRODUCTS.find((p) => p.name === name);
+  return ALL_PRODUCTS.find((p) => p.name === name);
 }
 
 /** The asset type a product implies, or "" for --None--. Unknown product (a per-job charge

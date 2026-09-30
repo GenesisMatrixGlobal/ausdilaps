@@ -9,14 +9,17 @@
 // on any failure, so it can gate a commit.
 
 import {
+  ALL_PRODUCTS,
   ASSET_TYPES,
+  PRODUCT_NAMES,
   SHEET_PRODUCTS,
   assetTypeApiValue,
   productByName,
   RATE_STEPS,
   rateToPicklistValue,
 } from "@/lib/markup-layers/salesforce-picklists";
-import { defaultDraft, initialDeselected, levelsUnchecked, rowsFrom } from "@/lib/markup-layers/line-items";
+import { defaultDraft, initialDeselected, levelsUnchecked, rowsFrom, selectAllKeys } from "@/lib/markup-layers/line-items";
+import { ACCESS_LETTERS_KEY, blockStreet, withDerivedSources } from "@/lib/markup-layers/derived";
 import { sourcesFromSizing } from "@/lib/markup-layers/sources/from-sizing";
 import { sourcesFromLayers } from "@/lib/markup-layers/sources/from-layers";
 import type { MarkupLayer } from "@/lib/markup-layers/types";
@@ -47,7 +50,11 @@ eq(ASSET_TYPES.length, 9, "asset type count");
 eq(assetTypeApiValue("Standard Internal - Low Density"), "Warehouse", "Low Density API value");
 eq(productByName("Video Roadways")?.assetType, "Video Roadway", "Video Roadways → Video Roadway");
 eq(productByName("Rail Infrastructure")?.assetType, "Standard Internal - High Density", "Rail → High Density");
-eq(productByName("Access Letters"), undefined, "per-job charges are not sheet products");
+// Access Letters is a JOB product since 2026-09-30: syncable (the sheet adds it itself), but
+// never offered in the per-property dropdown. The other per-job charges stay unknown.
+eq(PRODUCT_NAMES.includes("Access Letters"), false, "per-job charges are not in the dropdown");
+eq(productByName("Access Letters")?.unitPrice, 35, "Access Letters resolves, at $35");
+eq(productByName("DOA"), undefined, "other per-job charges are still not sheet products");
 if (!RATE_STEPS.internal.includes("0.80")) fail("internal default 0.80 is not a rate step");
 if (!RATE_STEPS.external.includes("0.30")) fail("external default 0.30 is not a rate step");
 if (RATE_STEPS.internal.includes("0.55")) fail("internal steps above 0.50 must be 10c");
@@ -187,6 +194,62 @@ eq(rowReason(draft({})), null, "a default sizing row is sendable");
   eq(csvLines.length, 1 + csvRows.filter((r) => r.selected).length, "CSV carries ticked rows only");
   eq(csvLines[1].startsWith('1,"Unit 1, ""The Towers""",DOVER HEIGHTS,Residential House,Standard Internal,'), true, "commas and quotes are RFC 4180 quoted; asset type is the effective one");
   eq(csv.startsWith("\uFEFF"), true, "BOM so Excel reads the ² as UTF-8");
+}
+
+// ── Derived rows: Access Letters + Common Areas (lib/markup-layers/derived.ts) ────────────
+{
+  const lots = sourcesFromLayers([
+    layer({ key: "lot:1RP1", street: "2 Smith St", areaSqm: 500 }),
+    layer({ key: "lot:2RP1", street: "4 Smith St", areaSqm: 520 }),
+    layer({ key: "lot:9SP5", street: "1/10 Smith St", areaSqm: 1200 }),
+    layer({ key: "lot:9SP5#2", street: "2/10 Smith St", areaSqm: 1200 }),
+    layer({ key: "lot:9SP5#3", street: "3/10 Smith St", areaSqm: 1200 }),
+    layer({ key: "lot:7RP2", street: "Unit 4, 20 Jones Rd", areaSqm: 800 }),
+  ]);
+  const unitKeys = ["lot:9SP5", "lot:9SP5#2", "lot:9SP5#3", "lot:7RP2"];
+  const drafts = Object.fromEntries(unitKeys.map((k) => [k, { product: "Residential Unit" }]));
+  const pass = (des: Set<string>) => {
+    const first = rowsFrom(lots, drafts, des);
+    const all = withDerivedSources(lots, first);
+    return { all, rows: rowsFrom(all, drafts, des) };
+  };
+  const { all, rows: dRows } = pass(new Set());
+  const letters = dRows.find((r) => r.key === ACCESS_LETTERS_KEY)!;
+  eq(letters.values.quantity, "6", "Access Letters: one per ticked residential row (2 houses + 4 units)");
+  eq(letters.selected, true, "Access Letters starts ticked");
+  eq(dRows[dRows.length - 1].key, ACCESS_LETTERS_KEY, "Access Letters is last");
+  const common = dRows.filter((r) => r.key.startsWith("auto:common:"));
+  eq(common.map((r) => r.key), ["auto:common:lot:9SP5", "auto:common:lot:7RP2"], "Common Areas: one per address");
+  eq(common.map((r) => r.selected), [false, false], "Common Areas start unticked");
+  eq(common.map((r) => r.values.internalMetres), ["1200", "800"], "Common Areas seeded with the lot's area");
+  eq(common.map((r) => r.values.street), ["10 Smith St", "20 Jones Rd"], "Common Areas street is the block's address");
+  eq(common.map((r) => r.values.product), ["Common Areas (30%)", "Common Areas (30%)"], "Common Areas product");
+  eq(all.findIndex((s) => s.key === "auto:common:lot:9SP5"), all.findIndex((s) => s.key === "lot:9SP5#3") + 1, "Common Areas sits after its block's last unit");
+  // Unticking a house drops the count; ticking a Common Areas row (opt-in) puts its key IN the set.
+  eq(pass(new Set(["lot:1RP1"])).rows.find((r) => r.key === ACCESS_LETTERS_KEY)!.values.quantity, "5", "unticking a house drops the letters by one");
+  eq(pass(new Set(["auto:common:lot:7RP2"])).rows.find((r) => r.key === "auto:common:lot:7RP2")!.selected, true, "ticking an opt-in row records it in the set");
+  eq(selectAllKeys(all, true).has("auto:common:lot:7RP2"), true, "select all ticks opt-in rows too");
+  eq(selectAllKeys(all, true).has("lot:1RP1"), false, "select all leaves ordinary rows out of the set");
+  eq(selectAllKeys(all, false).has("auto:common:lot:7RP2"), false, "select none unticks opt-in rows");
+  eq(selectAllKeys(all, false).has(ACCESS_LETTERS_KEY), true, "select none unticks Access Letters");
+  // No residential rows → no Access Letters.
+  const commercial = sourcesFromLayers([layer({ key: "lot:c", street: "1 X St" })]);
+  const cDrafts = { "lot:c": { product: "Warehouse" } };
+  eq(withDerivedSources(commercial, rowsFrom(commercial, cDrafts, new Set())).some((s) => s.key === ACCESS_LETTERS_KEY), false, "no residential rows, no letters");
+  eq(blockStreet("3/12 Smith St"), "12 Smith St", "unit slash stripped");
+  eq(blockStreet("U3 12 Smith St"), "12 Smith St", "U prefix stripped");
+  eq(blockStreet("12 Smith St"), "12 Smith St", "a plain address is untouched");
+
+  // Payload: Access Letters goes at $35 x qty with no m² and no asset type.
+  const book = new Map(ALL_PRODUCTS.map((p) => [p.product2Id, `pbe-${p.product2Id}`]));
+  eq(rowReason(letters.values), null, "Access Letters needs no m²");
+  const built = buildQuoteLineItems(
+    [{ key: letters.key, values: letters.values }, { key: common[0].key, values: common[0].values }],
+    { quoteId: "q", pricebookEntryByProduct2Id: book }
+  );
+  eq(built.refused.length, 0, "both derived rows sync");
+  eq([built.records[0].UnitPrice, built.records[0].Quantity, built.records[0].Internal_M2__c, built.records[0].Property_Type__c], [35, 6, undefined, undefined], "Access Letters: $35 x 6, no m², no asset type");
+  eq([built.records[1].UnitPrice, built.records[1].Internal_M2__c, built.records[1].Property_Type__c], [1, 1200, "Common Areas"], "Common Areas: placeholder price, lot area, asset type");
 }
 
 if (failures) {

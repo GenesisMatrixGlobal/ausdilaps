@@ -67,7 +67,7 @@ export function defaultDraft(source: LineItemSource): LineItemDraft {
     externalMetres: source.seed.externalMetres,
     internalRate: DEFAULT_INTERNAL_RATE.toFixed(2),
     externalRate: DEFAULT_EXTERNAL_RATE.toFixed(2),
-    quantity: String(DEFAULT_QUANTITY),
+    quantity: source.seed.quantity ?? String(DEFAULT_QUANTITY),
     levels: source.seed.levels,
   };
 }
@@ -134,7 +134,8 @@ export function rowsFrom(
   return sources
     .filter((source) => source.included)
     .map((source) => {
-      const selected = !deselected.has(source.key);
+      // Opt-in rows invert the set's meaning — see LineItemSource.optIn.
+      const selected = source.optIn ? deselected.has(source.key) : !deselected.has(source.key);
       return {
         key: source.key,
         source,
@@ -158,6 +159,14 @@ export function itemNumbers(rows: LineItemRow[]): Map<string, number> {
  *  this is the only moment it is cheap to catch. A blank cell (council assets) needs no check. */
 export function levelsUnchecked(row: LineItemRow): boolean {
   return row.values.levels !== "" && !row.touched.has("levels");
+}
+
+/** The `deselected` set that ticks (select = true) or unticks every included source — the
+ *  header checkbox. Opt-in rows go the other way round: ticked means IN the set. */
+export function selectAllKeys(sources: LineItemSource[], select: boolean): Set<string> {
+  return new Set(
+    sources.filter((s) => s.included && (s.optIn ? select : !select)).map((s) => s.key)
+  );
 }
 
 /** The keys a tool should seed its `deselected` set with when a fresh set of sources arrives. */

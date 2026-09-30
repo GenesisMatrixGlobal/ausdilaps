@@ -284,6 +284,16 @@ export function LineItemsTable({
                       )}
                       {row.number ?? "—"}
                     </span>
+                    {/* A row the sheet added by itself (Access Letters, Common Areas) says so —
+                        otherwise it reads as a row someone forgot they made. */}
+                    {row.source.detail.kind === "derived" && (
+                      <span
+                        className="block text-right text-[0.6rem] font-normal uppercase tracking-wide text-ad-muted"
+                        title={row.source.measured}
+                      >
+                        auto
+                      </span>
+                    )}
                   </td>
                   {leading.map((col) => (
                     <td key={col.header} className={cn(SHEET_CELL, "px-2 py-2", col.className)}>

@@ -17,7 +17,9 @@ import type { SizingResult } from "@/lib/property-sizing/types";
 
 export type LineItemSourceDetail =
   | { kind: "markup"; layer: MarkupLayer }
-  | { kind: "sizing"; result: SizingResult };
+  | { kind: "sizing"; result: SizingResult }
+  /** Added by the sheet itself from other rows (Access Letters, Common Areas) — derived.ts. */
+  | { kind: "derived"; rule: "access-letters" | "common-areas" };
 
 export interface LineItemSource {
   /** Stable join key: drafts and the tick state are keyed by it, and a markup's map bubbles
@@ -41,6 +43,8 @@ export interface LineItemSource {
     externalMetres: string;
     /** Storeys, as a string cell. Sizing seeds its estimate; a markup has nothing to offer. */
     levels: string;
+    /** Qty, when it isn't 1 — Access Letters seeds one per residential row. */
+    quantity?: string;
   };
   /** False for something the operator removed from the job upstream (an unticked lot). Excluded
    *  sources are dropped from the sheet, not greyed. */
@@ -49,5 +53,10 @@ export interface LineItemSource {
    *  the sources first appear — rowsFrom() itself reads only `deselected`, so it stays a pure
    *  function of (sources, drafts, deselected). */
   startSelected: boolean;
+  /** OPT-IN: the row starts unticked and a TICK is what `deselected` records for it (for every
+   *  other row the set records an UNtick). For a derived row that appears mid-edit — a Common
+   *  Areas line the moment a row becomes a Residential Unit — there is no "sources arrived"
+   *  moment to seed `deselected` from, so the default has to live in the rule itself. */
+  optIn?: true;
   detail: LineItemSourceDetail;
 }

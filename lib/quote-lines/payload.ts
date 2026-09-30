@@ -53,7 +53,8 @@ export function rowReason(values: LineItemDraft): string | null {
   if (parseCell(values.quantity) <= 0) return "quantity must be above 0";
   const internal = parseCell(values.internalMetres);
   const external = parseCell(values.externalMetres);
-  if (internal <= 0 && external <= 0) return "no internal or external m²";
+  // A per-job charge (Access Letters) has nothing to measure — its quantity is the whole line.
+  if (internal <= 0 && external <= 0 && !productByName(values.product)?.perJob) return "no internal or external m²";
   // A rate the org's picklist doesn't have (an old free-typed cell) would be rejected by
   // Salesforce for the whole batch — refused here instead, naming the cell.
   if (internal > 0 && rateToPicklistValue("internal", values.internalRate) === undefined) {
@@ -105,7 +106,9 @@ export function buildQuoteLineItems(
       PricebookEntryId: pricebookEntryId,
       Product2Id: product.product2Id,
       Quantity: parseCell(v.quantity),
-      UnitPrice: PLACEHOLDER_UNIT_PRICE,
+      // A fixed-price charge sends its price (Access Letters, $35); everything priced off m²
+      // sends the $1 placeholder and is finalised in Salesforce.
+      UnitPrice: product.unitPrice ?? PLACEHOLDER_UNIT_PRICE,
     };
     if (assetType) record.Property_Type__c = assetTypeApiValue(assetType);
     // The sheet's Street and Suburb cells → the org's own address fields (string(100) each).

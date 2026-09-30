@@ -1830,14 +1830,22 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
                 // NOT disabled while a lookup is in flight: pick mode stays on, so this is
                 // the only way out and it has to stay pressable.
                 aria-pressed={picking}
+                // ON reads as a MODE, not a button that did something: solid orange, a pulsing
+                // dot, and a label saying how to get out (Rhys, 2026-09-30 — the pale steel
+                // tint didn't say "click me again to stop").
                 className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "mt-3 w-full",
-                  picking && "border-ad-steel bg-ad-steel/10 text-ad-ink"
+                  buttonVariants({ variant: picking ? "accent" : "outline", size: "sm" }),
+                  "mt-3 w-full gap-2"
                 )}
               >
+                {picking && (
+                  <span className="relative flex h-2 w-2" aria-hidden>
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+                  </span>
+                )}
                 {picking
-                  ? `Done${pickedCount > 0 ? ` — ${pickedCount} added` : ""}`
+                  ? `Done adding lots${pickedCount > 0 ? ` · ${pickedCount} added` : ""}`
                   : "+ Add lot from map"}
               </button>
 
@@ -1858,7 +1866,16 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
                 pickMessage && !pickBusy && <p className="mt-2 text-xs text-ad-orange">{pickMessage}</p>
               )}
             </div>
-            <ShapePanel shapes={shapes} commands={mapRef} />
+            <ShapePanel
+              shapes={shapes}
+              commands={mapRef}
+              // Starting a shape ends lot-picking: otherwise the shape's first click would go
+              // to the lot lookup instead.
+              onBeforeAdd={() => {
+                setPicking(false);
+                setPickMessage(null);
+              }}
+            />
 
             {/* No Regenerate button: every edit in this column is live now. Zoom is the
                 only thing that still needs the server, and it refetches itself. */}

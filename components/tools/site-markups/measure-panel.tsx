@@ -282,8 +282,12 @@ export function MeasurePanel({
       <div className="flex gap-1.5 border-t border-ad-border p-2">
         <button
           type="button"
-          onClick={() => state.add()}
-          disabled={state.atMax || lot?.on}
+          onClick={() => {
+            // Starting a shape ends lot-picking — the same rule as the Assets tab.
+            if (lot?.on) lot.toggle();
+            state.add();
+          }}
+          disabled={state.atMax}
           title={state.atMax ? `Maximum ${MAX_MEASUREMENTS} measurements` : undefined}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-ad-steel px-2 py-1.5 text-xs font-medium text-white hover:bg-ad-steel/90 disabled:bg-ad-border disabled:text-ad-muted"
         >
@@ -306,6 +310,12 @@ export function MeasurePanel({
                 : "border-ad-border text-ad-ink hover:bg-ad-border/20"
             )}
           >
+            {lot.on && (
+              <span className="relative mr-1.5 inline-flex h-1.5 w-1.5 align-middle" aria-hidden>
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+              </span>
+            )}
             {lot.on ? (lot.busy ? "Looking…" : "Done") : "Lot"}
           </button>
         )}

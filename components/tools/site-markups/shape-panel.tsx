@@ -128,6 +128,7 @@ export function ShapePanel({
   shapes,
   commands,
   palette = DEFAULT_PALETTE,
+  onBeforeAdd,
 }: {
   shapes: ShapesState;
   /** The map's imperative handle. Undo and Clear go through it, NOT through `shapes`: the
@@ -136,6 +137,9 @@ export function ShapePanel({
   commands: React.RefObject<MarkupMapCommands | null>;
   /** The colours this tool's legend can explain. Defaults to the markup tabs' three. */
   palette?: ShapeSwatch[];
+  /** Runs before a new shape is started — the markup uses it to switch "+ Add lot from map"
+   *  off, since a map click can't both pick a lot and place a shape's first point. */
+  onBeforeAdd?: () => void;
 }) {
   const { shapes: list, activeShapeId, atMax } = shapes;
 
@@ -321,7 +325,10 @@ export function ShapePanel({
           steel creates, outline is secondary. */}
       <button
         type="button"
-        onClick={shapes.addShape}
+        onClick={() => {
+          onBeforeAdd?.();
+          shapes.addShape();
+        }}
         disabled={atMax}
         className={cn(
           "mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-ad-steel px-3 py-2 text-sm font-medium text-white transition-colors",

@@ -452,14 +452,14 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   const file = currentFile();
   const layers: MarkupLayer[] = file ? layersFrom(file) : [];
   const propertySources = sourcesFromLayers(layers);
-  // DEV (2026-09-30): Access Letters and Common Areas rows the sheet adds by itself, derived
+  // Promoted from DEV 2026-09-30: Access Letters and Common Areas rows the sheet adds by itself, derived
   // from the property rows' own products and ticks — lib/markup-layers/derived.ts. Two passes:
   // the property rows first (that is where the chosen products live), then all of them.
   const propertyRows = rowsFrom(propertySources, lineDrafts, deselected);
-  const sources = dev ? withDerivedSources(propertySources, propertyRows) : propertySources;
+  const sources = withDerivedSources(propertySources, propertyRows);
   // ONE numbering, derived once and shared by the sheet, the sidebar badges, the live map and the
   // export payload — so all four can never disagree about what item 2 is.
-  const rows = dev ? rowsFrom(sources, lineDrafts, deselected) : propertyRows;
+  const rows = rowsFrom(sources, lineDrafts, deselected);
   const numbers = itemNumbers(rows);
   /** What the DRAWING carries: the item number when pins are on, else nothing ("" = no bubble). */
   const pinLabel = (key: string) => (showPins ? String(numberFor(key) ?? "") : "");
@@ -495,13 +495,13 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
   // identity would refetch forever.
   const sitePointKey = sitePoint ? `${sitePoint.lat.toFixed(6)},${sitePoint.lng.toFixed(6)}` : null;
 
-  // DEV (2026-09-30): km and drive time from the nearest CBD, so an estimator doesn't open
+  // Promoted from DEV 2026-09-30: km and drive time from the nearest CBD, so an estimator doesn't open
   // Google Maps to measure it. The job's point is the site when there is one, else the middle
   // of the included lots (a street survey). Rounded to ~100 m for the key: the answer doesn't
   // move for less, and every lot tick would otherwise re-ask. /api/maps/cbd-distance.
   const jobRings = result ? result.neighbours.filter((n) => !excludedIds.has(n.id)).map((n) => n.ring) : [];
   const jobPoint = sitePoint ?? boxCentre(jobRings.flat()) ?? centres[0]?.point ?? null;
-  const jobPointKey = dev && jobPoint ? `${jobPoint.lat.toFixed(3)},${jobPoint.lng.toFixed(3)}` : null;
+  const jobPointKey = jobPoint ? `${jobPoint.lat.toFixed(3)},${jobPoint.lng.toFixed(3)}` : null;
   const [cbdFor, setCbdFor] = useState<{ key: string; cbd: string; km: number; minutes: number | null } | null>(null);
   useEffect(() => {
     if (!jobPointKey) return;
@@ -1797,7 +1797,7 @@ export function ResidentialMarkupTab({ mode = "single", dev = false }: { mode?: 
 
           <div className="w-full space-y-4 xl:w-80 xl:shrink-0">
             {cbd && (
-              // DEV. One muted line: where the job is from, the way an estimator would say it.
+              // One muted line: where the job is from, the way an estimator would say it.
               <p className="px-1 text-xs text-ad-muted" title="Driving distance and time from the nearest CBD, no traffic">
                 <span className="font-medium text-ad-ink">{cbd.cbd} CBD</span> · {cbd.km.toLocaleString()} km
                 {cbd.minutes !== null ? ` · ${formatDrive(cbd.minutes)} drive` : " (straight line)"}

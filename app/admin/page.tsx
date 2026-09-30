@@ -201,7 +201,9 @@ function apiSpendTile(u: ApiUsage): Stat {
  * Counts opportunities, not rows: see lib/admin/tender-review.ts for why that matters.
  */
 function tenderTile(t: TenderReview): Stat {
-  const href = "/staff/accounts/tools/tender-watch";
+  // The Command Centre's own Tenders tab, not the accounts tool page — same component,
+  // but clicking a tile here should not drop you out of the Command Centre.
+  const href = "/admin/tenders";
   if (t.unavailable) {
     return { label: "Tenders to review", href, value: "—", sub: t.unavailable, tone: "warn" };
   }

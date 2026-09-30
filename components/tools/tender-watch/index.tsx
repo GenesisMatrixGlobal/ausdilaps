@@ -10,9 +10,15 @@ import { TenderWatchView } from "./view";
  * This is a dashboard: it has to show state the moment it opens, and loading it on the
  * server avoids a round trip, a loading flash, and a mount effect.
  *
- * Lives only at /staff/<dept>/tools/tender-watch, via the registry. There is no /admin
- * route: canAccess() grants admins every department, so a second path would just be
- * another way into the same component.
+ * Mounted in TWO places, both rendering this same component: /staff/<dept>/tools/tender-watch
+ * via the registry, and /admin/tenders as a Command Centre tab. The second is a DOOR, not a
+ * second dashboard — it exists because this is the tool an admin opens daily and the accounts
+ * department's tool list is not where anyone looks for it. canAccess() already granted admins
+ * the access; what the tab adds is a place in the navigation.
+ *
+ * ⚠️ Never fork this for the admin route. Anything that should differ between the two doors
+ * belongs on the isAdmin flag below, which is read from the session rather than from which
+ * route rendered it.
  *
  * The extra operator panels (funnel, run log, upstream errors) are driven by the isAdmin
  * flag in the data rather than by which route rendered it — so an admin opening the

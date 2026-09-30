@@ -15,7 +15,9 @@ import { useSyncExternalStore } from "react";
  * ⚠️ NO explanatory copy under the heading, and no reassurance line under the button —
  * both were written and both were cut on 2026-09-30 (Rhys: "keep the wording to a
  * minimum"). Three labelled fields and a button that says what it does need no preamble;
- * the subtext only restated them. The button design stays as it is.
+ * the subtext only restated them. The button design stays as it is. The ONE line of copy
+ * that survives is the marketing consent checkbox, because it is not decoration: it is the
+ * only place the visitor is told what the address will be used for.
  *
  * Client component ONLY for the error line: the server page never reads searchParams (that
  * would make it dynamic and lose the ISR cache that survives a Box outage), so `?error=` is
@@ -81,6 +83,20 @@ export function SamplesUnlock() {
           aria-hidden
           className="hidden"
         />
+        {/* TICKED by default (Rhys, 2026-09-30). It is the only sentence on the page that
+            says what the address is for, which is the thing the privacy principles actually
+            want at the point of collection — and unticking it is a real decision that lands
+            in `leads.marketing_consent` as false, not as silence. An unchecked checkbox
+            sends NO field at all, which is why the route reads a missing value as false. */}
+        <label className="mt-1 flex items-start gap-2.5 text-sm text-ad-muted">
+          <input
+            type="checkbox"
+            name="marketing_consent"
+            defaultChecked
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-ad-border text-ad-accent accent-ad-accent focus:outline-none"
+          />
+          <span>I consent to marketing.</span>
+        </label>
         {/* ORANGE, the conversion accent. The old pair of cards used charcoal because two
             equal buttons should not both shout; there is one action now. */}
         <button

@@ -24,6 +24,10 @@ export type SampleVisitor = {
   name: string | null;
   email: string | null;
   company: string | null;
+  /** From the consent checkbox on the unlock form (migration 0027). False = they unticked
+   *  it and must stay off any list. Null = never asked — a code unlock, or a row from
+   *  before the checkbox shipped. Only `true` is permission. */
+  marketingConsent: boolean | null;
   /**
    *   email    gave name + email on the locked page
    *   code     followed a /samples?code=… link (from a quote or an email)
@@ -111,6 +115,7 @@ export async function loadSamplesVisitors(): Promise<SamplesVisitorsPage> {
           name: null,
           email: null,
           company: null,
+          marketingConsent: null,
           unlock: "locked",
           firstSeen: r.occurred_at,
           lastSeen: r.occurred_at,
@@ -143,11 +148,22 @@ export async function loadSamplesVisitors(): Promise<SamplesVisitorsPage> {
 
     // One round trip for every named visitor's lead.
     const leadIds = [...new Set([...byVisitor.values()].flatMap((v) => [...v.leadIds]))];
-    const leads = new Map<string, { name: string | null; email: string | null; company: string | null }>();
+    type LeadRow = {
+      name: string | null;
+      email: string | null;
+      company: string | null;
+      marketing_consent?: boolean | null;
+    };
+    const leads = new Map<string, LeadRow>();
     if (leadIds.length > 0) {
-      const { data, error } = await db.from("leads").select("id, name, email, company").in("id", leadIds);
-      if (error) throw error;
-      for (const l of data ?? []) leads.set(l.id as string, l as (typeof leads extends Map<string, infer T> ? T : never));
+      // Migration 0027 is pasted in by hand, so a deploy can land before it. A missing
+      // column must not take the whole page down — drop back to the pre-0027 select.
+      let res = await db.from("leads").select("id, name, email, company, marketing_consent").in("id", leadIds);
+      if (res.error && /marketing_consent/.test(res.error.message)) {
+        res = (await db.from("leads").select("id, name, email, company").in("id", leadIds)) as typeof res;
+      }
+      if (res.error) throw res.error;
+      for (const l of res.data ?? []) leads.set(l.id as string, l as LeadRow);
     }
 
     const visitors: SampleVisitor[] = [...byVisitor.values()]
@@ -158,6 +174,7 @@ export async function loadSamplesVisitors(): Promise<SamplesVisitorsPage> {
           name: lead?.name ?? null,
           email: lead?.email ?? null,
           company: lead?.company ?? null,
+          marketingConsent: lead?.marketing_consent ?? null,
           filesOpened: itemSet.size,
           events: v.events.reverse(),
         };

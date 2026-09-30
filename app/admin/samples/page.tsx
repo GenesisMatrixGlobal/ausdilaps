@@ -82,6 +82,17 @@ function VisitorRow({ v }: { v: SampleVisitor }) {
             <span className="rounded-full bg-ad-surface px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-ad-steel">
               {UNLOCK_LABEL[v.unlock]}
             </span>
+            {/* They unticked the consent box. Shown because the whole reason this list has
+                names on it is so they can be contacted, and this row must not be. A
+                consenting visitor gets no badge — that is the ordinary case. */}
+            {v.marketingConsent === false && (
+              <span
+                className="rounded-full bg-ad-surface px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-ad-muted"
+                title="Unticked the marketing consent box — keep them off any list"
+              >
+                no marketing
+              </span>
+            )}
             {/* Not a person: every view was served but none was ever painted (migration
                 0024). Listed rather than hidden so the scraping stays visible, and only
                 shown once something HAS painted somewhere, or rows that predate the

@@ -95,6 +95,17 @@ function hostOf(url: string): string | null {
   }
 }
 
+/**
+ * Are these two strings naming the same party? Case and punctuation differ between a source's
+ * agency and contact fields often enough that an exact comparison would let the repeat
+ * through, which is the whole point of asking.
+ */
+function sameParty(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return norm(a) === norm(b);
+}
+
 function Pill({ tone, children }: { tone: "ok" | "warn" | "critical" | "muted"; children: React.ReactNode }) {
   const styles = {
     ok: "bg-ad-steel/10 text-ad-steel",
@@ -913,7 +924,10 @@ function GroupCard({
               </>
             )}
           </div>
-          {group.contact && (
+          {/* ⚠️ Only when it says something the line above did not. TenderSearch has no
+              separate agency field, so its extractor puts one string in BOTH — which printed
+              the same mangled text twice on every card from that source. */}
+          {group.contact && !sameParty(group.contact, lead.agency) && (
             <p className="mt-1 text-xs text-ad-muted">
               <span className="font-medium text-ad-ink">Contact:</span> {group.contact}
             </p>

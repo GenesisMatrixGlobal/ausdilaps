@@ -73,15 +73,33 @@ function realLocation(value: string | null): string | null {
 /**
  * `Contact: GovDept / Goondiwindi Regional Council` — the first token is the contact TYPE,
  * the rest is who it actually is. "Enquiries" appears the same way on some notices.
+ *
+ * ⚠️ The type token is not always FIRST, which is what let a mangled string reach the queue:
+ * Wellington Shire arrived as `/Technical GovDept Wellington Shire Council Ph: 1800 377 628`,
+ * where a department ("/Technical") sits in front of GovDept, so the old `^`-anchored strip
+ * matched nothing and the whole lot — slash, marker and switchboard number — was printed on
+ * the card as both the agency AND the contact.
+ *
+ * The phone goes too. A number glued to the end of an organisation name is not a contact
+ * detail anyone can act on from a card, and the notice's own excerpt still carries it.
  */
-function cleanContact(value: string | null): string | null {
+export function cleanContactValue(value: string | null): string | null {
   if (!value) return null;
   const cleaned = value
-    .replace(/^(?:Enquiries\s*)?(?:GovDept|Government Department)\s*/i, "")
-    .replace(/^Enquiries\s*/i, "")
+    // ⚠️ ANCHOR ON THE MARKER, not on the start of the string. The contact TYPE is whatever
+    // sits in front of it — "Technical", "Documents", "/Technical" — and a ^-anchored strip
+    // caught only the cases where the marker happened to come first. Everything before it is
+    // the type; everything after is who it actually is.
+    .replace(/^.*?\b(?:GovDept|Government Department)\b\s*/i, "")
+    .replace(/^(?:Enquiries)\s*/i, "")
+    // A trailing switchboard or mobile number. Not something anyone can act on from a card,
+    // and the notice's own excerpt still carries it. An EMAIL is kept — that one is usable.
+    .replace(/\s*\b(?:Ph|Phone|Tel|Mob|Mobile)\.?:?\s*[\d ()+-]{6,}\s*$/i, "")
+    .replace(/^[\s/·-]+/, "")
     .trim();
   return cleaned || null;
 }
+
 
 export const extractTenderSearch: Extractor = (message: ExtractSource) => {
   if (!isBulletin(message)) return null;
@@ -129,7 +147,7 @@ export const extractTenderSearch: Extractor = (message: ExtractSource) => {
 
     const closesRaw = labelled(block, "Closing Date");
     const location = realLocation(labelled(block, "Location"));
-    const contact = cleanContact(labelled(block, "Contact"));
+    const contact = cleanContactValue(labelled(block, "Contact"));
 
     notices.push({
       externalRef: `ts:${refNumber}`,
@@ -138,6 +156,11 @@ export const extractTenderSearch: Extractor = (message: ExtractSource) => {
       contact,
       closesAt: closesRaw ? parseDayMonthYear(closesRaw) : null,
       url: noticeUrl ? canonicalUrl(noticeUrl) : null,
+      // ⚠️ The SAME string, deliberately: TenderSearch names the buying body under "Contact:"
+      // and gives no separate agency line, so this is the best value for both. The card must
+      // therefore print it ONCE — see GroupCard, which drops the contact line when it repeats
+      // the agency. Do not "fix" the duplication here by blanking one of them; the handoff
+      // email and the Salesforce match both read agency, and the tool reads contact.
       agency: contact,
       excerpt: `${title}\n\n${block}`.replace(/\n{3,}/g, "\n\n").trim().slice(0, 6_000),
     });

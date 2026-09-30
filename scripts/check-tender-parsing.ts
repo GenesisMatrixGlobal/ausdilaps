@@ -267,6 +267,19 @@ ok("...with the 'GovDept' prefix stripped",
    tsNotices.every((n) => !/^GovDept/i.test(n.contact ?? "")));
 ok("...and not running on into the contract number",
    tsNotices.every((n) => !/Contract No/i.test(n.contact ?? "")));
+// The Wellington Shire card printed `/Technical GovDept Wellington Shire Council Ph: 1800 377
+// 628` as BOTH its agency and its contact. The type marker was not first, so the ^-anchored
+// strip missed it, and the switchboard number was never stripped at all.
+ok("...with no department fragment left in front of the marker",
+   tsNotices.every((n) => !/^[\s/]/.test(n.contact ?? "x") && !/\bGovDept\b/i.test(n.contact ?? "")),
+   tsNotices.filter((n) => /^[\s/]|GovDept/i.test(n.contact ?? "")).map((n) => n.contact).join(" | ") || "clean");
+ok("...and no switchboard number glued to the end",
+   tsNotices.every((n) => !/\bPh:?\s*[\d ()+-]{6,}$/i.test(n.contact ?? "")),
+   tsNotices.filter((n) => /\bPh:?\s*[\d ()+-]{6,}$/i.test(n.contact ?? "")).map((n) => n.contact).join(" | ") || "clean");
+// agency and contact are the same value on purpose (TenderSearch has no agency line). The
+// CARD is what must not repeat it — see sameParty() in view.tsx.
+ok("agency and contact stay in step for this source",
+   tsNotices.every((n) => n.agency === n.contact));
 
 const fxMsgs = FIXTURES.filter((m) => (m.from ?? "").includes("felix"));
 const fxNotices = fxMsgs.flatMap((m) => run(m) ?? []);

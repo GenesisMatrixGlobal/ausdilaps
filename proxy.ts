@@ -21,7 +21,6 @@ import {
   SAMPLES_PATH,
   SAMPLES_VISITOR_COOKIE,
   cookieValueFor,
-  gateEnabled,
   isValidCode,
   isValidCookie,
   isVisitorId,
@@ -156,15 +155,6 @@ async function samplesGate(req: NextRequest): Promise<NextResponse> {
     const referrer = req.headers.get("referer");
     after(() => recordPageView(event, { referrer, userAgent: ua, visitorId }));
   };
-
-  if (!gateEnabled()) {
-    count("view_library");
-    return finish(
-      url.pathname === SAMPLES_LIBRARY_PATH
-        ? NextResponse.next()
-        : NextResponse.rewrite(new URL(SAMPLES_LIBRARY_PATH, req.url))
-    );
-  }
 
   const code = url.searchParams.get("code");
   if (code !== null) {

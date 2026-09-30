@@ -1,21 +1,21 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { SAMPLES_PATH } from "@/lib/samples-access";
 
 /**
- * The gate on the locked samples page. Two ways in, side by side:
+ * The gate on the locked samples page: ONE card, name and email.
  *
- *  - the access code from a quote — a plain GET form, so `?code=` lands in proxy.ts exactly
- *    as a quote's link does. No JavaScript in the path; the middleware sets the cookie.
- *  - an email address — POSTs to /api/samples/unlock, which records a lead and sets the same
- *    cookie. The fallback for someone who arrived from Google, or whose quote went to a
- *    colleague.
+ * ⚠️ There used to be a second card beside it taking the access code off a quote, and it was
+ * removed on 2026-09-30 (Rhys) rather than demoted. Two doors halved the only thing this
+ * gate is for — everyone who used the code arrived anonymously, so /admin/samples could
+ * never show them as more than "Visitor 3f9a2c1e · Access code". A quote link carrying
+ * `?code=` still opens the library silently in proxy.ts; nothing here advertises it, and
+ * there is no longer anywhere to type one.
  *
- * This is a client component ONLY for the error line: the server page never reads
- * searchParams (that would make it dynamic and lose the ISR cache), so `?error=` is read
- * from the browser's own URL — via useSyncExternalStore with a null server snapshot, which
- * is the hydration-safe way to read window state without a setState-in-effect.
+ * Client component ONLY for the error line: the server page never reads searchParams (that
+ * would make it dynamic and lose the ISR cache that survives a Box outage), so `?error=` is
+ * read from the browser's own URL — via useSyncExternalStore with a null server snapshot,
+ * the hydration-safe way to read window state without a setState-in-effect.
  */
 
 function subscribeNever() {
@@ -26,100 +26,86 @@ function readErrorParam(): "code" | "email" | null {
   const e = new URLSearchParams(window.location.search).get("error");
   return e === "code" || e === "email" ? e : null;
 }
+
 export function SamplesUnlock() {
   const error = useSyncExternalStore(subscribeNever, readErrorParam, () => null);
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <form
-        method="get"
-        action={SAMPLES_PATH}
-        className="rounded-xl border border-ad-border bg-white p-5"
-      >
-        <h2 className="font-heading text-base font-semibold text-ad-ink">Have a quote from us?</h2>
-        <p className="mt-1 text-sm text-ad-muted">Enter the access code printed on it.</p>
-        <div className="mt-4 flex gap-2">
-          <input
-            type="text"
-            name="code"
-            required
-            autoComplete="off"
-            autoCapitalize="characters"
-            spellCheck={false}
-            placeholder="Access code"
-            aria-invalid={error === "code" || undefined}
-            className="h-11 min-w-0 flex-1 rounded-full border border-ad-border bg-white px-4 font-mono text-sm uppercase tracking-wider text-ad-ink placeholder:font-sans placeholder:normal-case placeholder:tracking-normal placeholder:text-ad-muted/70 focus:border-ad-accent focus:outline-none aria-[invalid]:border-ad-orange"
-          />
-          <button
-            type="submit"
-            className="h-11 shrink-0 rounded-full bg-ad-navy px-5 text-sm font-medium text-white transition-colors hover:bg-ad-navy-deep"
-          >
-            Open
-          </button>
-        </div>
-        {error === "code" && (
-          <p className="mt-3 text-sm text-ad-orange">
-            That code didn&rsquo;t match. Check the quote, or use your email instead.
-          </p>
-        )}
-      </form>
+    // Centred and capped rather than full width: this is the one thing to do on the page, and
+    // a form stretched across a 1200px screen reads as a footer, not an invitation.
+    <form
+      method="post"
+      action="/api/samples/unlock"
+      className="mx-auto max-w-xl rounded-xl border border-ad-border bg-white p-6 text-center shadow-sm sm:p-8"
+    >
+      <h2 className="font-heading text-xl font-semibold tracking-tight text-ad-ink sm:text-2xl">
+        See the full library
+      </h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-ad-muted">
+        Tell us who you are and every sample report opens straight away — no code, no waiting.
+      </p>
 
-      <form
-        method="post"
-        action="/api/samples/unlock"
-        className="rounded-xl border border-ad-border bg-white p-5"
-      >
-        <h2 className="font-heading text-base font-semibold text-ad-ink">No code yet?</h2>
-        <p className="mt-1 text-sm text-ad-muted">Leave your email and we&rsquo;ll open the library now.</p>
-        <div className="mt-4 grid gap-2">
-          <input
-            type="text"
-            name="name"
-            required
-            autoComplete="name"
-            placeholder="Your name"
-            className="h-11 rounded-full border border-ad-border bg-white px-4 text-sm text-ad-ink placeholder:text-ad-muted/70 focus:border-ad-accent focus:outline-none"
-          />
-          <div className="flex gap-2">
-            <input
-              type="email"
-              name="email"
-              required
-              autoComplete="email"
-              placeholder="Work email"
-              aria-invalid={error === "email" || undefined}
-              className="h-11 min-w-0 flex-1 rounded-full border border-ad-border bg-white px-4 text-sm text-ad-ink placeholder:text-ad-muted/70 focus:border-ad-accent focus:outline-none aria-[invalid]:border-ad-orange"
-            />
-            <button
-              type="submit"
-              className="h-11 shrink-0 rounded-full bg-ad-navy px-5 text-sm font-medium text-white transition-colors hover:bg-ad-navy-deep"
-            >
-              Open
-            </button>
-          </div>
-          {/* Honeypot — real browsers leave it empty; the route drops anything that fills it. */}
-          <input
-            type="text"
-            name="company_website"
-            tabIndex={-1}
-            autoComplete="off"
-            aria-hidden
-            className="hidden"
-          />
-        </div>
-        {error === "email" && (
-          <p className="mt-3 text-sm text-ad-orange">
-            Please enter your name and a valid email address.
-          </p>
-        )}
-        <p className="mt-3 text-xs text-ad-muted">
-          See how we handle your details in our{" "}
-          <a href="/privacy-policy" className="font-medium text-ad-accent hover:brightness-90">
-            Privacy Policy
-          </a>
-          .
+      <div className="mx-auto mt-6 grid max-w-sm gap-2.5 text-left">
+        <input
+          type="text"
+          name="name"
+          required
+          autoComplete="name"
+          placeholder="Your name"
+          className="h-12 rounded-full border border-ad-border bg-white px-5 text-sm text-ad-ink placeholder:text-ad-muted/70 focus:border-ad-accent focus:outline-none"
+        />
+        <input
+          type="email"
+          name="email"
+          required
+          autoComplete="email"
+          placeholder="Work email"
+          aria-invalid={error === "email" || undefined}
+          className="h-12 rounded-full border border-ad-border bg-white px-5 text-sm text-ad-ink placeholder:text-ad-muted/70 focus:border-ad-accent focus:outline-none aria-[invalid]:border-ad-orange"
+        />
+        <input
+          type="text"
+          name="company"
+          autoComplete="organization"
+          placeholder="Company (optional)"
+          className="h-12 rounded-full border border-ad-border bg-white px-5 text-sm text-ad-ink placeholder:text-ad-muted/70 focus:border-ad-accent focus:outline-none"
+        />
+        {/* Honeypot — real browsers leave it empty; the route drops anything that fills it. */}
+        <input
+          type="text"
+          name="company_website"
+          tabIndex={-1}
+          autoComplete="off"
+          aria-hidden
+          className="hidden"
+        />
+        {/* ORANGE, the conversion accent. The old pair of cards used charcoal because two
+            equal buttons should not both shout; there is one action now. */}
+        <button
+          type="submit"
+          className="mt-1 h-12 rounded-full bg-ad-orange px-6 text-[0.95rem] font-medium text-white transition-colors hover:bg-ad-orange-dark"
+        >
+          Open the sample library
+        </button>
+      </div>
+
+      {error === "email" && (
+        <p className="mt-4 text-sm text-ad-orange">
+          Please enter your name and a valid email address.
         </p>
-      </form>
-    </div>
+      )}
+      {/* A stale quote link whose code has been retired lands here. It must not read as the
+          visitor's mistake — there is nothing for them to correct, and the form above already
+          works. */}
+      {error === "code" && (
+        <p className="mt-4 text-sm text-ad-muted">
+          That link has expired. Enter your details above and the library opens straight away.
+        </p>
+      )}
+
+      <p className="mx-auto mt-5 max-w-sm text-xs leading-relaxed text-ad-muted">
+        We use this to send the right samples for your project. No newsletter.
+      </p>
+    </form>
   );
 }

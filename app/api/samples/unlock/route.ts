@@ -10,7 +10,6 @@ import {
   SAMPLES_COOKIE_OPTIONS,
   SAMPLES_PATH,
   SAMPLES_VISITOR_COOKIE,
-  gateEnabled,
   isVisitorId,
   newVisitorId,
   unlockCookieValue,
@@ -104,10 +103,9 @@ export async function POST(req: NextRequest) {
 
   const res = NextResponse.redirect(back, 303);
   if (visitorId !== existing) res.cookies.set(SAMPLES_VISITOR_COOKIE, visitorId, SAMPLES_COOKIE_OPTIONS);
-  if (gateEnabled()) {
-    const value = await unlockCookieValue();
-    if (value) res.cookies.set(SAMPLES_COOKIE, value, SAMPLES_COOKIE_OPTIONS);
-  }
+  // Unconditional: this route only ever runs because someone filled the form, and the gate
+  // no longer has an off switch to consult.
+  res.cookies.set(SAMPLES_COOKIE, await unlockCookieValue(), SAMPLES_COOKIE_OPTIONS);
   return res;
 }
 

@@ -1,10 +1,15 @@
 // The access gate on /dilapidation-reports/samples.
 //
-// A courtesy filter, not a secret: the code goes on every quote and in every email as a
-// link (`/samples?code=XXXX`), so a client never types it. Its job is to stop lazy
-// crawling and bulk download of the sample library, and to turn cold visitors into a
-// name + email. A competitor can request a quote and get in — that is fine, they are
-// then a lead.
+// ⚠️ THE WAY IN IS NAME + EMAIL, and since 2026-09-30 it is the ONLY one on screen (Rhys).
+// The code box beside it was a second door that halved the thing the gate exists for: every
+// person who used it arrived anonymously, and /admin/samples could only ever show them as
+// "Visitor 3f9a2c1e · Access code". Lead capture was always the point; a courtesy filter
+// against bulk download is the side effect.
+//
+// `?code=` IS STILL HONOURED and deliberately so — quote links already sent carry it, and
+// dumping those clients at a form to re-type details we hold would be a worse experience
+// than the anonymity costs us. Nothing on the page advertises it; it simply works. Clear
+// `SAMPLES_ACCESS_CODE` once the quotes carrying it have aged out and that door closes.
 //
 // Runs in proxy.ts (edge/middleware) AND in a route handler, so this file uses only
 // WebCrypto and process.env — no Node-only imports.
@@ -22,19 +27,16 @@ export const SAMPLES_PATH = "/dilapidation-reports/samples";
  *  the cookie is redirected back. Not in the sitemap, noindex. */
 export const SAMPLES_LIBRARY_PATH = "/dilapidation-reports/samples/library";
 
-/** Comma-separated so two codes can overlap during a rotation — the quotes already in
- *  the wild keep working while new ones carry the new code. */
+/** LEGACY. Comma-separated, and now only for quote links already in the wild — nothing on
+ *  the page offers a code any more. Unset is the end state and closes that door; the gate
+ *  itself is unconditional, so unsetting it can no longer open the library to everyone.
+ *  ⚠️ There is deliberately NO `gateEnabled()` any more: it returned false when this was
+ *  unset, which would now mean "no code configured, so let the world in". */
 export function accessCodes(): string[] {
   return (process.env.SAMPLES_ACCESS_CODE ?? "")
     .split(",")
     .map(normaliseCode)
     .filter(Boolean);
-}
-
-/** No codes configured = no gate. Fail OPEN: an unset variable on a marketing page should
- *  never hide the library from the clients it exists for. */
-export function gateEnabled(): boolean {
-  return accessCodes().length > 0;
 }
 
 /** Codes are case- and whitespace-insensitive, and dashes are optional — a client
@@ -60,19 +62,29 @@ export function isValidCode(raw: string | null | undefined): boolean {
   return accessCodes().includes(code);
 }
 
+/** An email unlock, or any still-configured code. Both are checked so a browser let in by a
+ *  legacy quote link keeps its six months even after the code is retired. */
 export async function isValidCookie(value: string | null | undefined): Promise<boolean> {
   if (!value) return false;
+  if (value === (await unlockCookieValue())) return true;
   for (const code of accessCodes()) {
     if ((await cookieValueFor(code)) === value) return true;
   }
   return false;
 }
 
-/** Cookie value for a browser unlocked by the EMAIL path — hashed against the first
- *  configured code, so it validates exactly like a code unlock and expires with it. */
-export async function unlockCookieValue(): Promise<string | null> {
-  const [first] = accessCodes();
-  return first ? cookieValueFor(first) : null;
+/**
+ * What an EMAIL unlock writes. A fixed token, NOT a hash of some code — it has to work when
+ * `SAMPLES_ACCESS_CODE` is unset, which is the end state.
+ *
+ * It is the same value for everyone, so someone could read their own cookie and pass it on.
+ * That is the trust level this gate has always had: one code went on every quote, so it was
+ * equally shareable. This is a courtesy filter and a lead form, never a secret — see the
+ * header. Returns a string rather than `string | null`, so the caller can no longer end up
+ * setting nothing and silently leaving the visitor outside.
+ */
+export async function unlockCookieValue(): Promise<string> {
+  return cookieValueFor("email-unlock");
 }
 
 /**

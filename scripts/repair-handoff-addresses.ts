@@ -19,6 +19,7 @@ config({ path: ".env.local" });
 import { scriptDb } from "./_db";
 import { siteAddressFrom } from "../lib/tenders/site-address";
 import { updateRecord } from "../lib/salesforce";
+import { lookupPostcode } from "../lib/tenders/postcode";
 
 const apply = process.argv.includes("--apply");
 
@@ -31,14 +32,23 @@ async function main() {
 
   // The original location is not stored separately — site_street held it verbatim, which is
   // exactly the bug, so it is also the best input for re-parsing.
-  const changes = (data ?? []).flatMap((r) => {
+  const changes: { row: Record<string, unknown>; next: ReturnType<typeof siteAddressFrom> }[] = [];
+  for (const r of data ?? []) {
     const raw = [r.site_street, r.site_city, r.site_state].filter(Boolean).join(", ");
-    const next = siteAddressFrom((r.site_street as string | null) ?? raw);
+    const parsed = siteAddressFrom((r.site_street as string | null) ?? raw);
+    // Fill the postcode for genuine suburbs. Council areas stay blank — see postcode.ts.
+    const next = {
+      ...parsed,
+      postcode:
+        (r.site_postcode as string | null) ??
+        parsed.postcode ??
+        (parsed.isLga ? null : await lookupPostcode(parsed.city, parsed.state)),
+    };
     const differs =
       next.street !== r.site_street || next.city !== r.site_city ||
       next.state !== r.site_state || next.postcode !== r.site_postcode;
-    return differs ? [{ row: r, next }] : [];
-  });
+    if (differs) changes.push({ row: r, next });
+  }
 
   console.log(`${(data ?? []).length} handoff(s), ${changes.length} need correcting\n`);
   for (const c of changes) {

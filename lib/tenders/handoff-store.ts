@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createRecords } from "@/lib/salesforce";
 import { generateHandoffCode } from "./handoff-code";
 import { siteAddressFrom } from "./site-address";
+import { lookupPostcode } from "./postcode";
 import type { HandoffItem } from "./notify";
 
 /**
@@ -89,6 +90,14 @@ export async function allocateHandoff(
     // "City of Stonnington, VIC" with the same text again as the city. See site-address.ts.
     const site = siteAddressFrom(item.siteLocation);
 
+    // ⚠️ Suburbs only — NEVER a council area. Stonnington spans Prahran, South Yarra, Malvern
+    // and more; one of their postcodes on an Opportunity is a specific wrong answer where the
+    // blank would have prompted someone to check. isLga is the gate, and lookupPostcode
+    // refuses a non-locality result as a second line of defence. A postcode the source itself
+    // stated is already in site.postcode and is never overwritten.
+    const postcode =
+      site.postcode ?? (site.isLga ? null : await lookupPostcode(site.city, site.state));
+
     const row = {
       code: generateHandoffCode(),
       group_key: groupKey,
@@ -99,7 +108,7 @@ export async function allocateHandoff(
       site_state: site.state,
       // Only ever a postcode the source itself stated. A council area spans many — filling
       // one in would put a specific wrong answer where a blank prompts someone to check.
-      site_postcode: site.postcode,
+      site_postcode: postcode,
       client_name: item.agency?.slice(0, 255) ?? null,
       contact_name: item.contact?.slice(0, 255) ?? null,
       contact_email: item.emailFrom?.slice(0, 255) ?? null,

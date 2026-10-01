@@ -138,6 +138,8 @@ export type GroupView = {
   contact: string | null;
   /** Who emailed us, raw. senderOrigin() decides whether that is a contact or provenance. */
   emailFrom: string | null;
+  /** `TW-4F7K2`, once this opportunity has been sent. Null before that. */
+  handoffCode: string | null;
 };
 
 type RunView = {
@@ -172,7 +174,7 @@ async function query(isAdmin: boolean) {
   const now = Date.now();
   const since = new Date(now - WINDOW_DAYS * DAY).toISOString();
 
-  const [runRows, sourceRows, itemRows, pendingCount, stillOpenRows, closedCount] = await Promise.all([
+  const [runRows, sourceRows, itemRows, pendingCount, handoffRows, stillOpenRows, closedCount] = await Promise.all([
     db
       .from("tender_scan_runs")
       .select(
@@ -195,6 +197,8 @@ async function query(isAdmin: boolean) {
     // Queue depth, deliberately NOT windowed: an item stuck pending since last month is
     // exactly what this is for, and hiding it behind the report window would defeat it.
     db.from("tender_items").select("id", { count: "exact", head: true }).eq("relevance", "pending"),
+    // Codes are keyed by group, so they join to the cards without touching tender_items.
+    db.from("tender_handoffs").select("code, group_key"),
     // ⚠️ Still-open opportunities OLDER than the window. Without this the review list showed
     // 5 of 48 and the other 43 were unreachable — see lib/tenders/actionable.ts. The funnel
     // above stays windowed and these rows never reach it: they are merged into the GROUPS
@@ -377,9 +381,16 @@ async function query(isAdmin: boolean) {
 
   // Only match/maybe are grouped — a no_match row is never an opportunity, and grouping the
   // 130 prefiltered rejects would cost work nobody looks at.
+  const codeByGroup = new Map(
+    ((handoffRows.data ?? []) as { code: string; group_key: string }[]).map((h) => [h.group_key, h.code])
+  );
+
   const allGroups = groupItems(
     groupable.filter((i) => i.relevance === "match" || i.relevance === "maybe")
-  ).map(toGroupView);
+  )
+    .map(toGroupView)
+    // Attached after grouping: toGroupView is module scope and cannot see this request's map.
+    .map((g) => ({ ...g, handoffCode: codeByGroup.get(g.key) ?? null }));
 
   // A tender that closes inside MIN_LEAD_TIME cannot realistically be priced and submitted, so
   // it is not work — it is noise on the one screen that is meant to be a work queue. Dropped
@@ -450,7 +461,9 @@ function groupState(members: ItemView[]): GroupView["state"] {
   return "queue";
 }
 
-function toGroupView(g: ItemGroup<ItemView>): GroupView {
+/** Everything about a group except the handoff code, which is attached by the caller —
+ *  this function is module scope and the code map is per request. */
+function toGroupView(g: ItemGroup<ItemView>): Omit<GroupView, "handoffCode"> {
   // Deduped by source, keeping the most confident copy's link for each — a reader following
   // one of these wants the notice, not whichever reminder happened to arrive last.
   const bySource = new Map<string, { label: string; url: string | null }>();

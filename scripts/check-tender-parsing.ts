@@ -31,6 +31,7 @@ import { followableNoticeUrl, sameParty, senderOrigin } from "../lib/tenders/dis
 import { isActionable } from "../lib/tenders/actionable";
 import { generateHandoffCode, normaliseHandoffCode, HANDOFF_ALPHABET } from "../lib/tenders/handoff-code";
 import { parseLocality, projectPhrases } from "../lib/tenders/salesforce-match";
+import { siteAddressFrom } from "../lib/tenders/site-address";
 import { renderHandoff, idempotencyKey, type HandoffItem } from "../lib/tenders/notify";
 import { readFileSync } from "node:fs";
 
@@ -467,6 +468,31 @@ ok("a real contact IS shown when it differs from the client",
 ok("the location is labelled Location, not Address",
    /LOCATION|Location/.test(plain) && !/>Address</.test(plain));
 // The live safety warning survives — it is about the text below, not about our process.
+// ── Site address ─────────────────────────────────────────────────────────────────────────
+//
+// Rhys, after testing TW-HTUUT: street came through as "City of Stonnington, VIC" and city as
+// "CITY OF STONNINGTON". A tender almost never states a street — at tender stage the work
+// spans a council area — so street must stay blank and the council noise comes off the city.
+for (const [raw, want] of [
+  ["City of Stonnington, VIC", { street: null, city: "Stonnington", state: "VIC", postcode: null, isLga: true }],
+  ["Murray River Council LGA, NSW", { street: null, city: "Murray River", state: "NSW", postcode: null, isLga: true }],
+  ["MidCoast Council road network, NSW", { street: null, city: "MidCoast", state: "NSW", postcode: null, isLga: true }],
+  ["Wellington Shire, VIC", { street: null, city: "Wellington", state: "VIC", postcode: null, isLga: true }],
+  // A genuine suburb keeps its name and is NOT an LGA.
+  ["NORTH RICHMOND, NSW", { street: null, city: "North Richmond", state: "NSW", postcode: null, isLga: false }],
+  ["GOONDIWINDI QLD", { street: null, city: "Goondiwindi", state: "QLD", postcode: null, isLga: false }],
+  // A postcode the source STATED is a fact and is kept; one is never invented.
+  ["LIVERPOOL, NSW, 2170, Australia", { street: null, city: "Liverpool", state: "NSW", postcode: "2170", isLga: false }],
+  // A real street address is the one case where Street should be filled.
+  ["26 Rankin Rd, Hastings VIC", { street: "26 Rankin Rd", city: "Hastings", state: "VIC", postcode: null, isLga: false }],
+  ["Victoria (statewide arterial road network)", { street: null, city: null, state: null, postcode: null, isLga: false }],
+  [null, { street: null, city: null, state: null, postcode: null, isLga: false }],
+] as [string | null, Record<string, unknown>][]) {
+  const got = siteAddressFrom(raw);
+  const same = (Object.keys(want) as (keyof typeof got)[]).every((k) => got[k] === want[k]);
+  ok(`site: ${String(raw).slice(0, 38).padEnd(38)} -> ${want.city ?? "null"}`, same, JSON.stringify(got));
+}
+
 // ── Handoff codes ────────────────────────────────────────────────────────────────────────
 //
 // Typed into Salesforce off a phone screen, and sometimes read aloud, so the confusable

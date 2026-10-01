@@ -993,6 +993,18 @@ function GroupCard({
             </p>
           )}
 
+          {/* The code a staff member types into the New Opportunity flow. Shown here as well
+              as in the email because somebody looking at the queue should not have to go
+              and find the email to get it. Only exists once the group has been sent. */}
+          {group.handoffCode && (
+            <p className="mt-1 text-xs text-ad-muted">
+              <span className="font-medium text-ad-ink">Code:</span>{" "}
+              <span className="font-mono text-[0.78rem] font-semibold tracking-wide text-ad-ink">
+                {group.handoffCode}
+              </span>
+            </p>
+          )}
+
           {duplicates && <DuplicateBadge result={duplicates} />}
 
           {(lead.services.length > 0 || !isMatch || group.members.some((m) => m.injectionSuspected)) && (

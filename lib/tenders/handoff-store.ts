@@ -2,7 +2,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createRecords } from "@/lib/salesforce";
 import { generateHandoffCode } from "./handoff-code";
-import { parseLocality } from "./salesforce-match";
+import { siteAddressFrom } from "./site-address";
 import type { HandoffItem } from "./notify";
 
 /**
@@ -84,17 +84,22 @@ export async function allocateHandoff(
     // The site is stored split, because Opportunity.Site_Address__c is a COMPOUND field and
     // is not createable — the flow has to write Site_Address__Street__s / __City__s /
     // __StateCode__s individually, so handing it one blob would just move the parsing.
-    const locality = parseLocality(item.siteLocation);
+    //
+    // ⚠️ Street is NOT the raw location. It was, and TW-HTUUT reached the flow as street
+    // "City of Stonnington, VIC" with the same text again as the city. See site-address.ts.
+    const site = siteAddressFrom(item.siteLocation);
 
     const row = {
       code: generateHandoffCode(),
       group_key: groupKey,
       item_ids: item.ids,
       project_name: item.title.slice(0, 255),
-      site_street: item.siteLocation?.slice(0, 255) ?? null,
-      site_city: locality?.suburb ?? null,
-      site_state: locality?.state ?? null,
-      site_postcode: null,
+      site_street: site.street,
+      site_city: site.city,
+      site_state: site.state,
+      // Only ever a postcode the source itself stated. A council area spans many — filling
+      // one in would put a specific wrong answer where a blank prompts someone to check.
+      site_postcode: site.postcode,
       client_name: item.agency?.slice(0, 255) ?? null,
       contact_name: item.contact?.slice(0, 255) ?? null,
       contact_email: item.emailFrom?.slice(0, 255) ?? null,

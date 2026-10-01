@@ -205,11 +205,18 @@ const OUR_WORDS = new Set([
   "SERVICES", "SERVICE", "PROVISION", "EXPRESSION", "INTEREST", "INVITATION", "STATEWIDE",
 ]);
 
-/** `Fifteenth Avenue Upgrade (RFQ owner …)` -> `Fifteenth Avenue`. */
-export function projectPhrases(title: string | null, agency: string | null): string[] {
+/**
+ * `Fifteenth Avenue Upgrade (RFQ owner …)` -> `Fifteenth Avenue`.
+ *
+ * ⚠️ Takes EVERY text the group carries, not just the lead's. The same tender arrives up to
+ * five times and the copies do not describe it identically: RFQ #126379's five rows name the
+ * project in ONE member's agency field, and the group's LEAD is the plain "Seymour Whyte".
+ * Scanning only the lead found nothing and left the live duplicate hidden a second time.
+ */
+export function projectPhrases(sources: (string | null | undefined)[]): string[] {
   const phrases: string[] = [];
 
-  for (const source of [title, agency]) {
+  for (const source of sources) {
     if (!source) continue;
     // Bracketed asides are metadata, not the project ("(RFQ owner Rebecca Saunders)").
     const words = source

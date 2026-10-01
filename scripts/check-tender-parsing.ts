@@ -486,23 +486,23 @@ for (const [loc, want] of [
 // ⚠️ Felix RFQ #126379 names its project ONLY in the RFQ-owner field, and Salesforce holds
 // PRE OPT-37387 "Fifteenth Avenue Upgrade, Austral NSW" in Follow Up. A live duplicate the
 // suburb join could never see — this is the case the fallback exists for.
-ok("the project name is found in the agency field",
-   projectPhrases("126379 - Dilapidation Survey - Properties", "Fifteenth Avenue Upgrade (RFQ owner Rebecca Saunders)").includes("Fifteenth Avenue"),
-   projectPhrases("126379 - Dilapidation Survey - Properties", "Fifteenth Avenue Upgrade (RFQ owner Rebecca Saunders)").join(" | "));
-ok("...and in the title", projectPhrases("Dilapidation Report RFQ — Australia Avenue Tender", null).includes("Australia Avenue"));
+ok("the project name is found in a NON-LEAD member's agency",
+   projectPhrases(["126379 - Dilapidation Survey - Properties", "Seymour Whyte", "Fifteenth Avenue Upgrade (RFQ owner Rebecca Saunders)"]).includes("Fifteenth Avenue"),
+   projectPhrases(["126379 - Dilapidation Survey - Properties", "Seymour Whyte", "Fifteenth Avenue Upgrade (RFQ owner Rebecca Saunders)"]).join(" | "));
+ok("...and in the title", projectPhrases(["Dilapidation Report RFQ — Australia Avenue Tender"]).includes("Australia Avenue"));
 ok("...including infrastructure words a postal street list would miss",
-   projectPhrases("Muswellbrook Bypass Project - Dilapidation Survey", null).includes("Muswellbrook Bypass"));
+   projectPhrases(["Muswellbrook Bypass Project - Dilapidation Survey"]).includes("Muswellbrook Bypass"));
 // Without the stoplist these match hundreds of our own opportunities.
 ok("OUR vocabulary never becomes a project name",
-   projectPhrases("Pre & post construction building condition assessment", null).length === 0 &&
-   projectPhrases("Condition Audit and Valuation of Buildings & Structures", null).length === 0,
-   projectPhrases("Pre & post construction building condition assessment", null).join(" | "));
+   projectPhrases(["Pre & post construction building condition assessment"]).length === 0 &&
+   projectPhrases(["Condition Audit and Valuation of Buildings & Structures"]).length === 0,
+   projectPhrases(["Pre & post construction building condition assessment"]).join(" | "));
 ok("a bracketed aside is metadata, not the project",
-   !projectPhrases("x", "Seymour Whyte (RFQ owner Rebecca Saunders)").some((p) => /Saunders/.test(p)));
+   !projectPhrases(["Seymour Whyte (RFQ owner Rebecca Saunders)"]).some((p) => /Saunders/.test(p)));
 ok("a street NUMBER is not part of the name",
-   !projectPhrases("375 Fifteenth Avenue", null).includes("375 Fifteenth"));
+   !projectPhrases(["375 Fifteenth Avenue"]).includes("375 Fifteenth"));
 ok("at most two phrases are searched",
-   projectPhrases("Smith Street and Jones Road and Brown Avenue and Green Lane", null).length <= 2);
+   projectPhrases(["Smith Street and Jones Road and Brown Avenue and Green Lane"]).length <= 2);
 
 // ── Idempotency ──────────────────────────────────────────────────────────────────────────
 //

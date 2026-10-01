@@ -209,8 +209,9 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
     const probes = data.groups.map((g) => ({
       key: g.key,
       location: g.siteLocation,
-      title: g.title,
-      agency: g.lead.agency,
+      // Every text the group carries. A reminder copy often names the project where the
+      // lead does not — which is how RFQ #126379's "Fifteenth Avenue Upgrade" hides.
+      texts: [...new Set([g.title, ...g.members.map((m) => m.agency)].filter((t): t is string => !!t))].slice(0, 12),
     }));
     if (probes.length === 0) {
       setDupes({});

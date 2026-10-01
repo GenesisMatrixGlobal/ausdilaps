@@ -38,8 +38,8 @@ const Body = z.object({
       z.object({
         key: z.string().min(1).max(200),
         location: z.string().trim().max(200).nullable().optional(),
-        title: z.string().trim().max(300).nullable().optional(),
-        agency: z.string().trim().max(300).nullable().optional(),
+        /** The title plus every member's agency — see projectPhrases(). */
+        texts: z.array(z.string().trim().max(300)).max(12).optional(),
       })
     )
     .min(1)
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
       continue;
     }
     // No usable suburb — fall back to what the job is CALLED.
-    const phrases = projectPhrases(probe.title ?? null, probe.agency ?? null);
+    const phrases = projectPhrases(probe.texts ?? []);
     if (phrases.length > 0) {
       plans.set(probe.key, { basis: "project", label: phrases.join(" / "), phrases });
     }

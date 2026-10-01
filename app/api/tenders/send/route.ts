@@ -1,3 +1,4 @@
+import { replyableSender } from "@/lib/tenders/display";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { canAccess, getStaffUser, isAdmin } from "@/lib/auth/session";
@@ -57,24 +58,12 @@ function firstOf<T>(members: T[], pick: (m: T) => string | null | undefined): st
   return null;
 }
 
-/**
- * The sending address, but only when it is a person.
- *
- * The fallback contact for a direct email invitation is whoever emailed us — that IS the
- * submission contact. It is worthless for the aggregators, whose mail comes from
- * `email@tendersearch.com.au` and `no-reply@felix.net`, and actively misleading for our own
- * staff forwarding something on: "contact kylie.c@ausdilaps.com.au" tells the reader to ring
- * a colleague about a tender she also just received.
- */
-const ROBOT_SENDER = /^(no-?reply|do-?not-?reply|noreply|email|alerts?|notifications?|info|support|admin)@/i;
-
+/** The group's reply-to address. The RULE lives in lib/tenders/display.ts so the card and
+ *  the email cannot disagree about who to contact — they did, until 2026-10-01. */
 function senderContact<T extends { row: Record<string, unknown> }>(members: T[]): string | null {
   for (const m of members) {
-    const from = (m.row.email_from as string | null)?.trim();
-    if (!from) continue;
-    if (ROBOT_SENDER.test(from)) continue;
-    if (/@ausdilaps\.com\.au$/i.test(from)) continue;
-    return from;
+    const from = replyableSender(m.row.email_from as string | null);
+    if (from) return from;
   }
   return null;
 }

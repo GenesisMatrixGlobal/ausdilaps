@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { MAX_LIST_ROWS, STALLED_RUN_MS, WINDOW_DAYS } from "./config";
 import { MIN_LEAD_TIME_MS, isActionable } from "./actionable";
+import { replyableSender } from "./display";
 import { displayTitle, groupItems, type ItemGroup } from "./group";
 import { SOURCES } from "./sources";
 import { mailboxConfigured } from "./sources/mailbox";
@@ -100,6 +101,8 @@ type ItemView = {
   classifiedAt: string | null;
   model: string | null;
   senderTrusted: boolean;
+  /** Who emailed us. The submission contact for a direct invitation — see emailFromOf(). */
+  emailFrom: string | null;
   injectionSuspected: boolean;
   forwardedAt: string | null;
   /** tender_item_status. 'archived' is what Dismiss sets. */
@@ -134,6 +137,8 @@ export type GroupView = {
    */
   siteLocation: string | null;
   contact: string | null;
+  /** The address to reply to when there is no portal link; null when only a robot wrote. */
+  emailFrom: string | null;
 };
 
 type RunView = {
@@ -183,7 +188,7 @@ async function query(isAdmin: boolean) {
     db
       .from("tender_items")
       .select(
-        "id, title, agency, site_location, contact, jurisdiction, url, closes_at, source_slug, relevance, confidence, services, model_summary, model_reasoning, classified_by, classified_at, model, status, reviewed_at, sender_trusted, injection_suspected, forwarded_at, created_at"
+        "id, title, agency, site_location, contact, jurisdiction, url, closes_at, source_slug, relevance, confidence, services, model_summary, model_reasoning, classified_by, classified_at, model, status, reviewed_at, sender_trusted, injection_suspected, forwarded_at, created_at, email_from"
       )
       .gte("created_at", since)
       .order("created_at", { ascending: false })
@@ -199,7 +204,7 @@ async function query(isAdmin: boolean) {
     db
       .from("tender_items")
       .select(
-        "id, title, agency, site_location, contact, jurisdiction, url, closes_at, source_slug, relevance, confidence, services, model_summary, model_reasoning, classified_by, classified_at, model, status, reviewed_at, sender_trusted, injection_suspected, forwarded_at, created_at"
+        "id, title, agency, site_location, contact, jurisdiction, url, closes_at, source_slug, relevance, confidence, services, model_summary, model_reasoning, classified_by, classified_at, model, status, reviewed_at, sender_trusted, injection_suspected, forwarded_at, created_at, email_from"
       )
       .lt("created_at", since)
       .in("relevance", ["match", "maybe"])
@@ -353,6 +358,7 @@ async function query(isAdmin: boolean) {
     classifiedAt: (i.classified_at as string | null) ?? null,
     model: (i.model as string | null) ?? null,
     senderTrusted: (i.sender_trusted as boolean) ?? false,
+    emailFrom: ((i.email_from as string | null) ?? null) || null,
     injectionSuspected: (i.injection_suspected as boolean) ?? false,
     forwardedAt: (i.forwarded_at as string | null) ?? null,
     status: (i.status as string) ?? "new",
@@ -466,6 +472,7 @@ function toGroupView(g: ItemGroup<ItemView>): GroupView {
     state: groupState(g.members),
     count: g.count,
     siteLocation: firstOf((m) => m.siteLocation),
+    emailFrom: firstOf((m) => replyableSender(m.emailFrom)),
     contact: firstOf((m) => m.contact),
     title: displayTitle({ title: g.lead.title, agency: g.lead.agency, summary: g.lead.summary }),
     lead: g.lead,

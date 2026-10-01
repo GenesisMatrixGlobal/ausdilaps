@@ -920,8 +920,21 @@ function GroupCard({
               <>
                 <span className="opacity-40">·</span>
                 {/* No portal: the only URL we hold is a deep link into the tenders@ mailbox,
-                    which nobody else can open. Say so rather than offering it. */}
-                <span className="italic">invitation by email</span>
+                    which nobody else can open. Say so — and name the address to reply to,
+                    which IS the submission contact for a direct invitation. The handoff
+                    email has said this all along; the card used to stop at "invitation by
+                    email" and leave the reader to go digging. */}
+                <span className="italic">
+                  invitation by email
+                  {group.emailFrom ? (
+                    <>
+                      {" — reply to "}
+                      <a href={`mailto:${group.emailFrom}`} className="not-italic hover:text-ad-steel hover:underline">
+                        {group.emailFrom}
+                      </a>
+                    </>
+                  ) : null}
+                </span>
               </>
             )}
           </div>

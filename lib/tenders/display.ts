@@ -59,3 +59,26 @@ export function sameParty(a: string | null | undefined, b: string | null | undef
   const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   return norm(a) === norm(b);
 }
+
+/**
+ * The sending address, but only when replying to it would reach a person.
+ *
+ * ⚠️ This duplicated logic lived only in app/api/tenders/send/route.ts, so the handoff email
+ * said "Invitation by email — reply to maira.barbosa@seymourwhyte.com.au" while the tool's
+ * own card for the same item said just "invitation by email". Rhys asked for the address on
+ * the card; sharing the rule is what stops the two surfaces disagreeing again.
+ *
+ * Useless for the aggregators, whose mail comes from `email@tendersearch.com.au` and
+ * `no-reply@felix.net`, and actively misleading for our own staff forwarding something on:
+ * "reply to kylie.c@ausdilaps.com.au" tells the reader to ring a colleague about a tender
+ * she also just received.
+ */
+const ROBOT_SENDER = /^(no-?reply|do-?not-?reply|noreply|email|alerts?|notifications?|info|support|admin)@/i;
+
+export function replyableSender(from: string | null | undefined): string | null {
+  const value = from?.trim();
+  if (!value) return null;
+  if (ROBOT_SENDER.test(value)) return null;
+  if (/@ausdilaps\.com\.au$/i.test(value)) return null;
+  return value;
+}

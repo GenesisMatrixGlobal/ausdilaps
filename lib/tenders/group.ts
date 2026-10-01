@@ -1,3 +1,5 @@
+import { titleSimilarity } from "./redundancy";
+
 /**
  * Collapsing the same tender arriving many times into one opportunity.
  *
@@ -42,6 +44,15 @@ export type Groupable = {
 export type ItemGroup<T> = {
   /** Stable across renders and safe as a React key or a form value. */
   key: string;
+  /**
+   * Every exact key that was folded into this group, `key` included.
+   *
+   * ⚠️ Read this, not `key`, when looking a group up in storage. A handoff code is keyed on
+   * the group key it had WHEN IT WAS SENT, and the cross-source merge below can change which
+   * of two keys wins — so a lookup on `key` alone would mint a second code for an opportunity
+   * that already has one, and the email and Salesforce would disagree.
+   */
+  mergedKeys: string[];
   /** The row shown as the headline — highest confidence, newest as the tie-break. */
   lead: T;
   /** Every row in the group, lead included. Never a subset: nothing is dropped. */
@@ -121,12 +132,75 @@ export function groupItems<T extends Groupable>(items: readonly T[]): ItemGroup<
     else byKey.set(key, [item]);
   }
 
-  return [...byKey.entries()].map(([key, members]) => ({
-    key,
+  const buckets = [...byKey.entries()].map(([key, members]) => ({ keys: [key], members }));
+
+  // ── Second pass: the SAME tender from two different portals ──────────────────────────
+  //
+  // The exact key cannot see it, because the portals title it differently. Bega Valley Shire
+  // Council's asset revaluation reached us as "Water and Sewer Asset Revaluation, Data
+  // Validation and Condition Assessment" from TenderSearch and as "RFQ 2627-002 - Water and
+  // Sewer Asset Revaluation, …" from VendorPanel — one string with a reference number bolted
+  // on the front, which is a different normalised title and so a second card, a second code
+  // and a second Salesforce record for one job.
+  //
+  // Merging here rather than at ingest keeps the module's one rule intact: nothing is
+  // deleted, both portals' links stay on the card, and the count line says it arrived twice.
+  // A merge that turns out to be wrong is undone by changing a threshold, not by recovering
+  // a row that was never stored.
+  for (let i = 0; i < buckets.length; i++) {
+    for (let j = buckets.length - 1; j > i; j--) {
+      if (!sameOpportunity(pickLead(buckets[i].members), pickLead(buckets[j].members))) continue;
+      buckets[i].members.push(...buckets[j].members);
+      buckets[i].keys.push(...buckets[j].keys);
+      buckets.splice(j, 1);
+    }
+  }
+
+  return buckets.map(({ keys, members }) => ({
+    // ⚠️ The SMALLEST key, not the first. Buckets are ordered by first appearance, so taking
+    // the first would make the key depend on which portal happened to email first — and the
+    // key is what a handoff code is stored against. Sorted, it is the same whichever order
+    // the night's mail arrives in.
+    key: [...keys].sort()[0],
+    mergedKeys: [...keys].sort(),
     lead: pickLead(members),
     members,
     count: members.length,
   }));
+}
+
+/**
+ * How alike two titles must be before two SOURCES are called one opportunity.
+ *
+ * Deliberately stricter than redundancy.ts's SAME_TENDER_AT (0.4). That threshold decides
+ * whether to mention a pair in a report a person reads; this one merges two cards without
+ * asking, so it has to be wrong far less often. Measured on the live queue: of 43 cross-source
+ * pairs sharing a closing date, exactly one reached 0.4 at all — the Bega pair, at 0.889 — so
+ * 0.6 is a wide margin rather than a fine cut.
+ */
+export const MERGE_AT = 0.6;
+
+/**
+ * Two groups describing one job.
+ *
+ * All three conditions are required, and the AGENCY is what makes this safe: two councils can
+ * both run a condition audit closing the same day with near-identical wording, and they are
+ * two tenders. Same buyer, same deadline and near-identical wording is one.
+ *
+ * ⚠️ A missing agency or closing date NEVER merges. Blank values matching each other would
+ * collapse every untitled, undated row into a single card — the exact failure groupKey's
+ * agency fallback is written to avoid.
+ */
+function sameOpportunity(a: Groupable, b: Groupable): boolean {
+  const closesA = closingOf(a)?.slice(0, 10);
+  const closesB = closingOf(b)?.slice(0, 10);
+  if (!closesA || !closesB || closesA !== closesB) return false;
+
+  const agencyA = normaliseTitle(a.agency ?? "");
+  const agencyB = normaliseTitle(b.agency ?? "");
+  if (!agencyA || !agencyB || agencyA !== agencyB) return false;
+
+  return titleSimilarity(a.title, b.title) >= MERGE_AT;
 }
 
 /**

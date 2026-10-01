@@ -216,7 +216,7 @@ export async function POST(req: NextRequest) {
     // no handoff email.
     const withCodes = await Promise.all(
       items.map(async (item, i) => {
-        const handoff = await allocateHandoff(item, groups[i].key, user?.id ?? null);
+        const handoff = await allocateHandoff(item, groups[i].key, user?.id ?? null, groups[i].mergedKeys);
         return { ...item, handoffCode: handoff?.code ?? null } satisfies HandoffItem;
       })
     );

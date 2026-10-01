@@ -63,17 +63,28 @@ function sfDate(iso: string | null): string | null {
 export async function allocateHandoff(
   item: HandoffItem,
   groupKey: string,
-  userId: string | null
+  userId: string | null,
+  /**
+   * Every exact key folded into this opportunity (ItemGroup.mergedKeys).
+   *
+   * ⚠️ Load-bearing once cross-source merging exists. A code is stored against the key the
+   * opportunity had when it was SENT; if two sources later merge, the winning key can be the
+   * other one, and looking up only that would mint a SECOND code for a job that already has
+   * one — leaving the email and Salesforce pointing at different records.
+   */
+  siblingKeys: string[] = []
 ): Promise<HandoffRecord | null> {
   try {
     const db = createAdminClient();
 
-    const { data: existing, error: readError } = await db
+    const keys = [...new Set([groupKey, ...siblingKeys])];
+    const { data: found, error: readError } = await db
       .from("tender_handoffs")
       .select("code, group_key, project_name")
-      .eq("group_key", groupKey)
-      .maybeSingle();
+      .in("group_key", keys)
+      .limit(1);
     if (readError) throw readError;
+    const existing = found?.[0];
     if (existing) {
       return {
         code: existing.code as string,

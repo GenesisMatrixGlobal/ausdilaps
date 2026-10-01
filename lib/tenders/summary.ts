@@ -140,6 +140,8 @@ export type GroupView = {
   emailFrom: string | null;
   /** `TW-4F7K2`, once this opportunity has been sent. Null before that. */
   handoffCode: string | null;
+  /** Every exact group key folded in — see ItemGroup.mergedKeys. Used for code lookup. */
+  mergedKeys: string[];
 };
 
 type RunView = {
@@ -390,7 +392,12 @@ async function query(isAdmin: boolean) {
   )
     .map(toGroupView)
     // Attached after grouping: toGroupView is module scope and cannot see this request's map.
-    .map((g) => ({ ...g, handoffCode: codeByGroup.get(g.key) ?? null }));
+    // ⚠️ Any of the MERGED keys, not just g.key. A code was stored against whatever key the
+    // opportunity had when it was sent, and the cross-source merge can change which key wins.
+    .map((g) => ({
+      ...g,
+      handoffCode: g.mergedKeys.map((k) => codeByGroup.get(k)).find(Boolean) ?? null,
+    }));
 
   // A tender that closes inside MIN_LEAD_TIME cannot realistically be priced and submitted, so
   // it is not work — it is noise on the one screen that is meant to be a work queue. Dropped
@@ -481,6 +488,7 @@ function toGroupView(g: ItemGroup<ItemView>): Omit<GroupView, "handoffCode"> {
 
   return {
     key: g.key,
+    mergedKeys: g.mergedKeys,
     state: groupState(g.members),
     count: g.count,
     siteLocation: firstOf((m) => m.siteLocation),

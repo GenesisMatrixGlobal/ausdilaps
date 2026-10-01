@@ -22,7 +22,7 @@
 
 import { parseMessages, type GraphMessage, type EmailSource } from "../lib/tenders/sources/mailbox";
 import { detectParseMode, contentLinks, senderDomain, slugForDomain } from "../lib/tenders/senders";
-import { displayTitle, groupItems, groupKey } from "../lib/tenders/group";
+import { displayTitle, groupItems, groupKey, MERGE_AT } from "../lib/tenders/group";
 import { extractNotices, extractorFor } from "../lib/tenders/sources/extract";
 import type { ExtractSource } from "../lib/tenders/sources/extract/types";
 import { parseDayMonthYear } from "../lib/tenders/sources/extract/date";
@@ -468,6 +468,47 @@ ok("a real contact IS shown when it differs from the client",
 ok("the location is labelled Location, not Address",
    /LOCATION|Location/.test(plain) && !/>Address</.test(plain));
 // The live safety warning survives — it is about the text below, not about our process.
+// ── Cross-source merging ─────────────────────────────────────────────────────────────────
+//
+// The SAME tender from two portals, which the exact key cannot see because they title it
+// differently. Real case: Bega Valley Shire Council's asset revaluation arrived as two cards,
+// two codes and two Salesforce records for one job.
+const BEGA = [
+  { id: "ts", title: "Water and Sewer Asset Revaluation, Data Validation and Condition Assessment",
+    agency: "Bega Valley Shire Council", closesAt: "2026-10-23T00:00:00+00:00", confidence: 0.8, source: "email:tendersearch.com.au" },
+  { id: "vp", title: "RFQ 2627-002 - Water and Sewer Asset Revaluation, Data Validation and Condition Assessment",
+    agency: "Bega Valley Shire Council", closesAt: "2026-10-23T00:00:00+00:00", confidence: 0.75, source: "vendorpanel-public" },
+];
+const begaGroups = groupItems(BEGA);
+ok("the same tender from two portals becomes ONE opportunity", begaGroups.length === 1, `${begaGroups.length} groups`);
+ok("...keeping BOTH rows — nothing is dropped", begaGroups[0]?.count === 2);
+ok("...and recording both keys, so an existing code is still found",
+   (begaGroups[0]?.mergedKeys.length ?? 0) === 2, JSON.stringify(begaGroups[0]?.mergedKeys));
+// The key is what a handoff code is stored against, so it must not depend on arrival order.
+ok("the key does not depend on which portal emailed first",
+   groupItems(BEGA).map((g) => g.key).join() === groupItems([...BEGA].reverse()).map((g) => g.key).join());
+
+// ⚠️ The agency is what makes merging safe. Everything below must stay SEPARATE.
+type BegaRow = { id: string; title: string; agency: string | null; closesAt: string | null; confidence: number; source: string };
+const vary = (over: Partial<BegaRow>) => groupItems([BEGA[0], { ...BEGA[1], ...over }] as BegaRow[]).length;
+ok("a DIFFERENT council closing the same day stays separate",
+   vary({ agency: "Snowy Valleys Council" }) === 2);
+ok("the same council on a DIFFERENT day stays separate",
+   vary({ closesAt: "2026-11-30T00:00:00+00:00" }) === 2);
+ok("an unrelated job from the same council on the same day stays separate",
+   vary({ title: "Supply and install playground equipment" }) === 2);
+// Blank values matching each other would collapse every untitled undated row into one card.
+ok("a missing agency never merges", vary({ agency: null }) === 2);
+ok("a missing closing date never merges", vary({ closesAt: null }) === 2);
+ok("merging is stricter than the report threshold", MERGE_AT > SAME_TENDER_AT);
+
+// Within-source grouping must be untouched by any of this.
+ok("five copies from ONE source still collapse to one",
+   groupItems(Array.from({ length: 5 }, (_, i) => ({
+     id: `f${i}`, title: "126379 - Dilapidation Survey - Properties",
+     agency: "Seymour Whyte", closesAt: null, confidence: 0.9,
+   }))).length === 1);
+
 // ── Site address ─────────────────────────────────────────────────────────────────────────
 //
 // Rhys, after testing TW-HTUUT: street came through as "City of Stonnington, VIC" and city as

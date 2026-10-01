@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { MAX_LIST_ROWS, STALLED_RUN_MS, WINDOW_DAYS } from "./config";
+import { MIN_LEAD_TIME_MS, isActionable } from "./actionable";
 import { displayTitle, groupItems, type ItemGroup } from "./group";
 import { SOURCES } from "./sources";
 import { mailboxConfigured } from "./sources/mailbox";
@@ -40,7 +41,14 @@ function emptySummary(isAdmin: boolean, unavailable: string | null) {
     windowDays: WINDOW_DAYS,
     truncated: false,
     unavailable,
-    stats: { scans: 0, scanned: 0, open: 0, lastScanAt: null as string | null, lastScanStatus: null as string | null },
+    stats: {
+      scans: 0,
+      scanned: 0,
+      open: 0,
+      lastScanAt: null as string | null,
+      lastScanStatus: null as string | null,
+      closedUnreviewed: 0,
+    },
     queues: { pending: 0, stalled: 0 },
     funnel: { fetched: 0, fresh: 0, duplicate: 0, prefiltered: 0, classified: 0, matched: 0, review: 0, sent: 0 },
     sources: [] as SourceView[],
@@ -160,7 +168,7 @@ async function query(isAdmin: boolean) {
   const now = Date.now();
   const since = new Date(now - WINDOW_DAYS * DAY).toISOString();
 
-  const [runRows, sourceRows, itemRows, pendingCount] = await Promise.all([
+  const [runRows, sourceRows, itemRows, pendingCount, stillOpenRows, closedCount] = await Promise.all([
     db
       .from("tender_scan_runs")
       .select(
@@ -183,6 +191,35 @@ async function query(isAdmin: boolean) {
     // Queue depth, deliberately NOT windowed: an item stuck pending since last month is
     // exactly what this is for, and hiding it behind the report window would defeat it.
     db.from("tender_items").select("id", { count: "exact", head: true }).eq("relevance", "pending"),
+    // ⚠️ Still-open opportunities OLDER than the window. Without this the review list showed
+    // 5 of 48 and the other 43 were unreachable — see lib/tenders/actionable.ts. The funnel
+    // above stays windowed and these rows never reach it: they are merged into the GROUPS
+    // only, so "a fortnight of pipeline activity" and "what is still worth doing" each keep
+    // their own, labelled, meaning.
+    db
+      .from("tender_items")
+      .select(
+        "id, title, agency, site_location, contact, jurisdiction, url, closes_at, source_slug, relevance, confidence, services, model_summary, model_reasoning, classified_by, classified_at, model, status, reviewed_at, sender_trusted, injection_suspected, forwarded_at, created_at"
+      )
+      .lt("created_at", since)
+      .in("relevance", ["match", "maybe"])
+      .is("forwarded_at", null)
+      .neq("status", "archived")
+      .or(`closes_at.is.null,closes_at.gte.${new Date(now + MIN_LEAD_TIME_MS).toISOString()}`)
+      .order("created_at", { ascending: false })
+      .limit(MAX_LIST_ROWS),
+    // ⚠️ A COUNT, not a derivation from the rows above. Closed items are never fetched — that
+    // is the point of the deadline rule — so counting them in code could only ever see the
+    // handful that happen to be inside the window, and would quietly report "3 closed" when
+    // the real figure was 27. An undercount presented as a total is worse than no figure.
+    // Counts ROWS where the lists count opportunities, so it is labelled "notices".
+    db
+      .from("tender_items")
+      .select("id", { count: "exact", head: true })
+      .in("relevance", ["match", "maybe"])
+      .is("forwarded_at", null)
+      .neq("status", "archived")
+      .lt("closes_at", new Date(now + MIN_LEAD_TIME_MS).toISOString()),
   ]);
 
   const recent = runRows.data ?? [];
@@ -297,7 +334,7 @@ async function query(isAdmin: boolean) {
     sent: countItems((i) => i.forwarded_at !== null),
   };
 
-  const itemViews: ItemView[] = items.map((i) => ({
+  const toItemView = (i: (typeof items)[number]): ItemView => ({
     id: i.id as string,
     title: i.title as string,
     agency: (i.agency as string | null) ?? null,
@@ -321,13 +358,32 @@ async function query(isAdmin: boolean) {
     status: (i.status as string) ?? "new",
     reviewedAt: (i.reviewed_at as string | null) ?? null,
     createdAt: i.created_at as string,
-  }));
+  });
+
+  const itemViews: ItemView[] = items.map(toItemView);
+
+  // Merged for GROUPING only. Windowed rows win on id, so a row that is both recent and still
+  // open is not counted twice.
+  const seen = new Set(itemViews.map((i) => i.id));
+  const groupable: ItemView[] = [
+    ...itemViews,
+    ...((stillOpenRows.data ?? []) as typeof items).map(toItemView).filter((i) => !seen.has(i.id)),
+  ];
 
   // Only match/maybe are grouped — a no_match row is never an opportunity, and grouping the
   // 130 prefiltered rejects would cost work nobody looks at.
-  const groups = groupItems(itemViews.filter((i) => i.relevance === "match" || i.relevance === "maybe")).map(
-    toGroupView
-  );
+  const allGroups = groupItems(
+    groupable.filter((i) => i.relevance === "match" || i.relevance === "maybe")
+  ).map(toGroupView);
+
+  // A tender that closes inside MIN_LEAD_TIME cannot realistically be priced and submitted, so
+  // it is not work — it is noise on the one screen that is meant to be a work queue. Dropped
+  // from the list and COUNTED, never silently discarded: the count is reported under the
+  // filter row so "where did it go" has an answer on screen.
+  //
+  // This is also what clears the backlog without anyone triaging it. On the live queue all 27
+  // tracking-URL junk rows carried a closing date and every one had passed.
+  const groups = allGroups.filter((g) => g.state !== "queue" || isActionable(g.lead.closesAt, now));
 
   return {
     // Captured server-side so every relative timestamp in the UI is measured from one
@@ -345,6 +401,8 @@ async function query(isAdmin: boolean) {
       open: groups.filter((g) => g.state === "queue").length,
       lastScanAt: lastRun?.at ?? null,
       lastScanStatus: lastRun?.status ?? null,
+      /** Opportunities whose closing date passed before anyone looked. Reported, not hidden. */
+      closedUnreviewed: closedCount.count ?? 0,
     },
     queues: {
       pending: pendingCount.count ?? 0,

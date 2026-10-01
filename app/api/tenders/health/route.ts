@@ -5,6 +5,7 @@ import { isApiAdmin } from "@/lib/auth/is-staff";
 import { safeText } from "@/lib/html";
 import { STALE_TRIAGE_DAYS, STALLED_RUN_MS, WINDOW_DAYS } from "@/lib/tenders/config";
 import { findRedundant } from "@/lib/tenders/redundancy";
+import { isActionable } from "@/lib/tenders/actionable";
 
 /**
  * The morning invariant check — 9am Brisbane, before anyone opens the inbox.
@@ -42,15 +43,18 @@ async function handle(req: NextRequest, allowSession: boolean) {
       db.from("tender_scan_runs").select("started_at, status").eq("status", "succeeded").order("started_at", { ascending: false }).limit(1),
       db.from("tender_sources").select("slug, label, is_enabled, consecutive_empty, consecutive_failures, last_error, alert_on_quiet"),
       db.from("tender_items").select("id", { count: "exact", head: true }).in("relevance", ["match", "maybe"]).is("forwarded_at", null).neq("status", "archived"),
+      // ⚠️ `closes_at` is selected and the ACTIONABLE ones are counted in code, not here —
+      // this alert used to count every untriaged row and reported 46 while the tool showed 5,
+      // because most had already closed and the tool (rightly) hides those. An alarm that
+      // names a number you cannot reach is how an inbox learns to archive this email unread.
       db
         .from("tender_items")
-        .select("id, title, closes_at", { count: "exact" })
+        .select("id, title, closes_at")
         .in("relevance", ["match", "maybe"])
         .is("forwarded_at", null)
         .neq("status", "archived")
         .lt("created_at", new Date(Date.now() - STALE_TRIAGE_DAYS * 86_400_000).toISOString())
-        .order("created_at", { ascending: true })
-        .limit(5),
+        .order("created_at", { ascending: true }),
       db.from("tender_items").select("id", { count: "exact", head: true }).eq("relevance", "pending"),
       db
         .from("tender_scan_runs")
@@ -124,16 +128,17 @@ async function handle(req: NextRequest, allowSession: boolean) {
     // in shadow mode. A daily alert for a chosen setting is how an inbox learns to archive
     // this email unread.
     const waiting = untriaged.count ?? 0;
-    const stuck = stale.count ?? 0;
+    const stillOpen = (stale.data ?? []).filter((i) => isActionable(i.closes_at as string | null, Date.now()));
+    const stuck = stillOpen.length;
 
     if (stuck > 0) {
-      const oldest = (stale.data ?? [])
+      const oldest = stillOpen
         .slice(0, 3)
         .map((i) => (i.title as string).slice(0, 60))
         .join("; ");
       checks.push({
         level: "critical",
-        title: `${stuck} tender(s) untouched for over ${STALE_TRIAGE_DAYS} days`,
+        title: `${stuck} open tender(s) untouched for over ${STALE_TRIAGE_DAYS} days`,
         detail: `Nobody has sent or dismissed these. Oldest: ${oldest}`,
       });
     }

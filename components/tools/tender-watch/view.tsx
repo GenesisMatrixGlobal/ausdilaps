@@ -430,7 +430,18 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
               </h3>
               {filter === "queue" && (
                 <p className="mt-0.5 text-xs text-ad-muted">
-                  Sending emails the details to the team so they can be added to the portal.
+                  Anything still open, however long ago it arrived. Sending emails the details to the team so
+                  they can be added to the portal.
+                  {/* Closed opportunities are dropped from this list, so say so rather than
+                      leaving a reader to wonder where one went. */}
+                  {data.stats.closedUnreviewed > 0 && (
+                    <>
+                      {" "}
+                      <span className="text-ad-muted/80">
+                        {data.stats.closedUnreviewed} notice{data.stats.closedUnreviewed === 1 ? " has" : "s have"} closed without review and {data.stats.closedUnreviewed === 1 ? "is" : "are"} not shown.
+                      </span>
+                    </>
+                  )}
                 </p>
               )}
             </div>

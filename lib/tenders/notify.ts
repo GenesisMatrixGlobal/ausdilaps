@@ -46,6 +46,8 @@ export type HandoffItem = {
   contact: string | null;
   /** Who emailed us, raw. senderOrigin() decides contact vs provenance. */
   emailFrom?: string | null;
+  /** `TW-4F7K2` — typed into the New Opportunity flow to pre-fill this tender. */
+  handoffCode?: string | null;
   closesAt: string | null;
   relevance: "match" | "maybe";
   confidence: number | null;
@@ -136,6 +138,16 @@ function renderItem(item: HandoffItem, index: number): string {
   // "agency · location · closes · host" is fine when the reader is only deciding whether to
   // click through, and useless when they are transcribing four fields out of it.
   const rows: [string, string][] = [];
+  // ⚠️ FIRST row, and labelled for the action rather than for us. This is the one thing the
+  // reader has to carry into Salesforce, and anything above it is read first and then
+  // re-read when they realise they need the code.
+  if (item.handoffCode) {
+    rows.push([
+      "Code",
+      `<span style="font-family:monospace;font-size:15px;font-weight:700;letter-spacing:1px;color:${BRAND.ink}">${safeText(item.handoffCode, 20)}</span>
+       <span style="color:${BRAND.muted};font-size:11px">&nbsp; paste into New Opportunity</span>`,
+    ]);
+  }
   if (item.agency) rows.push(["Client", safeText(item.agency, 160)]);
   // "Location", not "Address": what the sources give is an LGA or a region
   // ("Murray River Council LGA, NSW", "Victoria (statewide arterial road network)"), and

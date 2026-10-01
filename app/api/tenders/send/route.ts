@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { TENDER_WATCH_ALLOW_UNAUTHED_ENV, TENDER_WATCH_DEPARTMENTS } from "@/lib/tenders/config";
 import { displayTitle, groupItems } from "@/lib/tenders/group";
 import { sendHandoff, type HandoffItem } from "@/lib/tenders/notify";
+import { allocateHandoff, pushHandoffsToSalesforce } from "@/lib/tenders/handoff-store";
 import { loadTenderSummary } from "@/lib/tenders/summary";
 
 /**
@@ -153,7 +154,9 @@ export async function POST(req: NextRequest) {
 
     // Grouped with the SAME function the screen uses, so the email cannot itemise the queue
     // differently from the page the sender was looking at.
-    const items: HandoffItem[] = groupItems(
+    // Kept as a variable because the handoff code is allocated per GROUP, and g.key is the
+    // only stable identity for one — the members are a read-time collapse, not a stored set.
+    const groups = groupItems(
       fresh.map((r) => ({
         id: r.id as string,
         title: r.title as string,
@@ -162,7 +165,9 @@ export async function POST(req: NextRequest) {
         confidence: (r.confidence as number | null) ?? null,
         row: r,
       }))
-    ).map((g) => {
+    );
+
+    const items: HandoffItem[] = groups.map((g) => {
       const bySource = new Map<string, { label: string; url: string | null }>();
       for (const m of [...g.members].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))) {
         const slug = m.row.source_slug as string;
@@ -199,6 +204,23 @@ export async function POST(req: NextRequest) {
       } satisfies HandoffItem;
     });
 
+    // ── Handoff codes ──
+    //
+    // Allocated BEFORE the email is rendered, because the code is the most useful thing in
+    // it. Allocation is keyed on the group and idempotent, so previewing to yourself and
+    // then sending for real produce the SAME code — otherwise the copy you read and the
+    // record in Salesforce would disagree.
+    //
+    // ⚠️ Never blocks the send. allocateHandoff returns null on any failure and the block
+    // simply renders without a Code row: a handoff email with no code is worth far more than
+    // no handoff email.
+    const withCodes = await Promise.all(
+      items.map(async (item, i) => {
+        const handoff = await allocateHandoff(item, groups[i].key, user?.id ?? null);
+        return { ...item, handoffCode: handoff?.code ?? null } satisfies HandoffItem;
+      })
+    );
+
     const sentBy = user?.fullName ?? user?.email ?? null;
 
     // A dry run needs an address to send to, and the session is the only source for it.
@@ -210,7 +232,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await sendHandoff({
-      items,
+      items: withCodes,
       note,
       sentBy,
       testMode: process.env.TENDER_TEST_MODE === "true",
@@ -244,6 +266,16 @@ export async function POST(req: NextRequest) {
         ...(await loadTenderSummary(!!user && isAdmin(user))),
       });
     }
+
+    // ⚠️ AFTER the real send only, and awaited rather than fired and forgotten — a Vercel
+    // function can be frozen the moment it responds, so a floating promise here would land
+    // sometimes and not others. It never throws; a failure is recorded on the row (sf_error)
+    // and the code still works the moment someone creates Tender_Watch_Item__c in the org.
+    //
+    // Not on a preview: a dry run must leave both systems exactly as they were.
+    await pushHandoffsToSalesforce(
+      withCodes.map((i) => i.handoffCode).filter((c): c is string => !!c)
+    );
 
     const { error: markError } = await db
       .from("tender_items")

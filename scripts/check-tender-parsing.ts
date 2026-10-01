@@ -29,6 +29,7 @@ import { parseDayMonthYear } from "../lib/tenders/sources/extract/date";
 import { findRedundant, titleSimilarity, SAME_TENDER_AT } from "../lib/tenders/redundancy";
 import { followableNoticeUrl, sameParty, senderOrigin } from "../lib/tenders/display";
 import { isActionable } from "../lib/tenders/actionable";
+import { generateHandoffCode, normaliseHandoffCode, HANDOFF_ALPHABET } from "../lib/tenders/handoff-code";
 import { parseLocality, projectPhrases } from "../lib/tenders/salesforce-match";
 import { renderHandoff, idempotencyKey, type HandoffItem } from "../lib/tenders/notify";
 import { readFileSync } from "node:fs";
@@ -466,6 +467,39 @@ ok("a real contact IS shown when it differs from the client",
 ok("the location is labelled Location, not Address",
    /LOCATION|Location/.test(plain) && !/>Address</.test(plain));
 // The live safety warning survives — it is about the text below, not about our process.
+// ── Handoff codes ────────────────────────────────────────────────────────────────────────
+//
+// Typed into Salesforce off a phone screen, and sometimes read aloud, so the confusable
+// characters must not be in the alphabet at all.
+for (const bad of ["O", "0", "I", "1", "L", "S", "5", "Z", "2", "B", "8"]) {
+  ok(`alphabet excludes ${bad}`, !HANDOFF_ALPHABET.includes(bad));
+}
+ok("codes look like TW-XXXXX", /^TW-[A-Z0-9]{5}$/.test(generateHandoffCode()));
+ok("codes are not predictable",
+   new Set(Array.from({ length: 200 }, generateHandoffCode)).size > 190);
+
+// Forgiving on input: somebody will drop the dash, lower-case it, or paste a trailing space.
+for (const [raw, want] of [
+  ["TW-4F7K9", "TW-4F7K9"],
+  ["tw-4f7k9", "TW-4F7K9"],
+  ["TW4F7K9", "TW-4F7K9"],
+  ["  tw 4f7k9 ", "TW-4F7K9"],
+  ["4F7K9", "TW-4F7K9"],
+  // Strict where it matters — a character outside the alphabet is REJECTED, never corrected
+  // into a different valid code that would pre-fill the wrong tender.
+  ["TW-4F7K0", null],
+  ["TW-4F7KO", null],
+  ["TW-4F7K", null],
+  ["TW-4F7K99", null],
+  ["", null],
+  [null, null],
+] as [string | null, string | null][]) {
+  ok(`code: ${JSON.stringify(raw).padEnd(14)} -> ${want ?? "null"}`, normaliseHandoffCode(raw) === want, String(normaliseHandoffCode(raw)));
+}
+// Round-trip: anything we mint must be accepted back.
+ok("every generated code normalises to itself",
+   Array.from({ length: 300 }, generateHandoffCode).every((c) => normaliseHandoffCode(c) === c));
+
 // ── Repeated category prefix ─────────────────────────────────────────────────────────────
 //
 // TenderSearch prefixes a notice with its CATEGORY, and when that is also how the buyer

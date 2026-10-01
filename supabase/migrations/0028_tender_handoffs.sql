@@ -1,5 +1,11 @@
 -- Tender Watch -> Salesforce handoff codes.
 --
+-- APPLIED to Sydney (crqfxdywgxtxgpwrojyc) 2026-10-01, via the SQL editor in the Browser
+-- pane — the Management API token is still expired. Verified afterwards through PostgREST:
+-- the table is reachable, every column handoff-store writes accepts a value, and the unique
+-- index on group_key rejects a second row for the same opportunity (which is what makes
+-- allocation idempotent).
+--
 -- A staff member reads the handoff email, opens the "New Opportunity + TenderWatch" screen
 -- flow and types one short code. The flow looks that code up in Salesforce and pre-fills
 -- everything we already know, leaving them the judgement fields (value range, priority,

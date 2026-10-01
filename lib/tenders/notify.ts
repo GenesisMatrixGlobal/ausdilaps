@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { safeExternalUrl, safeText, stripHeaderChars } from "@/lib/html";
 import { SERVICE_LABELS, type ServiceKey } from "./profile";
-import { followableNoticeUrl, sameParty } from "./display";
+import { followableNoticeUrl, sameParty, senderOrigin } from "./display";
 
 /**
  * The handoff email — the product.
@@ -44,6 +44,8 @@ export type HandoffItem = {
   agency: string | null;
   siteLocation: string | null;
   contact: string | null;
+  /** Who emailed us, raw. senderOrigin() decides contact vs provenance. */
+  emailFrom?: string | null;
   closesAt: string | null;
   relevance: "match" | "maybe";
   confidence: number | null;
@@ -160,7 +162,16 @@ function renderItem(item: HandoffItem, index: number): string {
       : // No link, and none invented. A direct email invitation genuinely has no portal —
         // the only URL we hold is Graph's deep link into the tenders@ mailbox, which nobody
         // else can open. Saying so, and naming who sent it, is the useful answer.
-        `<span style="color:${BRAND.muted}">Invitation by email${item.contact ? ` — reply to ${safeText(item.contact, 120)}` : ""}</span>`,
+        // A person to write to gets "reply to"; a platform gets "via". Replying to
+        // no-reply@felix.net reaches nobody, and wording it as a contact would send a
+        // staff member down a dead end — which is exactly what the card used to do by
+        // saying nothing at all. See senderOrigin().
+        (() => {
+          const origin = senderOrigin(item.contact ?? item.emailFrom);
+          if (!origin) return `<span style="color:${BRAND.muted}">Invitation by email</span>`;
+          const how = origin.kind === "reply" ? "reply to" : "via";
+          return `<span style="color:${BRAND.muted}">Invitation by email &mdash; ${how} ${safeText(origin.address, 160)}</span>`;
+        })(),
   ]);
 
   const factRows = rows

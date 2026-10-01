@@ -82,3 +82,28 @@ export function replyableSender(from: string | null | undefined): string | null 
   if (/@ausdilaps\.com\.au$/i.test(value)) return null;
   return value;
 }
+
+/**
+ * How to describe where an invitation came from.
+ *
+ * ⚠️ A robot address is still worth SHOWING, just not as a contact. Rhys, 2026-10-01, on the
+ * Seymour Whyte RFQ #126379: it said "invitation by email" and nothing else, because Felix
+ * sends from `no-reply@felix.net` and replyableSender (rightly) suppressed it — leaving the
+ * reader no way to tell which platform it arrived through without opening the mailbox.
+ *
+ * So the two cases get different words, because they ask for different actions:
+ *
+ *   reply → a person wrote to us; writing back is the next step, so it is a mailto
+ *   via   → a platform wrote to us; responding happens IN that platform, not by email
+ *
+ * "via kylie.c@ausdilaps.com.au" is kept for the same reason even though it is one of ours:
+ * knowing a colleague forwarded it is real provenance. It just must never read as "reply to",
+ * which would send someone to ring her about a tender she also only received.
+ */
+export type SenderOrigin = { address: string; kind: "reply" | "via" } | null;
+
+export function senderOrigin(from: string | null | undefined): SenderOrigin {
+  const value = from?.trim();
+  if (!value) return null;
+  return { address: value, kind: replyableSender(value) ? "reply" : "via" };
+}

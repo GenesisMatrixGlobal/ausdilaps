@@ -101,7 +101,11 @@ export async function POST(req: NextRequest) {
     const { data: rows, error } = await db
       .from("tender_items")
       .select(
-        "id, title, agency, site_location, contact, url, closes_at, relevance, confidence, services, model_summary, source_slug, sender_trusted, injection_suspected, forwarded_at, status"
+        // ⚠️ email_from is load-bearing, not decoration: senderContact() reads it to work out the
+        // reply-to for a direct invitation. It was MISSING from this list, so `m.row.email_from`
+        // was always undefined and every handoff said a bare "Invitation by email" with no way
+        // to reach anyone. Silent, because reading an unselected column is undefined, not an error.
+        "id, title, agency, site_location, contact, url, closes_at, relevance, confidence, services, model_summary, source_slug, sender_trusted, injection_suspected, forwarded_at, status, email_from"
       )
       .in("id", itemIds)
       .in("relevance", ["match", "maybe"]);
@@ -178,6 +182,9 @@ export async function POST(req: NextRequest) {
         // the most complete one.
         siteLocation: firstOf(g.members, (m) => m.row.site_location as string | null),
         contact: firstOf(g.members, (m) => m.row.contact as string | null) ?? senderContact(g.members),
+        // The raw sender too, so a robot address can still be shown as provenance when
+        // there is no contact at all — renderItem decides "reply to" vs "via".
+        emailFrom: firstOf(g.members, (m) => m.row.email_from as string | null),
         closesAt: g.lead.closesAt,
         // A group is only "review" if EVERY copy was a maybe — one confident match in the
         // set means the job is a match, whatever the weaker duplicates said.

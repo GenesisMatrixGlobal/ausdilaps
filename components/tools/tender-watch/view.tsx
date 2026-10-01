@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { TabBar } from "@/components/ui/tab-bar";
-import { sameParty } from "@/lib/tenders/display";
+import { sameParty, senderOrigin } from "@/lib/tenders/display";
 import { EmptyState } from "@/components/staff/empty-state";
 import { StatTiles, type Stat } from "@/components/staff/stat-tiles";
 import { buttonVariants } from "@/components/ui/button";
@@ -926,14 +926,23 @@ function GroupCard({
                     email" and leave the reader to go digging. */}
                 <span className="italic">
                   invitation by email
-                  {group.emailFrom ? (
-                    <>
-                      {" — reply to "}
-                      <a href={`mailto:${group.emailFrom}`} className="not-italic hover:text-ad-steel hover:underline">
-                        {group.emailFrom}
-                      </a>
-                    </>
-                  ) : null}
+                  {(() => {
+                    const origin = senderOrigin(group.emailFrom);
+                    if (!origin) return null;
+                    // A person gets a mailto, because writing back is the next step. A
+                    // platform gets plain text — replying to no-reply@felix.net reaches
+                    // nobody, and an inviting-looking link would say otherwise.
+                    return origin.kind === "reply" ? (
+                      <>
+                        {" — reply to "}
+                        <a href={`mailto:${origin.address}`} className="not-italic hover:text-ad-steel hover:underline">
+                          {origin.address}
+                        </a>
+                      </>
+                    ) : (
+                      <> — via <span className="not-italic">{origin.address}</span></>
+                    );
+                  })()}
                 </span>
               </>
             )}

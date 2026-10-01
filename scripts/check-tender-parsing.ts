@@ -27,7 +27,7 @@ import { extractNotices, extractorFor } from "../lib/tenders/sources/extract";
 import type { ExtractSource } from "../lib/tenders/sources/extract/types";
 import { parseDayMonthYear } from "../lib/tenders/sources/extract/date";
 import { findRedundant, titleSimilarity, SAME_TENDER_AT } from "../lib/tenders/redundancy";
-import { followableNoticeUrl, sameParty } from "../lib/tenders/display";
+import { followableNoticeUrl, sameParty, senderOrigin } from "../lib/tenders/display";
 import { isActionable } from "../lib/tenders/actionable";
 import { renderHandoff, type HandoffItem } from "../lib/tenders/notify";
 import { readFileSync } from "node:fs";
@@ -423,6 +423,33 @@ ok("...and the block says so instead of dropping the row",
    /Invitation by email/.test(mailboxEmail) && /maira\.barbosa@seymourwhyte\.com\.au/.test(mailboxEmail));
 ok("an undated tender still gets a Closes row",
    /Not stated/.test(mailboxEmail));
+
+// ── Where an invitation came from ────────────────────────────────────────────────────────
+//
+// A robot address is suppressed as a CONTACT but must still be SHOWN as provenance. Rhys,
+// 2026-10-01, on Seymour Whyte RFQ #126379: the card said "invitation by email" and nothing
+// else, because Felix sends from no-reply@felix.net.
+for (const [from, kind] of [
+  ["maira.barbosa@seymourwhyte.com.au", "reply"],
+  ["farah.rahman@fultonhogan.com.au", "reply"],
+  ["no-reply@felix.net", "via"],
+  ["email@tendersearch.com.au", "via"],
+  ["kylie.c@ausdilaps.com.au", "via"],
+] as [string, string][]) {
+  const o = senderOrigin(from);
+  ok(`origin: ${from.padEnd(36)} -> ${kind}`, o?.kind === kind, String(o?.kind));
+}
+ok("no sender at all stays null", senderOrigin(null) === null && senderOrigin("  ") === null);
+
+const robotEmail = renderHandoff({
+  items: [handoffItem({ contact: null, emailFrom: "no-reply@felix.net", sources: [{ label: "email:felix.net", url: null }] })],
+}).html;
+ok("a robot sender is shown as provenance, not as a contact",
+   /via no-reply@felix\.net/.test(robotEmail) && !/reply to no-reply/.test(robotEmail));
+ok("...and a person is still offered as a reply-to",
+   /reply to maira\.barbosa@seymourwhyte\.com\.au/.test(
+     renderHandoff({ items: [handoffItem({ contact: null, emailFrom: "maira.barbosa@seymourwhyte.com.au", sources: [{ label: "email:seymourwhyte.com.au", url: null }] })] }).html
+   ));
 
 const plain = renderHandoff({ items: [handoffItem()] }).html;
 // Triage artefacts: "flagged for review" describes a step completed by the act of sending,

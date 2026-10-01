@@ -1,7 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { MAX_LIST_ROWS, STALLED_RUN_MS, WINDOW_DAYS } from "./config";
 import { MIN_LEAD_TIME_MS, isActionable } from "./actionable";
-import { replyableSender } from "./display";
 import { displayTitle, groupItems, type ItemGroup } from "./group";
 import { SOURCES } from "./sources";
 import { mailboxConfigured } from "./sources/mailbox";
@@ -137,7 +136,7 @@ export type GroupView = {
    */
   siteLocation: string | null;
   contact: string | null;
-  /** The address to reply to when there is no portal link; null when only a robot wrote. */
+  /** Who emailed us, raw. senderOrigin() decides whether that is a contact or provenance. */
   emailFrom: string | null;
 };
 
@@ -472,7 +471,9 @@ function toGroupView(g: ItemGroup<ItemView>): GroupView {
     state: groupState(g.members),
     count: g.count,
     siteLocation: firstOf((m) => m.siteLocation),
-    emailFrom: firstOf((m) => replyableSender(m.emailFrom)),
+    // The RAW address. A robot sender is suppressed as a CONTACT but still shown as
+    // provenance, so the filtering belongs at the point of render, not here.
+    emailFrom: firstOf((m) => m.emailFrom),
     contact: firstOf((m) => m.contact),
     title: displayTitle({ title: g.lead.title, agency: g.lead.agency, summary: g.lead.summary }),
     lead: g.lead,

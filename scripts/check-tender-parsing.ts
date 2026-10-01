@@ -29,7 +29,7 @@ import { parseDayMonthYear } from "../lib/tenders/sources/extract/date";
 import { findRedundant, titleSimilarity, SAME_TENDER_AT } from "../lib/tenders/redundancy";
 import { followableNoticeUrl, sameParty, senderOrigin } from "../lib/tenders/display";
 import { isActionable } from "../lib/tenders/actionable";
-import { renderHandoff, type HandoffItem } from "../lib/tenders/notify";
+import { renderHandoff, idempotencyKey, type HandoffItem } from "../lib/tenders/notify";
 import { readFileSync } from "node:fs";
 
 let fails = 0;
@@ -465,6 +465,21 @@ ok("a real contact IS shown when it differs from the client",
 ok("the location is labelled Location, not Address",
    /LOCATION|Location/.test(plain) && !/>Address</.test(plain));
 // The live safety warning survives — it is about the text below, not about our process.
+// ── Idempotency ──────────────────────────────────────────────────────────────────────────
+//
+// Resend rejects a reused key whose body changed (409), so a key that ignores the body blocks
+// a legitimate re-send for 24 hours. Hit live twice on 2026-10-01 after the email was fixed.
+const keyFor = (over: { items?: HandoffItem[]; to?: string[]; subject?: string; html?: string } = {}) =>
+  idempotencyKey({ items: [handoffItem()], to: ["info@ausdilaps.com.au"], subject: "s", html: "<p>a</p>", ...over });
+
+ok("an identical double-click collapses to one key", keyFor() === keyFor());
+ok("a changed body gets its own key", keyFor() !== keyFor({ html: "<p>b</p>" }));
+ok("a different recipient gets its own key", keyFor() !== keyFor({ to: ["rhys.m@ausdilaps.com.au"] }));
+ok("recipient ORDER does not matter",
+   keyFor({ to: ["a@x.com", "b@x.com"] }) === keyFor({ to: ["b@x.com", "a@x.com"] }));
+ok("a different selection gets its own key",
+   keyFor() !== keyFor({ items: [handoffItem({ ids: ["other"] })] }));
+
 ok("an injection flag is still shown",
    /Flagged content/i.test(renderHandoff({ items: [handoffItem({ injectionSuspected: true })] }).html));
 

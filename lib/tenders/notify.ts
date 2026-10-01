@@ -340,8 +340,9 @@ export async function sendHandoff(opts: {
         // itself: any two sends of the same number of items on the same day were treated as
         // one, and Resend silently returned the first message instead of delivering the
         // second. A double-clicked button must not send twice, but two genuinely different
-        // selections of three tenders must both arrive — so the key is a hash of the ids.
-        "Idempotency-Key": `${dryRun ? "dryrun:" : ""}${idempotencyKey(opts.items)}`,
+        // selections of three tenders must both arrive — so the key hashes the ids, the
+        // recipients AND the rendered body. See idempotencyKey() for why the body is in it.
+        "Idempotency-Key": `${dryRun ? "dryrun:" : ""}${idempotencyKey({ items: opts.items, to, subject: `${prefix}${subject}`, html })}`,
       },
       body: JSON.stringify({
         from,
@@ -368,7 +369,24 @@ export async function sendHandoff(opts: {
 }
 
 /** Sorted so selection order cannot change the key, then hashed to a fixed length. */
-export function idempotencyKey(items: HandoffItem[]): string {
-  const ids = items.flatMap((i) => i.ids).sort();
-  return `tender-handoff:${createHash("sha1").update(ids.join(",")).digest("hex")}`;
+export function idempotencyKey(input: {
+  items: HandoffItem[];
+  to: string[];
+  subject: string;
+  html: string;
+}): string {
+  const ids = input.items.flatMap((i) => i.ids).sort();
+  // ⚠️ The BODY is part of the key, not just the ids.
+  //
+  // Keyed on ids alone this blocked a re-send of the same opportunities for 24 hours
+  // whenever the email itself changed — which is exactly what happens after fixing how the
+  // email reads. Resend answers 409 "the request body was modified and doesn't match the
+  // original request", and the handoff never goes out. Hit live on 2026-10-01, twice.
+  //
+  // What the key must prevent is a DOUBLE-CLICK: the same selection, to the same people,
+  // rendering the same bytes. All three are in here now, so that case still collapses to one
+  // message while a genuine re-send gets through. The recipient matters too — "send to me
+  // first" and the real send carry the same items and must not be treated as one request.
+  const material = [ids.join(","), [...input.to].sort().join(","), input.subject, input.html].join("\u0000");
+  return `tender-handoff:${createHash("sha1").update(material).digest("hex")}`;
 }

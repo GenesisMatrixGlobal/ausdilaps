@@ -28,7 +28,16 @@ type MatchedOpportunity = {
   street: string | null;
   createdAt: string;
 };
-type DuplicateResult = { suburb: string; state: string; opportunities: MatchedOpportunity[] };
+/**
+ * `basis` says WHAT was matched, and the badge must say so too: "in MUSWELLBROOK NSW" and
+ * "named Fifteenth Avenue" are different claims, and a reader who cannot tell which one they
+ * are looking at cannot judge how much it is worth.
+ */
+type DuplicateResult = {
+  label: string;
+  basis: "locality" | "project";
+  opportunities: MatchedOpportunity[];
+};
 
 type Item = TenderSummary["items"][number];
 type Group = TenderSummary["groups"][number];
@@ -195,8 +204,15 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
    * under a stale set of badges is the failure worth avoiding here.
    */
   useEffect(() => {
-    const locations = [...new Set(data.groups.map((g) => g.siteLocation).filter((l): l is string => !!l))];
-    if (locations.length === 0) {
+    // One probe per opportunity, keyed by the group — the route needs the title and agency
+    // to fall back on a project-name match when a tender states no suburb.
+    const probes = data.groups.map((g) => ({
+      key: g.key,
+      location: g.siteLocation,
+      title: g.title,
+      agency: g.lead.agency,
+    }));
+    if (probes.length === 0) {
       setDupes({});
       return;
     }
@@ -207,7 +223,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
         const res = await fetch("/api/tenders/duplicates", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ locations }),
+          body: JSON.stringify({ probes }),
         });
         const json = (await res.json()) as { ok: boolean; results?: Record<string, DuplicateResult> };
         // Salesforce being unreachable leaves the badges off. It is not an error worth
@@ -507,7 +523,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
                   selectable={filter === "queue"}
                   selected={selected.has(g.key)}
                   onToggle={() => toggle(g.key)}
-                  duplicates={g.siteLocation ? dupes?.[g.siteLocation] : undefined}
+                  duplicates={dupes?.[g.key]}
                 />
               ))}
             </div>
@@ -786,14 +802,15 @@ function Toggle({
 function DuplicateBadge({ result }: { result: DuplicateResult }) {
   const open = result.opportunities.filter((o) => o.open);
   const closed = result.opportunities.filter((o) => !o.open);
-  const where = `${result.suburb} ${result.state}`;
+  // "in MUSWELLBROOK NSW" vs "named Fifteenth Avenue" — the reader has to know which.
+  const where = result.basis === "locality" ? `${result.label}` : `named ${result.label}`;
 
   if (result.opportunities.length === 0) {
     return (
       <p className="mt-2 text-xs text-ad-steel">
-        Nothing in Salesforce for {where} — looks new.{" "}
+        Nothing in Salesforce {result.basis === "locality" ? "for" : ""} {where} — looks new.{" "}
         <a
-          href={salesforceSearchUrl(where)}
+          href={salesforceSearchUrl(result.label)}
           target="_blank"
           rel="noopener noreferrer"
           className="underline underline-offset-2"
@@ -809,8 +826,8 @@ function DuplicateBadge({ result }: { result: DuplicateResult }) {
     <details className={cn("mt-2 rounded border px-2.5 py-1.5", open.length > 0 ? "border-ad-orange/40 bg-ad-orange/5" : "border-ad-border bg-ad-surface")} open={open.length > 0}>
       <summary className={cn("cursor-pointer text-xs font-medium", open.length > 0 ? "text-ad-orange" : "text-ad-muted")}>
         {open.length > 0
-          ? `${open.length} open opportunit${open.length === 1 ? "y" : "ies"} in ${where} — worth checking`
-          : `${closed.length} past opportunit${closed.length === 1 ? "y" : "ies"} in ${where}`}
+          ? `${open.length} open opportunit${open.length === 1 ? "y" : "ies"} ${result.basis === "locality" ? `in ${where}` : where} — worth checking`
+          : `${closed.length} past opportunit${closed.length === 1 ? "y" : "ies"} ${result.basis === "locality" ? `in ${where}` : where}`}
       </summary>
       <ul className="mt-1.5 space-y-1">
         {[...open, ...closed].slice(0, 6).map((o) => (

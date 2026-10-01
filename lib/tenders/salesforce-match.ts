@@ -158,3 +158,129 @@ export async function findOpportunitiesIn(localities: Locality[]): Promise<Local
     return [];
   }
 }
+
+/**
+ * ── The second way in: the PROJECT NAME ───────────────────────────────────────────────────
+ *
+ * Locality matching answers nothing for a tender that states no locality, and three of the
+ * seven opportunities in the live queue were in exactly that position: two direct invitations
+ * with no location at all, and a statewide corridor ("Victoria (statewide arterial road
+ * network)") that has no suburb to match by construction. Those cards simply showed no
+ * Salesforce line, which reads as "checked, nothing found" when the truth was "not checked".
+ *
+ * ⚠️ One of them had a LIVE duplicate. Felix RFQ #126379 names its project only in the RFQ
+ * owner field — "Fifteenth Avenue Upgrade" — and Salesforce holds `PRE OPT-37387 Fifteenth
+ * Avenue Upgrade, Austral NSW` in Follow Up, plus a second in Quote Preparation. That is the
+ * precise failure this whole check exists to prevent, and the suburb join could never see it.
+ *
+ * So: pull road- and structure-named phrases out of the title and the agency, and match them
+ * against Opportunity.Name. Our own opportunities are named after the job
+ * ("Muswellbrook Bypass - New England Highway, Muswellbrook NSW"), which is what makes this
+ * work at all.
+ */
+
+/**
+ * Words that end a project or road name. Deliberately WIDER than a postal street-type list —
+ * "Bypass", "Bridge", "Interchange" and "Upgrade" are what infrastructure jobs are called,
+ * and they are exactly the distinctive part.
+ */
+const PROJECT_TYPES = new Set([
+  "AVENUE", "AVE", "STREET", "ST", "ROAD", "RD", "HIGHWAY", "HWY", "DRIVE", "DR", "PARADE",
+  "PDE", "LANE", "TERRACE", "CRESCENT", "BOULEVARD", "CIRCUIT", "ESPLANADE", "WAY",
+  "BYPASS", "BRIDGE", "INTERCHANGE", "UPGRADE", "DUPLICATION", "EXTENSION", "TUNNEL",
+  "STATION", "PRECINCT", "CORRIDOR", "CAUSEWAY",
+]);
+
+/**
+ * Words that are OUR vocabulary, not the project's.
+ *
+ * Without this, "Dilapidation Survey" and "Condition Assessment" become phrases and match
+ * hundreds of our own opportunities — turning a duplicate check into a list of everything we
+ * have ever done.
+ */
+const OUR_WORDS = new Set([
+  "DILAPIDATION", "DILAPIDATIONS", "SURVEY", "SURVEYS", "CONDITION", "ASSESSMENT",
+  "ASSESSMENTS", "REPORT", "REPORTS", "INSPECTION", "INSPECTIONS", "AUDIT", "RFQ", "EOI",
+  "TENDER", "QUOTE", "QUOTATION", "PROPERTIES", "PROPERTY", "PRE", "POST", "CONSTRUCTION",
+  "SERVICES", "SERVICE", "PROVISION", "EXPRESSION", "INTEREST", "INVITATION", "STATEWIDE",
+]);
+
+/** `Fifteenth Avenue Upgrade (RFQ owner …)` -> `Fifteenth Avenue`. */
+export function projectPhrases(title: string | null, agency: string | null): string[] {
+  const phrases: string[] = [];
+
+  for (const source of [title, agency]) {
+    if (!source) continue;
+    // Bracketed asides are metadata, not the project ("(RFQ owner Rebecca Saunders)").
+    const words = source
+      .replace(/\([^)]*\)/g, " ")
+      .replace(/[^A-Za-z0-9'& -]/g, " ")
+      .split(/\s+/)
+      .filter(Boolean);
+
+    for (let i = 1; i < words.length; i++) {
+      if (!PROJECT_TYPES.has(words[i].toUpperCase())) continue;
+      const name = words[i - 1];
+      // A leading number is a street number, not part of the name; our own vocabulary is not
+      // a project name; and a single letter matches far too much.
+      if (name.length < 3 || /^\d/.test(name) || OUR_WORDS.has(name.toUpperCase())) continue;
+      const phrase = `${name} ${words[i]}`;
+      if (!phrases.includes(phrase)) phrases.push(phrase);
+    }
+  }
+
+  // Two is enough to identify a job, and each is a LIKE scan.
+  return phrases.slice(0, 2);
+}
+
+/**
+ * Opportunities whose NAME contains any of these phrases, in one query.
+ *
+ * Never throws, for the same reason findOpportunitiesIn does not: the cards render without
+ * the check rather than the queue failing to load.
+ */
+export async function findOpportunitiesNamed(phrases: string[]): Promise<Map<string, OpportunityMatch[]>> {
+  const unique = [...new Set(phrases)].filter(Boolean);
+  if (unique.length === 0) return new Map();
+
+  // ⚠️ LIKE needs its wildcards escaped too, or a phrase containing % or _ silently widens
+  // the search. escapeSoql only handles quotes and backslashes.
+  const forLike = (v: string) => escapeSoql(v).replace(/[%_]/g, "\\$&");
+  const clauses = unique.map((p) => `Name LIKE '%${forLike(p)}%'`).join(" OR ");
+
+  try {
+    const rows = await soqlQuery<{
+      Id: string;
+      Name: string;
+      StageName: string;
+      CreatedDate: string;
+      Site_Address__Street__s: string | null;
+    }>(
+      `SELECT Id, Name, StageName, CreatedDate, Site_Address__Street__s
+       FROM Opportunity
+       WHERE ${clauses}
+       ORDER BY CreatedDate DESC
+       LIMIT 200`
+    );
+
+    const byPhrase = new Map<string, OpportunityMatch[]>();
+    for (const phrase of unique) {
+      const needle = phrase.toLowerCase();
+      const hits = rows
+        .filter((r) => (r.Name ?? "").toLowerCase().includes(needle))
+        .map((r) => ({
+          id: r.Id,
+          name: r.Name,
+          stage: r.StageName,
+          open: !CLOSED_STAGES.has(r.StageName),
+          street: r.Site_Address__Street__s,
+          createdAt: r.CreatedDate,
+        }));
+      byPhrase.set(phrase, hits);
+    }
+    return byPhrase;
+  } catch (e) {
+    console.error("[tenders] Salesforce project-name check failed:", (e as Error).message);
+    return new Map();
+  }
+}

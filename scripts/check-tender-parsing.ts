@@ -29,6 +29,7 @@ import { parseDayMonthYear } from "../lib/tenders/sources/extract/date";
 import { findRedundant, titleSimilarity, SAME_TENDER_AT } from "../lib/tenders/redundancy";
 import { followableNoticeUrl, sameParty, senderOrigin } from "../lib/tenders/display";
 import { isActionable } from "../lib/tenders/actionable";
+import { parseLocality, projectPhrases } from "../lib/tenders/salesforce-match";
 import { renderHandoff, idempotencyKey, type HandoffItem } from "../lib/tenders/notify";
 import { readFileSync } from "node:fs";
 
@@ -465,6 +466,44 @@ ok("a real contact IS shown when it differs from the client",
 ok("the location is labelled Location, not Address",
    /LOCATION|Location/.test(plain) && !/>Address</.test(plain));
 // The live safety warning survives — it is about the text below, not about our process.
+// ── The Salesforce duplicate check ───────────────────────────────────────────────────────
+//
+// Locality is the primary join. These are the live queue's real values.
+for (const [loc, want] of [
+  ["GOONDIWINDI QLD", "GOONDIWINDI|QLD"],
+  ["NORTH RICHMOND, NSW", "NORTH RICHMOND|NSW"],
+  ["Murray River Council LGA, NSW", "MURRAY RIVER COUNCIL LGA|NSW"],
+  ["LIVERPOOL, NSW, 2170, Australia", "LIVERPOOL|NSW"],
+  // No suburb to match by construction — this is what the project fallback is for.
+  ["Victoria (statewide arterial road network)", null],
+  [null, null],
+] as [string | null, string | null][]) {
+  const l = parseLocality(loc);
+  ok(`locality: ${String(loc).slice(0, 38).padEnd(38)} -> ${want ?? "null"}`,
+     (l ? `${l.suburb}|${l.state}` : null) === want, String(l && `${l.suburb}|${l.state}`));
+}
+
+// ⚠️ Felix RFQ #126379 names its project ONLY in the RFQ-owner field, and Salesforce holds
+// PRE OPT-37387 "Fifteenth Avenue Upgrade, Austral NSW" in Follow Up. A live duplicate the
+// suburb join could never see — this is the case the fallback exists for.
+ok("the project name is found in the agency field",
+   projectPhrases("126379 - Dilapidation Survey - Properties", "Fifteenth Avenue Upgrade (RFQ owner Rebecca Saunders)").includes("Fifteenth Avenue"),
+   projectPhrases("126379 - Dilapidation Survey - Properties", "Fifteenth Avenue Upgrade (RFQ owner Rebecca Saunders)").join(" | "));
+ok("...and in the title", projectPhrases("Dilapidation Report RFQ — Australia Avenue Tender", null).includes("Australia Avenue"));
+ok("...including infrastructure words a postal street list would miss",
+   projectPhrases("Muswellbrook Bypass Project - Dilapidation Survey", null).includes("Muswellbrook Bypass"));
+// Without the stoplist these match hundreds of our own opportunities.
+ok("OUR vocabulary never becomes a project name",
+   projectPhrases("Pre & post construction building condition assessment", null).length === 0 &&
+   projectPhrases("Condition Audit and Valuation of Buildings & Structures", null).length === 0,
+   projectPhrases("Pre & post construction building condition assessment", null).join(" | "));
+ok("a bracketed aside is metadata, not the project",
+   !projectPhrases("x", "Seymour Whyte (RFQ owner Rebecca Saunders)").some((p) => /Saunders/.test(p)));
+ok("a street NUMBER is not part of the name",
+   !projectPhrases("375 Fifteenth Avenue", null).includes("375 Fifteenth"));
+ok("at most two phrases are searched",
+   projectPhrases("Smith Street and Jones Road and Brown Avenue and Green Lane", null).length <= 2);
+
 // ── Idempotency ──────────────────────────────────────────────────────────────────────────
 //
 // Resend rejects a reused key whose body changed (409), so a key that ignores the body blocks

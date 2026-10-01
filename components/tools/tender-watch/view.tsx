@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { TabBar } from "@/components/ui/tab-bar";
+import { sameParty } from "@/lib/tenders/display";
 import { EmptyState } from "@/components/staff/empty-state";
 import { StatTiles, type Stat } from "@/components/staff/stat-tiles";
 import { buttonVariants } from "@/components/ui/button";
@@ -93,17 +94,6 @@ function hostOf(url: string): string | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Are these two strings naming the same party? Case and punctuation differ between a source's
- * agency and contact fields often enough that an exact comparison would let the repeat
- * through, which is the whole point of asking.
- */
-function sameParty(a: string | null, b: string | null): boolean {
-  if (!a || !b) return false;
-  const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  return norm(a) === norm(b);
 }
 
 function Pill({ tone, children }: { tone: "ok" | "warn" | "critical" | "muted"; children: React.ReactNode }) {

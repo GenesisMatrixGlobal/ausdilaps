@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { safeExternalUrl, safeText, stripHeaderChars } from "@/lib/html";
 import { SERVICE_LABELS, type ServiceKey } from "./profile";
+import { followableNoticeUrl, sameParty } from "./display";
 
 /**
  * The handoff email — the product.
@@ -106,8 +107,12 @@ function closesUrgently(iso: string | null): boolean {
 }
 
 function renderItem(item: HandoffItem, index: number): string {
-  const primary = item.sources.find((s) => s.url) ?? null;
-  const link = safeExternalUrl(primary?.url ?? null);
+  // ⚠️ followableNoticeUrl FIRST. safeExternalUrl only proves a URL is well-formed and not
+  // hostile; it cannot know that outlook.office365.com is OUR mailbox. Without this the email
+  // offered "Open the notice" on a link that lands the reader on a sign-in page for an inbox
+  // they have no access to.
+  const primary = item.sources.find((s) => followableNoticeUrl(s.url)) ?? null;
+  const link = safeExternalUrl(followableNoticeUrl(primary?.url ?? null));
   const closes = formatCloses(item.closesAt);
   const urgent = closesUrgently(item.closesAt);
 
@@ -130,13 +135,21 @@ function renderItem(item: HandoffItem, index: number): string {
   // click through, and useless when they are transcribing four fields out of it.
   const rows: [string, string][] = [];
   if (item.agency) rows.push(["Client", safeText(item.agency, 160)]);
-  if (item.siteLocation) rows.push(["Address", safeText(item.siteLocation, 200)]);
-  if (closes)
-    rows.push([
-      "Closes",
-      `<span style="color:${urgent ? BRAND.orange : BRAND.ink};font-weight:${urgent ? 600 : 400}">${safeText(closes, 60)}</span>`,
-    ]);
-  if (item.contact) rows.push(["Contact", safeText(item.contact, 200)]);
+  // "Location", not "Address": what the sources give is an LGA or a region
+  // ("Murray River Council LGA, NSW", "Victoria (statewide arterial road network)"), and
+  // labelling that Address invites a reader to paste it into one.
+  if (item.siteLocation) rows.push(["Location", safeText(item.siteLocation, 200)]);
+  // Always a Closes row, even with no date. An absent line reads as an oversight and leaves
+  // the reader wondering whether it is urgent; "Not stated" is the actual answer for a direct
+  // invitation and tells them to ask.
+  rows.push([
+    "Closes",
+    closes
+      ? `<span style="color:${urgent ? BRAND.orange : BRAND.ink};font-weight:${urgent ? 600 : 400}">${safeText(closes, 60)}</span>`
+      : `<span style="color:${BRAND.muted}">Not stated &mdash; confirm with the client</span>`,
+  ]);
+  // Only when it says something Client did not — see sameParty.
+  if (item.contact && !sameParty(item.contact, item.agency)) rows.push(["Contact", safeText(item.contact, 200)]);
   rows.push([
     "Portal",
     link
@@ -159,11 +172,17 @@ function renderItem(item: HandoffItem, index: number): string {
     )
     .join("");
 
-  const badges = [
-    item.relevance === "maybe" ? "Was flagged for review" : null,
-    !item.senderTrusted ? "Unverified sender" : null,
-    item.injectionSuspected ? "Flagged content" : null,
-  ]
+  // ⚠️ ONLY the safety flag. "Was flagged for review" and "Unverified sender" used to print
+  // here too, and both are TRIAGE artefacts that stopped being true the moment this email was
+  // sent: a person read the item and chose to send it, so "flagged for review" describes a
+  // step already completed. Worse, `sender_trusted` is false for almost everything — the
+  // trusted-sender list was retired with the automatic digest — so "UNVERIFIED SENDER" printed
+  // in warning orange on genuine Tier-1 invitations from Seymour Whyte and Fulton Hogan. An
+  // alarming badge on the best opportunities in the list is how staff learn to ignore badges.
+  //
+  // "Flagged content" stays: that one says the text below may be trying to manipulate the
+  // reader, which is a live warning, not a record of our own process.
+  const badges = [item.injectionSuspected ? "Flagged content" : null]
     .filter(Boolean)
     .map(
       (b) =>

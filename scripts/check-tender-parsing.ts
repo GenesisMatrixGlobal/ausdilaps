@@ -27,6 +27,9 @@ import { extractNotices, extractorFor } from "../lib/tenders/sources/extract";
 import type { ExtractSource } from "../lib/tenders/sources/extract/types";
 import { parseDayMonthYear } from "../lib/tenders/sources/extract/date";
 import { findRedundant, titleSimilarity, SAME_TENDER_AT } from "../lib/tenders/redundancy";
+import { followableNoticeUrl, sameParty } from "../lib/tenders/display";
+import { isActionable } from "../lib/tenders/actionable";
+import { renderHandoff, type HandoffItem } from "../lib/tenders/notify";
 import { readFileSync } from "node:fs";
 
 let fails = 0;
@@ -367,6 +370,76 @@ ok("the threshold is not so low that any two tenders match",
    titleSimilarity("Supply and install playground equipment", "Bridge deck rehabilitation works") < SAME_TENDER_AT);
 ok("an identical title scores 1", titleSimilarity("Roadworks package B", "Roadworks package B") === 1);
 ok("an empty title never matches", titleSimilarity("", "anything at all here") === 0);
+
+
+// ── What a recipient can actually open ───────────────────────────────────────────────────
+for (const [url, ok_] of [
+  ["https://www.vendorpanel.com.au/tender/123", true],
+  ["https://link.tendersearch.com.au/token/ABC", true],
+  ["https://www.tenders.vic.gov.au/tender/view?id=1", true],
+  // Graph's webLink: valid https, real host, and a sign-in page for an inbox the reader has
+  // no access to. safeExternalUrl passes it, which is exactly why this test exists.
+  ["https://outlook.office365.com/owa/?ItemID=AAMk", false],
+  ["https://outlook.office.com/mail/inbox/id/AAMk", false],
+  ["https://email.felix.net/f/a/Z0BNVeRbFWpyNUlIYwL0", false],
+  ["not a url", false],
+] as [string, boolean][]) {
+  ok(`followable: ${url.slice(0, 46).padEnd(46)} -> ${ok_}`, (followableNoticeUrl(url) !== null) === ok_);
+}
+
+ok("sameParty sees past case and punctuation",
+   sameParty("Wellington Shire Council", "wellington shire  council.") && !sameParty("MidCoast Council", "Murray River Council"));
+
+const NOW = Date.parse("2026-10-01T00:00:00Z");
+for (const [closes, want, why] of [
+  [null, true, "no deadline = a live invitation"],
+  ["2026-10-20T00:00:00Z", true, "weeks away"],
+  ["2026-10-02T06:00:00Z", true, "just over 24h"],
+  ["2026-10-01T06:00:00Z", false, "inside 24h"],
+  ["2026-09-20T00:00:00Z", false, "closed"],
+  ["not a date", true, "unparseable is not evidence it closed"],
+] as [string | null, boolean, string][]) {
+  ok(`actionable: ${String(closes).slice(0, 22).padEnd(22)} -> ${String(want).padEnd(5)} (${why})`,
+     isActionable(closes, NOW) === want);
+}
+
+// ── The handoff email ────────────────────────────────────────────────────────────────────
+const handoffItem = (over: Partial<HandoffItem> = {}): HandoffItem => ({
+  ids: ["1"], title: "Condition Audit and Valuation of Buildings & Structures",
+  agency: "Wellington Shire Council", siteLocation: "Wellington Shire, VIC",
+  contact: "Wellington Shire Council", closesAt: "2026-10-20T00:00:00Z",
+  relevance: "maybe", confidence: 0.78, services: ["dilapidation"],
+  summary: "Council wants a consultant to inspect and condition-assess buildings.",
+  seenCount: 1, sources: [{ label: "email:tendersearch.com.au", url: "https://link.tendersearch.com.au/token/A" }],
+  senderTrusted: false, injectionSuspected: false, ...over,
+});
+
+const mailboxEmail = renderHandoff({
+  items: [handoffItem({ sources: [{ label: "email:seymourwhyte.com.au", url: "https://outlook.office365.com/owa/?ItemID=AAMk" }], contact: "maira.barbosa@seymourwhyte.com.au", closesAt: null })],
+}).html;
+ok("a mailbox deep link NEVER reaches a recipient",
+   !/outlook\.office|email\.felix\.net/i.test(mailboxEmail));
+ok("...and the block says so instead of dropping the row",
+   /Invitation by email/.test(mailboxEmail) && /maira\.barbosa@seymourwhyte\.com\.au/.test(mailboxEmail));
+ok("an undated tender still gets a Closes row",
+   /Not stated/.test(mailboxEmail));
+
+const plain = renderHandoff({ items: [handoffItem()] }).html;
+// Triage artefacts: "flagged for review" describes a step completed by the act of sending,
+// and sender_trusted is false for nearly everything since the trusted list was retired — so
+// it printed warning-orange on genuine Tier-1 invitations.
+ok("no triage badges on the email",
+   !/Was flagged for review/i.test(plain) && !/Unverified sender/i.test(plain));
+ok("the same party is never printed twice",
+   (plain.match(/Wellington Shire Council/g) ?? []).length === 1,
+   `${(plain.match(/Wellington Shire Council/g) ?? []).length} occurrences`);
+ok("a real contact IS shown when it differs from the client",
+   /Justin Van Niekerk/.test(renderHandoff({ items: [handoffItem({ contact: "Justin Van Niekerk" })] }).html));
+ok("the location is labelled Location, not Address",
+   /LOCATION|Location/.test(plain) && !/>Address</.test(plain));
+// The live safety warning survives — it is about the text below, not about our process.
+ok("an injection flag is still shown",
+   /Flagged content/i.test(renderHandoff({ items: [handoffItem({ injectionSuspected: true })] }).html));
 
 console.log(fails === 0 ? "\nAll passed." : `\n${fails} FAILED`);
 process.exit(fails === 0 ? 0 : 1);

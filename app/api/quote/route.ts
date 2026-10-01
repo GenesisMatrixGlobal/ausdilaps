@@ -104,12 +104,16 @@ async function sendEmails(
    */
   const accessLetterNotify =
     process.env.ACCESS_LETTER_NOTIFY_EMAIL ?? "projects@ausdilaps.com.au";
+  // Quote requests also go to the GM (Rhys, 2026-10-02). Report and general inquiries don't.
+  const quoteRequestNotify =
+    process.env.QUOTE_REQUEST_NOTIFY_EMAIL ?? "rhys.m@ausdilaps.com.au";
 
   const cc = [
     ...(tier === "tier1" && salesNotify ? [salesNotify] : []),
     ...(d.inquiryType === "I Received An Access Letter" && accessLetterNotify
       ? [accessLetterNotify]
       : []),
+    ...(d.inquiryType === "New Quote" && quoteRequestNotify ? [quoteRequestNotify] : []),
   ].filter((address, i, all) => address !== adminEmail && all.indexOf(address) === i);
 
   // Admin notice

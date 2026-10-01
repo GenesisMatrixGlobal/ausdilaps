@@ -254,6 +254,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // ⚠️ On a PREVIEW too, not just the real send.
+    //
+    // The code is allocated either way (allocateHandoff is idempotent on the group), so a
+    // preview whose codes do not resolve in Salesforce is a preview of something that does
+    // not exist — you cannot test the flow with it, and the first real send would be the
+    // first time anyone found out. The record is reference data keyed by the code; creating
+    // it early costs nothing and is what makes "send to me first" an honest rehearsal.
+    //
+    // Awaited rather than fired and forgotten: a Vercel function can be frozen the moment it
+    // responds, so a floating promise would land sometimes and not others. It never throws —
+    // a failure is recorded on the row as sf_error and the email has already gone.
+    await pushHandoffsToSalesforce(
+      withCodes.map((i) => i.handoffCode).filter((c): c is string => !!c)
+    );
+
     // A dry run leaves the queue exactly as it was. Marking rows handed over because
     // somebody previewed the email would be the worst of both outcomes: the opportunities
     // vanish from the queue and nobody on the team ever received them.
@@ -266,16 +281,6 @@ export async function POST(req: NextRequest) {
         ...(await loadTenderSummary(!!user && isAdmin(user))),
       });
     }
-
-    // ⚠️ AFTER the real send only, and awaited rather than fired and forgotten — a Vercel
-    // function can be frozen the moment it responds, so a floating promise here would land
-    // sometimes and not others. It never throws; a failure is recorded on the row (sf_error)
-    // and the code still works the moment someone creates Tender_Watch_Item__c in the org.
-    //
-    // Not on a preview: a dry run must leave both systems exactly as they were.
-    await pushHandoffsToSalesforce(
-      withCodes.map((i) => i.handoffCode).filter((c): c is string => !!c)
-    );
 
     const { error: markError } = await db
       .from("tender_items")

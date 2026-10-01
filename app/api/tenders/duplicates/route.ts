@@ -68,7 +68,14 @@ export async function POST(req: NextRequest) {
   // whole queue — one for the localities, one for the project names.
   type Plan =
     | { basis: "locality"; label: string; locality: Locality }
-    | { basis: "project"; label: string; phrases: string[] };
+    | { basis: "project"; label: string; phrases: string[] }
+    // ⚠️ "We could not check" is a THIRD answer and must not be rendered as the second.
+    // A card with no line looks identical to a card that was checked and came back clean,
+    // which is the more dangerous of the two to get wrong. Some tenders genuinely carry
+    // nothing to match on — Felix RFQ #126379's own summary says "no scope, location or
+    // project detail given in the email" — and the honest response is to say so and offer
+    // a manual search.
+    | { basis: "unavailable"; label: string };
 
   const plans = new Map<string, Plan>();
   for (const probe of parsed.data.probes) {
@@ -85,9 +92,10 @@ export async function POST(req: NextRequest) {
     const phrases = projectPhrases(probe.texts ?? []);
     if (phrases.length > 0) {
       plans.set(probe.key, { basis: "project", label: phrases.join(" / "), phrases });
+      continue;
     }
-    // Neither: no entry, and the card shows no line. Saying "nothing found" would be a
-    // claim we have not earned.
+    // Neither a suburb nor a project name. Say that, rather than nothing.
+    plans.set(probe.key, { basis: "unavailable", label: probe.texts?.[0]?.slice(0, 80) ?? "" });
   }
 
   if (plans.size === 0) {
@@ -105,10 +113,12 @@ export async function POST(req: NextRequest) {
 
   const results: Record<
     string,
-    { label: string; basis: "locality" | "project"; opportunities: OpportunityMatch[] }
+    { label: string; basis: "locality" | "project" | "unavailable"; opportunities: OpportunityMatch[] }
   > = {};
   for (const [key, plan] of plans) {
-    if (plan.basis === "locality") {
+    if (plan.basis === "unavailable") {
+      results[key] = { label: plan.label, basis: "unavailable", opportunities: [] };
+    } else if (plan.basis === "locality") {
       const match = byLocality.get(`${plan.locality.suburb}|${plan.locality.state}`);
       results[key] = { label: plan.label, basis: "locality", opportunities: match?.opportunities ?? [] };
     } else {

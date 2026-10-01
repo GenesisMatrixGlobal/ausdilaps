@@ -35,7 +35,8 @@ type MatchedOpportunity = {
  */
 type DuplicateResult = {
   label: string;
-  basis: "locality" | "project";
+  /** `unavailable` = we could not check, which is NOT the same as finding nothing. */
+  basis: "locality" | "project" | "unavailable";
   opportunities: MatchedOpportunity[];
 };
 
@@ -805,6 +806,24 @@ function DuplicateBadge({ result }: { result: DuplicateResult }) {
   const closed = result.opportunities.filter((o) => !o.open);
   // "in MUSWELLBROOK NSW" vs "named Fifteenth Avenue" — the reader has to know which.
   const where = result.basis === "locality" ? `${result.label}` : `named ${result.label}`;
+
+  // Nothing to match on. Said plainly, because an absent line reads as "checked and clean".
+  if (result.basis === "unavailable") {
+    return (
+      <p className="mt-2 text-xs text-ad-muted">
+        No address or project name given — couldn&rsquo;t check Salesforce.{" "}
+        <a
+          href={salesforceSearchUrl(result.label)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-ad-steel underline underline-offset-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          Search manually
+        </a>
+      </p>
+    );
+  }
 
   if (result.opportunities.length === 0) {
     return (

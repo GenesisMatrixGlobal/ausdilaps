@@ -221,7 +221,18 @@ async function sendHealthEmail(
   // and this check — without touching ADMIN_EMAIL, which the public quote form also notifies.
   // Splitting them is what lets the whole pipeline be pointed at one person while it is being
   // watched, and pointed back at the team afterwards, in one place.
-  const to = (process.env.TENDER_NOTIFY_EMAIL ?? process.env.ADMIN_EMAIL ?? "info@ausdilaps.com.au")
+  // ⚠️ TENDER_ALERT_EMAIL first, and it exists because the AUDIENCES differ.
+  //
+  // The handoff is for whoever raises the opportunity in Salesforce. This is for whoever
+  // maintains the pipeline: "3 scan runs stalled", "tendersearch.com.au is failing". Once the
+  // handoff is pointed at info@, every one of those lands in the sales inbox too — which is
+  // how a team learns to filter the address that also carries their work.
+  //
+  // Unset, it falls through to the old chain, so nothing changes until someone sets it.
+  const to = (process.env.TENDER_ALERT_EMAIL ??
+    process.env.TENDER_NOTIFY_EMAIL ??
+    process.env.ADMIN_EMAIL ??
+    "info@ausdilaps.com.au")
     .split(",")
     .map((a) => a.trim())
     .filter(Boolean);

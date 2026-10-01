@@ -466,6 +466,24 @@ ok("a real contact IS shown when it differs from the client",
 ok("the location is labelled Location, not Address",
    /LOCATION|Location/.test(plain) && !/>Address</.test(plain));
 // The live safety warning survives — it is about the text below, not about our process.
+// ── Repeated category prefix ─────────────────────────────────────────────────────────────
+//
+// TenderSearch prefixes a notice with its CATEGORY, and when that is also how the buyer
+// worded the title you get it twice before the actual subject — the first thing a reader
+// sees on the card and in the email.
+for (const [raw, want] of [
+  ["Expression of Interest - Expression of Interest (EOI) Invitation for Statewide Pavement Data Survey Services.",
+   "Expression of Interest (EOI) Invitation for Statewide Pavement Data Survey Services."],
+  ["Tender - Tender for roadworks", "Tender for roadworks"],
+  // Real titles that merely CONTAIN a dash must survive untouched.
+  ["T27014 - Building Asset Condition Audit 26-27", "T27014 - Building Asset Condition Audit 26-27"],
+  ["126379 - Dilapidation Survey - Properties", "126379 - Dilapidation Survey - Properties"],
+  ["Muswellbrook Bypass Project - Dilapidation Survey", "Muswellbrook Bypass Project - Dilapidation Survey"],
+  ["Condition Audit and Valuation of Buildings & Structures", "Condition Audit and Valuation of Buildings & Structures"],
+] as [string, string][]) {
+  ok(`prefix: ${raw.slice(0, 40).padEnd(40)}`, displayTitle({ title: raw }) === want, displayTitle({ title: raw }).slice(0, 60));
+}
+
 // ── The Salesforce duplicate check ───────────────────────────────────────────────────────
 //
 // Locality is the primary join. These are the live queue's real values.

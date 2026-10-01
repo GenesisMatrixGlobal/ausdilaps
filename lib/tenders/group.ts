@@ -162,6 +162,21 @@ function pickLead<T extends Groupable>(members: T[]): T {
  * modified — this is display only, and re-running a fixed parser must be able to overwrite
  * the real thing. groupKey() handles the same rows by falling back to the agency.
  */
+/**
+ * `Expression of Interest - Expression of Interest (EOI) Invitation for …`
+ *
+ * TenderSearch prefixes a notice with its CATEGORY, and when the category is also how the
+ * buyer worded the title you get it twice before any of the actual subject. It is the first
+ * thing a reader sees on the card and in the email, so it is worth collapsing — but only an
+ * EXACT repeat of a leading phrase, which cannot swallow a real title.
+ */
+function collapseRepeatedPrefix(title: string): string {
+  const m = /^([\s\S]{6,60}?)\s*[-–—:]\s*([\s\S]+)$/.exec(title.trim());
+  if (!m) return title;
+  const [, prefix, rest] = m;
+  return rest.toLowerCase().startsWith(prefix.toLowerCase()) ? rest.trim() : title;
+}
+
 export function displayTitle(item: {
   title: string;
   agency?: string | null;
@@ -169,7 +184,7 @@ export function displayTitle(item: {
   model_summary?: string | null;
 }): string {
   const title = item.title?.trim() ?? "";
-  if (!/^https?:\/\//i.test(title)) return title;
+  if (!/^https?:\/\//i.test(title)) return collapseRepeatedPrefix(title);
 
   const summary = (item.summary ?? item.model_summary ?? "").trim();
   // First clause of the summary — enough to identify the job, short enough for a subject line.

@@ -29,6 +29,7 @@ import { parseDayMonthYear } from "../lib/tenders/sources/extract/date";
 import { findRedundant, titleSimilarity, SAME_TENDER_AT } from "../lib/tenders/redundancy";
 import { followableNoticeUrl, sameParty, senderOrigin } from "../lib/tenders/display";
 import { isActionable } from "../lib/tenders/actionable";
+import { vendorPanelDetails } from "../lib/tenders/sources/extract/vendorpanel";
 import { generateHandoffCode, normaliseHandoffCode, handoffFlowUrl, HANDOFF_ALPHABET } from "../lib/tenders/handoff-code";
 import { parseLocality, projectPhrases } from "../lib/tenders/salesforce-match";
 import { siteAddressFrom } from "../lib/tenders/site-address";
@@ -574,6 +575,36 @@ ok("every generated code normalises to itself",
   ok("flow link: carries the canonical code", u.searchParams.get("varTenderCode") === "TW-4F7K3", String(u.searchParams.get("varTenderCode")));
   ok("flow link: returns somewhere on Finish", !!u.searchParams.get("retURL"));
   ok("flow link: none for a non-code", handoffFlowUrl('"><script>') === null && handoffFlowUrl(null) === null);
+}
+
+// ── VendorPanel's labelled tail ──────────────────────────────────────────────────────────
+// Real tails from the live feed. The state cases are the ones that broke a simpler rule.
+{
+  const tail = (issuer: string, zone: string, contact = "Not disclosed") =>
+    `Some scope text.\n\n Issued by : ${issuer}\n Closing Date : 21/Oct/2026 02:00 PM ${zone} time\n Reference number : VP527584\n Contact person : ${contact}\n Tender categories : Cleaning`;
+  const SYD = "(UTC+10:00) Canberra, Melbourne, Sydney";
+  const cases: [string, string, string | null][] = [
+    ["City of Ballarat", SYD, "VIC"],
+    ["Waverley Council", SYD, "NSW"],
+    ["MidCoast Council", SYD, "NSW"], // ABS spells it Mid-Coast
+    ["Barcoo Shire Council", SYD, "QLD"], // a QLD council listing in Sydney time
+    ["Town of Victoria Park", "(UTC+08:00) Perth", "WA"], // "Victoria" in a Perth council's name
+    ["Flinders Shire Council", "(UTC+10:00) Brisbane", "QLD"], // Flinders is QLD and TAS
+    ["Bayside Council", SYD, "NSW"],
+    ["Bayside City Council", SYD, "VIC"],
+    ["Riverina Water", SYD, null], // not a council, and the zone covers three states
+    ["Department of Transport and Main Roads", "(UTC+10:00) Brisbane", "QLD"],
+  ];
+  for (const [issuer, zone, want] of cases) {
+    const d = vendorPanelDetails(tail(issuer, zone));
+    ok(`vendorpanel state: ${issuer.padEnd(40)} -> ${want}`, d.jurisdiction === want, String(d.jurisdiction));
+  }
+  const d = vendorPanelDetails(tail("City of Ballarat", SYD));
+  ok("vendorpanel: issuer is the client", d.agency === "City of Ballarat", String(d.agency));
+  ok("vendorpanel: closing date, day first", d.closesAt === "2026-10-21", String(d.closesAt));
+  ok("vendorpanel: 'Not disclosed' is no contact", d.contact === null, String(d.contact));
+  const named = vendorPanelDetails(tail("Palm Island Aboriginal Shire Council", SYD, "Marcio Fialho Email: marcio@palmcouncil.qld.gov.au Tel: 0448339292"));
+  ok("vendorpanel: a named contact is kept", !!named.contact?.startsWith("Marcio Fialho"), String(named.contact));
 }
 
 // ── Repeated category prefix ─────────────────────────────────────────────────────────────

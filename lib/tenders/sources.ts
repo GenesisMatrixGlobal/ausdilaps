@@ -1,3 +1,4 @@
+import { vendorPanelDetails } from "./sources/extract/vendorpanel";
 import { fetchFeed } from "./sources/feed";
 import type { SourceDefinition } from "./types";
 
@@ -64,7 +65,8 @@ export const SOURCES: SourceDefinition[] = [
           "https://www.vendorpanel.com.au/PublicTendersRssV2.aspx?mode=all",
         "vendorpanel-public",
         // See FeedOptions: VendorPanel's <category> is the procurement class, not the buyer.
-        { agencyFromCategory: false }
+        // The buyer, state and closing date come from the labelled tail of each description.
+        { agencyFromCategory: false, details: vendorPanelDetails }
       ),
   },
 ];

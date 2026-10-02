@@ -86,6 +86,18 @@ export type FeedOptions = {
    * scan.ts keeps the model's answer over the feed's (`extracted.agency ?? row.agency`).
    */
   agencyFromCategory?: boolean;
+  /**
+   * Labelled fields a feed prints in its description (VendorPanel's "Issued by : …" tail).
+   * Each non-null value wins over the generic tags; the classifier never sees ~95% of feed
+   * rows (the prefilter rejects them free), so this is the only way most rows get a client,
+   * a state and a closing date at all.
+   */
+  details?: (excerpt: string) => {
+    agency: string | null;
+    closesAt: string | null;
+    jurisdiction: string | null;
+    contact: string | null;
+  };
 };
 
 export function parseFeed(xml: string, sourceSlug: string, options: FeedOptions = {}): RawItem[] {
@@ -109,15 +121,22 @@ export function parseFeed(xml: string, sourceSlug: string, options: FeedOptions 
     const cleanTitle = htmlToText(title, 300);
     const excerpt = htmlToText(body, 12_000);
     const agency = agencyOf(block, useCategory);
+    const details = options.details?.(excerpt);
+    const labelledAgency = details?.agency ?? agency;
 
     items.push({
       sourceSlug,
+      // ⚠️ The identity keys stay on the TAG agency, not the labelled one: changing them
+      // would re-key every row already stored and ingest the whole feed a second time.
       externalRef: externalRefForRss({ guid, link, title: cleanTitle, publishedAt, agency }),
       title: cleanTitle,
       url: link ? canonicalUrl(link) : null,
-      agency: agency ? htmlToText(agency, 200) : null,
+      agency: labelledAgency ? htmlToText(labelledAgency, 200) : null,
+      jurisdiction: details?.jurisdiction ?? null,
+      contact: details?.contact ? htmlToText(details.contact, 200) : null,
       publishedAt,
-      closesAt: null, // the classifier extracts this from the body far more reliably
+      // Otherwise the classifier extracts it from the body.
+      closesAt: details?.closesAt ?? null,
       excerpt,
       contentHash: contentHash({ title: cleanTitle, agency, closesAt: null }),
       // A feed has no sender to verify. The URL comes from lib/tenders/sources.ts — our

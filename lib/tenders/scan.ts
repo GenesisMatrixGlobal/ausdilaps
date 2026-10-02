@@ -389,7 +389,7 @@ export async function runScan(
   const budgetLeft = Math.min(MAX_CLASSIFY_PER_RUN, DAILY_CLASSIFY_BUDGET - spent);
   const { data: pending } = await db
     .from("tender_items")
-    .select("id, source_slug, external_ref, title, excerpt, url, agency, site_location, email_from, published_at, classify_attempts")
+    .select("id, source_slug, external_ref, title, excerpt, url, agency, jurisdiction, closes_at, site_location, email_from, published_at, classify_attempts")
     .eq("relevance", "pending")
     .lt("classify_attempts", MAX_CLASSIFY_ATTEMPTS)
     .order("created_at", { ascending: true })
@@ -471,15 +471,14 @@ export async function runScan(
         injection_suspected: c.injectionSuspected,
         title: outcome.extracted.title || row.title,
         agency: outcome.extracted.agency ?? row.agency,
-        jurisdiction: outcome.extracted.jurisdiction,
-        // `?? row.site_location`, NOT an unconditional assignment.
+        // `?? row.…` on all three, NOT an unconditional assignment.
         //
-        // The extractors read a labelled location straight from TenderSearch and Felix, and
-        // that is better data than the model's reading of the same text. Overwriting it with
-        // a model null — which is what `jurisdiction` on the line above does — would blank a
-        // good value every time the classifier ran. Follow `agency`, not `jurisdiction`.
+        // The extractors and VendorPanel's labelled tail give a state, a location and a
+        // closing date straight from the source, and that is better data than the model's
+        // reading of the same text. A model null must never blank a good value.
+        jurisdiction: outcome.extracted.jurisdiction ?? row.jurisdiction,
         site_location: outcome.extracted.location ?? row.site_location,
-        closes_at: outcome.extracted.closesAt,
+        closes_at: outcome.extracted.closesAt ?? row.closes_at,
       })
       .eq("id", row.id);
   });

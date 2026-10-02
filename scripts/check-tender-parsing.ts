@@ -29,7 +29,7 @@ import { parseDayMonthYear } from "../lib/tenders/sources/extract/date";
 import { findRedundant, titleSimilarity, SAME_TENDER_AT } from "../lib/tenders/redundancy";
 import { followableNoticeUrl, sameParty, senderOrigin } from "../lib/tenders/display";
 import { isActionable } from "../lib/tenders/actionable";
-import { generateHandoffCode, normaliseHandoffCode, HANDOFF_ALPHABET } from "../lib/tenders/handoff-code";
+import { generateHandoffCode, normaliseHandoffCode, handoffFlowUrl, HANDOFF_ALPHABET } from "../lib/tenders/handoff-code";
 import { parseLocality, projectPhrases } from "../lib/tenders/salesforce-match";
 import { siteAddressFrom } from "../lib/tenders/site-address";
 import { renderHandoff, idempotencyKey, type HandoffItem } from "../lib/tenders/notify";
@@ -566,6 +566,15 @@ for (const [raw, want] of [
 // Round-trip: anything we mint must be accepted back.
 ok("every generated code normalises to itself",
    Array.from({ length: 300 }, generateHandoffCode).every((c) => normaliseHandoffCode(c) === c));
+// The email's "Create in Salesforce" button: the code rides in as the flow's input variable,
+// and nothing that isn't a valid code can reach the URL.
+{
+  const u = new URL(handoffFlowUrl("tw 4f7k3")!);
+  ok("flow link: opens the TenderWatch flow", u.pathname === "/flow/Screen_Flow_New_Opportunity_TenderWatch", u.pathname);
+  ok("flow link: carries the canonical code", u.searchParams.get("varTenderCode") === "TW-4F7K3", String(u.searchParams.get("varTenderCode")));
+  ok("flow link: returns somewhere on Finish", !!u.searchParams.get("retURL"));
+  ok("flow link: none for a non-code", handoffFlowUrl('"><script>') === null && handoffFlowUrl(null) === null);
+}
 
 // ── Repeated category prefix ─────────────────────────────────────────────────────────────
 //

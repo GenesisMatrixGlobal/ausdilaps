@@ -48,3 +48,22 @@ export function normaliseHandoffCode(input: string | null | undefined): string |
 
 /** Exposed so the check script pins the alphabet rather than restating it. */
 export const HANDOFF_ALPHABET = ALPHABET;
+
+/** The flow the code feeds. Its `varTenderCode` input variable is what the link sets. */
+export const HANDOFF_FLOW_API_NAME = "Screen_Flow_New_Opportunity_TenderWatch";
+
+/**
+ * A link that opens the flow with the code already in it — no code screen, no typing.
+ *
+ * ⚠️ Only ever built from a code that passes normaliseHandoffCode, so nothing from a tender
+ * notice can reach this URL. retURL is where Salesforce lands after Finish; without one a
+ * URL-launched flow restarts itself, which reads as "it didn't save".
+ */
+export function handoffFlowUrl(code: string | null | undefined): string | null {
+  const canonical = normaliseHandoffCode(code);
+  if (!canonical) return null;
+  const base = (process.env.SF_LOGIN_URL ?? "").replace(/\/+$/, "");
+  const host = /^https:\/\/[a-z0-9-]+\.my\.salesforce\.com$/.test(base) ? base : "https://ausdilaps.my.salesforce.com";
+  const params = new URLSearchParams({ varTenderCode: canonical, retURL: "/lightning/page/home" });
+  return `${host}/flow/${HANDOFF_FLOW_API_NAME}?${params}`;
+}

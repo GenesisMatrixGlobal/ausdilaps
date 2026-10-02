@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { safeExternalUrl, safeText, stripHeaderChars } from "@/lib/html";
 import { SERVICE_LABELS, type ServiceKey } from "./profile";
 import { followableNoticeUrl, sameParty, senderOrigin } from "./display";
+import { handoffFlowUrl } from "./handoff-code";
 
 /**
  * The handoff email — the product.
@@ -110,6 +111,16 @@ function closesUrgently(iso: string | null): boolean {
   return days >= 0 && days <= 14;
 }
 
+/**
+ * The button that opens the TenderWatch flow pre-filled. The code stays printed beside it as
+ * the reference — the button is the fast path, not the only one.
+ */
+function createInSalesforce(code: string): string {
+  const href = handoffFlowUrl(code);
+  if (!href) return "";
+  return `&nbsp; <a href="${href.replace(/&/g, "&amp;")}" style="display:inline-block;background:${BRAND.orange};color:#ffffff;text-decoration:none;font-size:12px;font-weight:600;border-radius:5px;padding:5px 11px;vertical-align:middle">Create in Salesforce</a>`;
+}
+
 function renderItem(item: HandoffItem, index: number): string {
   // ⚠️ followableNoticeUrl FIRST. safeExternalUrl only proves a URL is well-formed and not
   // hostile; it cannot know that outlook.office365.com is OUR mailbox. Without this the email
@@ -145,7 +156,7 @@ function renderItem(item: HandoffItem, index: number): string {
     rows.push([
       "Code",
       `<span style="font-family:monospace;font-size:15px;font-weight:700;letter-spacing:1px;color:${BRAND.ink}">${safeText(item.handoffCode, 20)}</span>
-       <span style="color:${BRAND.muted};font-size:11px">&nbsp; paste into New Opportunity</span>`,
+       ${createInSalesforce(item.handoffCode)}`,
     ]);
   }
   if (item.agency) rows.push(["Client", safeText(item.agency, 160)]);

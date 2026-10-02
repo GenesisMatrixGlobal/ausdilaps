@@ -8,6 +8,8 @@
  * to settle it some other way.
  */
 export const LGA_STATES: Record<string, readonly string[]> = {
+  // Renamed after the 2021 list was cut (Moreland -> Merri-bek, 2022).
+  "Merri-bek": ["VIC"],
   "Adelaide": ["SA"],
   "Adelaide Hills": ["SA"],
   "Adelaide Plains": ["SA"],

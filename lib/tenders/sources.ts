@@ -1,4 +1,5 @@
 import { vendorPanelDetails } from "./sources/extract/vendorpanel";
+import { fetchETenderBox } from "./sources/etenderbox";
 import { fetchFeed } from "./sources/feed";
 import type { SourceDefinition } from "./types";
 
@@ -68,6 +69,18 @@ export const SOURCES: SourceDefinition[] = [
         // The buyer, state and closing date come from the labelled tail of each description.
         { agencyFromCategory: false, details: vendorPanelDetails }
       ),
+  },
+  {
+    slug: "etenderbox",
+    label: "eTenderBox — current tenders",
+    kind: "web",
+    /**
+     * Council e-tendering (mostly VIC, some WA). No feed, so this reads the public list and
+     * each tender's own page — see sources/etenderbox.ts for why that is allowed and how the
+     * row links are recovered. Registration is only needed to RESPOND.
+     */
+    configured: () => true,
+    fetch: async () => fetchETenderBox(),
   },
 ];
 

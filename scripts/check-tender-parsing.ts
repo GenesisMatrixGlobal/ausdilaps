@@ -29,6 +29,7 @@ import { parseDayMonthYear } from "../lib/tenders/sources/extract/date";
 import { findRedundant, titleSimilarity, SAME_TENDER_AT } from "../lib/tenders/redundancy";
 import { followableNoticeUrl, sameParty, senderOrigin } from "../lib/tenders/display";
 import { isActionable } from "../lib/tenders/actionable";
+import { closingDate, parseDetail, parseListRows, zoneHint } from "../lib/tenders/sources/etenderbox";
 import { vendorPanelDetails } from "../lib/tenders/sources/extract/vendorpanel";
 import { generateHandoffCode, normaliseHandoffCode, handoffFlowUrl, HANDOFF_ALPHABET } from "../lib/tenders/handoff-code";
 import { parseLocality, projectPhrases } from "../lib/tenders/salesforce-match";
@@ -605,6 +606,29 @@ ok("every generated code normalises to itself",
   ok("vendorpanel: 'Not disclosed' is no contact", d.contact === null, String(d.contact));
   const named = vendorPanelDetails(tail("Palm Island Aboriginal Shire Council", SYD, "Marcio Fialho Email: marcio@palmcouncil.qld.gov.au Tel: 0448339292"));
   ok("vendorpanel: a named contact is kept", !!named.contact?.startsWith("Marcio Fialho"), String(named.contact));
+}
+
+// ── eTenderBox ───────────────────────────────────────────────────────────────────────────
+// Shapes copied from the live pages (2 Oct 2026).
+{
+  const row = `<tr class="data-grid-row" style="background-color:White;">
+    <td align="left" valign="top"><a title="Details" href="javascript:__doPostBack(&#39;ctl00$cphMain$rprTenders$pgvTenders$ctl03$ctl00&#39;,&#39;&#39;)" style="">BT Connor Reserve Synthetic Pitch Installation</a></td><td><a title="Details" href="javascript:__doPostBack(&#39;ctl00$cphMain$rprTenders$pgvTenders$ctl03$ctl01&#39;,&#39;&#39;)">Construction and operations</a></td><td><a title="Details" href="javascript:__doPostBack(&#39;ctl00$cphMain$rprTenders$pgvTenders$ctl03$ctl02&#39;,&#39;&#39;)">02/10/2026 02:00 PM AEST (UTC+10:00)</a></td><td><a title="Details" href="javascript:__doPostBack(&#39;ctl00$cphMain$rprTenders$pgvTenders$ctl03$ctl04&#39;,&#39;&#39;)">City of Darebin</a></td>
+  </tr>`;
+  const rows = parseListRows(row);
+  ok("etenderbox: a grid row parses", rows.length === 1 && rows[0].customer === "City of Darebin" && rows[0].target.endsWith("ctl03$ctl00"), JSON.stringify(rows[0]));
+  const detail = parseDetail(`
+    <tr><th>Closing Date</th><td>22/09/2026 02:00 PM AEST (UTC+10:00)</td></tr>
+    <tr><th>Revised Closing Date</th><td>02/10/2026 02:00 PM AEST (UTC+10:00)</td></tr>
+    <tr><th>Location</th><td>Belmont</td></tr>
+    <tr><th width="210px">Description</th><td><strong>Procurement Officer</strong></td></tr>
+    <tr><th>Name</th><td> Justinne Icawat </td></tr>
+    <tr><th>Name</th><td>Ready Tech eTenderBox Technical / System Support</td></tr>`);
+  ok("etenderbox: the platform helpdesk is not a contact", detail.names === "Justinne Icawat", detail.names);
+  ok("etenderbox: an extension is visible beside the original date", detail["Revised Closing Date"]?.startsWith("02/10/2026"), detail["Revised Closing Date"]);
+  ok("etenderbox: closing date is day first", closingDate("06/10/2026 05:00 PM AEDT (UTC+11:00)") === "2026-10-06");
+  ok("etenderbox: AEST during daylight saving is Queensland", zoneHint("20/10/2026 02:00 PM AEST (UTC+10:00)") === "Brisbane");
+  ok("etenderbox: AEST outside daylight saving says nothing", zoneHint("02/10/2026 02:00 PM AEST (UTC+10:00)") === "");
+  ok("etenderbox: AWST is WA", zoneHint("06/10/2026 05:00 PM AWST (UTC+08:00)") === "Perth");
 }
 
 // ── Repeated category prefix ─────────────────────────────────────────────────────────────

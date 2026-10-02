@@ -50,7 +50,8 @@ export type FetchResult = {
 export type SourceDefinition = {
   slug: string;
   label: string;
-  kind: "rss" | "email";
+  /** 'web' = a public page read by a code-owned adapter (eTenderBox). Migration 0029. */
+  kind: "rss" | "email" | "web";
   /** False when the source's env config is blank — the scan skips it without erroring. */
   configured: () => boolean;
   fetch: (sinceIso: string) => Promise<FetchResult>;

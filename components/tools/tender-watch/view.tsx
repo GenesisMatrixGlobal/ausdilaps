@@ -424,7 +424,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
       )}
 
       <div className="mt-8">
-        <TabBar tabs={PANES} active={pane} onChange={setPane} />
+        <TabBar tabs={PANES} active={pane} onChange={setPane} flush />
       </div>
 
       {pane === "health" ? (
@@ -471,6 +471,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
             tabs={FILTERS.map((f) => ({ key: f.key, label: `${f.label} (${count(f.key)})` }))}
             active={filter}
             onChange={switchFilter}
+            flush
           />
 
           {filter === "queue" && visibleGroups.length > 0 && (

@@ -26,6 +26,13 @@ export async function generateMetadata({
     title: `${p.name} | AusDilaps Project`,
     description: p.blurb,
     alternates: { canonical: `/portfolio/${p.slug}` },
+    openGraph: p.image
+      ? {
+          title: `${p.name} | AusDilaps Project`,
+          description: p.blurb,
+          images: [{ url: p.image, alt: p.imageAlt ?? p.name }],
+        }
+      : undefined,
   };
 }
 
@@ -70,6 +77,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
         eyebrow={p.sector}
         title={p.name}
         intro={p.description ?? p.blurb}
+        image={
+          p.image
+            ? { src: p.image, alt: p.imageAlt ?? p.name, portrait: p.imagePortrait }
+            : undefined
+        }
       />
 
       {/* Fast facts */}

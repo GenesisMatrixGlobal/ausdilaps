@@ -29,6 +29,9 @@ export type PortfolioItem = {
   year?: string;
   value?: string;
   image?: string;
+  imageAlt?: string;
+  /** Keep a small portrait photograph at its source width in the project hero. */
+  imagePortrait?: boolean;
   /** card + meta one-liner */
   blurb: string;
   /** the project context (real) */
@@ -67,6 +70,8 @@ const PROJECTS: PortfolioItem[] = [
     client: "Lendlease, Bouygues & Samsung JV",
     year: "2020",
     value: "$15B",
+    image: "/portfolio/westconnex.jpg",
+    imageAlt: "WestConnex motorway tunnel entrance at dusk",
     blurb: "6,000+ properties inspected for Australia's largest road infrastructure project.",
     description:
       "WestConnex is part of an integrated transport plan to keep Sydney moving — easing congestion, creating jobs and connecting communities. Works included widening the M4 between Parramatta and Homebush, extending it in twin underground tunnels from Homebush to Haberfield, and upgrading the King Georges Road M5 interchange.",
@@ -164,6 +169,8 @@ const PROJECTS: PortfolioItem[] = [
     client: "CPB Contractors",
     year: "2019",
     value: "$2.3M",
+    image: "/portfolio/zig-zag-railway-blue-mountains.jpg",
+    imageAlt: "Zig Zag Railway station in the Blue Mountains",
     blurb: "12 heritage rail tunnels, tracks and stations inspected on a beloved Blue Mountains landmark.",
     description:
       "Zig Zag Railway is a tourist attraction throughout the Blue Mountains region, and AusDilaps had the opportunity to work on restoring this part of history. The railway works included clearing and resealing the car park, refurbishing the amenities building and the crossing, track works and the installation of two electric charging stations.",
@@ -176,6 +183,8 @@ const PROJECTS: PortfolioItem[] = [
     sector: "Rail",
     location: "Epping to Thornleigh, NSW",
     client: "Transport for NSW",
+    image: "/portfolio/epping-to-thornleigh-third-track.jpg",
+    imageAlt: "Freight train on a rail corridor",
     blurb: "Dilapidation surveys along the corridor of a new third rail track on Sydney's Main North line.",
     description:
       "The Epping to Thornleigh Third Track added a third railway track between Epping and Thornleigh on Sydney's Main North line, separating freight and passenger services to increase capacity and reliability on a heavily used section of the network.",
@@ -188,6 +197,8 @@ const PROJECTS: PortfolioItem[] = [
     location: "Oak Flats, Thornleigh, Minnamurra, Regents Park & Allawah, NSW",
     client: "Transport for NSW",
     year: "2019",
+    image: "/portfolio/transport-for-nsw-station-refresh-project.jpg",
+    imageAlt: "Train and station buildings at Allawah railway station",
     blurb: "Dilapidation inspections across six stations upgraded under the Transport Access Program.",
     description:
       "The upgrades at Oak Flats, Thornleigh, Minnamurra, Regents Park and Allawah stations were delivered as part of the Transport Access Program — an NSW Government initiative providing accessible, modern, secure and integrated transport infrastructure, including precincts accessible to those with a disability, limited mobility, prams and luggage.",
@@ -262,6 +273,8 @@ const PROJECTS: PortfolioItem[] = [
     location: "Canberra, ACT",
     client: "Lendlease",
     year: "2019",
+    image: "/portfolio/australian-war-memorial.jpg",
+    imageAlt: "Courtyard and Hall of Memory at the Australian War Memorial in Canberra",
     blurb: "Extreme-detail heritage documentation on one of Australia's most important landmarks.",
     description:
       "This project was very special to AusDilaps — being such an important Australian landmark, it required extreme detail across multiple heritage-listed components, undertaken alongside Lendlease.",
@@ -357,10 +370,26 @@ const PROJECTS: PortfolioItem[] = [
 ];
 
 /** Map the 3 Capability-Statement case studies into the portfolio shape. */
-const CASE_STUDY_META: Record<string, { sector: Sector; image?: string }> = {
-  "main-south-road-duplication": { sector: "Road & Transport" },
-  "ipswich-hospital": { sector: "Hospital" },
-  "glenrowan-solar-farm": { sector: "Energy" },
+const CASE_STUDY_META: Record<
+  string,
+  { sector: Sector; image: string; imageAlt: string; imagePortrait?: boolean }
+> = {
+  "main-south-road-duplication": {
+    sector: "Road & Transport",
+    image: "/portfolio/main-south-road-duplication.jpeg",
+    imageAlt: "Aerial view of the Main South Road duplication works",
+    imagePortrait: true,
+  },
+  "ipswich-hospital": {
+    sector: "Hospital",
+    image: "/portfolio/ipswich-hospital.jpeg",
+    imageAlt: "Entrance and main building of Ipswich Hospital",
+  },
+  "glenrowan-solar-farm": {
+    sector: "Energy",
+    image: "/portfolio/glenrowan-solar-farm.png",
+    imageAlt: "Aerial view of solar panels at Glenrowan Solar Farm",
+  },
 };
 
 const CASE_STUDY_ITEMS: PortfolioItem[] = CASE_STUDIES.map((c) => ({
@@ -372,6 +401,8 @@ const CASE_STUDY_ITEMS: PortfolioItem[] = CASE_STUDIES.map((c) => ({
   year: c.date,
   value: c.value,
   image: CASE_STUDY_META[c.slug]?.image,
+  imageAlt: CASE_STUDY_META[c.slug]?.imageAlt,
+  imagePortrait: CASE_STUDY_META[c.slug]?.imagePortrait,
   blurb: c.objective,
   description: c.objective,
   scope: c.solution,

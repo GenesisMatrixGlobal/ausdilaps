@@ -18,7 +18,7 @@ export function PortfolioCard({ project }: { project: PortfolioItem }) {
         <div className="relative aspect-[3/2] overflow-hidden">
           <Image
             src={project.image}
-            alt={project.name}
+            alt={project.imageAlt ?? project.name}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             className="object-cover transition-transform duration-500 group-hover:scale-105"

@@ -42,7 +42,12 @@ const cases: Record<(typeof INQUIRY_TYPES)[number], QuoteInput> = {
 for (const type of INQUIRY_TYPES) {
   const email = enquiryAckEmail({ input: cases[type], siteUrl: `${site}/`, samplesCode: "AD-1234" });
   assert.ok(email.html.includes(`${site}/logo/ad-logo.png`), `${type}: logo is an absolute URL`);
-  assert.ok(email.html.includes("/dilapidation-reports/samples?code=AD-1234"), `${type}: samples link carries the code`);
+  // Samples go ONLY to a quote request (Rhys, 2026-10-05).
+  if (type === "New Quote") {
+    assert.ok(email.html.includes("/dilapidation-reports/samples?code=AD-1234"), "quote: samples link carries the code");
+  } else {
+    assert.ok(!email.html.includes("/dilapidation-reports/samples"), `${type}: no samples link`);
+  }
   if (type !== "I Received An Access Letter") {
     // A resident answering an access letter doesn't need our capability statement.
     assert.ok(email.html.includes("/AusDilaps-Capability-Statement-FY25-26.pdf"), `${type}: capability statement linked`);
@@ -58,13 +63,14 @@ for (const type of INQUIRY_TYPES) {
 // Branch content.
 const quote = enquiryAckEmail({ input: cases["New Quote"], siteUrl: site });
 assert.ok(quote.html.includes("Western Tunnelling Package, Rozelle NSW"), "quote names the project");
-assert.ok(quote.html.includes("Itemised quote"), "quote explains the steps");
+assert.ok(quote.html.includes("An estimator will be assigned to your scope shortly"), "quote: estimator line");
+assert.ok(quote.html.includes("Once your estimator is assigned") && quote.html.includes("Itemised quote"), "quote explains the steps");
 assert.ok(quote.html.includes("/dilapidation-reports/samples\""), "no code → plain samples link");
 
 const letter = enquiryAckEmail({ input: cases["I Received An Access Letter"], siteUrl: site });
 assert.ok(letter.html.includes("12 Craig Avenue, Vaucluse NSW 2030"), "letter echoes the address");
-assert.ok(letter.html.includes("By SMS or phone"), "letter uses the chosen contact method");
-assert.ok(letter.html.includes("two to four hours"), "letter sets expectations on the inspection");
+assert.ok(letter.html.includes("We'll get in touch with you") && letter.html.includes("By SMS or phone"), "letter uses the chosen contact method");
+assert.ok(letter.html.includes("15 to 45 minutes"), "letter sets expectations on the inspection");
 assert.ok(letter.html.includes("Hi Tom,"), "apostrophe in the surname doesn't break the greeting");
 
 const report = enquiryAckEmail({ input: cases["Report Inquiry"], siteUrl: site });

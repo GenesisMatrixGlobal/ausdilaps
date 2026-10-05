@@ -2,24 +2,33 @@
  * The acknowledgement email a visitor gets after the enquiry form.
  *
  * Pure: no Next, no env, no network — `app/api/quote/route.ts` hands it the input and the
- * site URL, and `npm run check:ack` renders every branch headlessly. The content is per
- * ENQUIRY TYPE (Rhys, 2026-10-05: a resident who got an access letter and a contracts
- * administrator wanting a quote are asking completely different questions, and one dry
- * "thanks for your enquiry" served neither), with a "while you wait" block that points at
- * something worth their time: the sample reports, the capability statement, the FAQ.
+ * site URL, `npm run check:ack` renders every branch headlessly and `npm run send:ack`
+ * emails them to an address. The content is per ENQUIRY TYPE (Rhys, 2026-10-05: a resident
+ * who got an access letter and a contracts administrator wanting a quote are asking
+ * completely different questions, and one dry "thanks for your enquiry" served neither),
+ * with a "while you wait" block pointing at something worth their time.
  *
- * Every fact in here comes from lib/site.ts, data/faq.ts or content/insights — the
- * methodology steps, the "two to four hours" inspection figure, the AS 4349.0 reference.
- * Don't add a claim you can't point at.
+ * ⚠️ SAMPLE REPORTS GO ONLY TO A QUOTE REQUEST (Rhys, 2026-10-05). The samples library is
+ * for people buying a report; a resident answering an access letter, or someone asking
+ * about a report they already hold, gets the FAQ and the explainer instead. The samples
+ * link carries the access code so the recipient lands in the library without re-typing
+ * the name and email the form already took.
+ *
+ * Facts come from lib/site.ts and data/faq.ts — the methodology steps, the AS 4349.0
+ * reference. ⚠️ The "15 to 45 minutes" figure for a standard home is Rhys's (2026-10-05)
+ * and DISAGREES with data/faq.ts, which still says "two to four hours" — the FAQ is the
+ * one to fix.
  *
  * ⚠️ The recipient is whoever typed the address, so everything reflected back (name,
  * project, address, references) goes through `escapeHtml`, and the greeting falls back to
  * "Hi there" when the first name looks like a URL or an email — this is a DKIM-signed
  * message from us to a stranger, so a linkified name is a free phishing lure.
  *
- * Email HTML, not web HTML: tables, inline styles, system fonts, absolute image URLs. The
- * logo is `${siteUrl}/logo/ad-logo.png` — the SAME committed file the site header uses, not
- * a data URI (Gmail strips those) and not a Resend attachment.
+ * Email HTML, not web HTML: tables, inline styles, absolute image URLs. ONE card (Rhys:
+ * the grey "while you wait" band read as a second, broken-off card), the site's tokens
+ * from app/globals.css repeated inline, Space Grotesk / Inter requested from Google Fonts
+ * with system fallbacks for the clients that refuse web fonts (Gmail, Outlook desktop).
+ * The logo is `${siteUrl}/logo/ad-logo.png`, the same committed file the site header uses.
  */
 import { escapeHtml } from "@/lib/html";
 import type { ContactMethod, QuoteInput } from "@/lib/leads";
@@ -32,9 +41,7 @@ export type AckInput = {
   input: QuoteInput;
   /** Absolute origin, no trailing slash — `https://ausdilaps.com.au`. */
   siteUrl: string;
-  /** A still-configured samples access code, so the samples link opens straight into the
-   *  library. The form already captured the name and email the gate would ask for, so
-   *  this hands them nothing they couldn't get by typing the same details again. */
+  /** A still-configured samples access code. Only ever used on the New Quote branch. */
   samplesCode?: string;
 };
 
@@ -45,7 +52,9 @@ type Content = {
   subject: string;
   /** Paragraphs, already escaped. */
   intro: string[];
-  /** "What happens next" steps, already escaped. */
+  /** Heading over the steps, e.g. "What happens next". */
+  stepsHeading: string;
+  /** Already escaped. */
   steps: { title: string; body: string }[];
   /** The orange button. */
   primary: Link;
@@ -53,15 +62,18 @@ type Content = {
   links: Link[];
 };
 
-// Brand tokens from app/globals.css — repeated here because an email can't load a stylesheet.
-const INK = "#2f343a";
-const MUTED = "#5b6570";
-const STEEL = "#46688a";
-const ORANGE = "#e8642a";
-const SURFACE = "#f3f4f5";
-const BORDER = "#e3e5e8";
-const DEEP = "#23272b";
-const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+// app/globals.css tokens — an email can't load a stylesheet, so they're repeated here.
+const INK = "#2f343a"; // --color-ad-ink
+const MUTED = "#5b6570"; // --color-ad-muted
+const STEEL = "#46688a"; // --color-ad-steel
+const STEEL_LIGHT = "#6d90b4"; // --color-ad-steel-light
+const ORANGE = "#e8642a"; // --color-ad-orange
+const SURFACE = "#f3f4f5"; // --color-ad-surface
+const BORDER = "#e1e3e6"; // --color-ad-border (rgba 12% ink) flattened on white
+const DEEP = "#23272b"; // --color-ad-navy-deep
+const RADIUS = "10px"; // --radius-md
+const FONT_BODY = "Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+const FONT_HEADING = "'Space Grotesk',Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 const trimSlash = (u: string) => u.replace(/\/+$/, "");
 
@@ -75,13 +87,12 @@ function greetingFor(name: string): string {
 }
 
 function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Content {
-  const samplesHref = samplesCode
-    ? `${siteUrl}${SAMPLES_PATH}?code=${encodeURIComponent(samplesCode)}`
-    : `${siteUrl}${SAMPLES_PATH}`;
   const samples: Link = {
     title: "See a finished report",
     body: "Sample reports across residential, commercial and infrastructure jobs.",
-    href: samplesHref,
+    href: samplesCode
+      ? `${siteUrl}${SAMPLES_PATH}?code=${encodeURIComponent(samplesCode)}`
+      : `${siteUrl}${SAMPLES_PATH}`,
     cta: "View sample reports",
   };
   const capability: Link = {
@@ -92,7 +103,7 @@ function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Conte
   };
   const faq: Link = {
     title: "Common questions",
-    body: "What's inspected, who arranges it, how long it takes.",
+    body: "What's inspected, who arranges it, what happens if something is found.",
     href: `${siteUrl}/faq`,
     cta: "Read the FAQ",
   };
@@ -112,11 +123,12 @@ function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Conte
         headline: "Your quote request is in.",
         intro: [
           project.length > 0
-            ? `Thanks for the details on <strong>${project.join(", ")}</strong>. An estimator is reviewing the scope now.`
-            : "Thanks for the details. An estimator is reviewing the scope now.",
+            ? `Thanks for the details on <strong>${project.join(", ")}</strong>. An estimator will be assigned to your scope shortly.`
+            : "Thanks for the details. An estimator will be assigned to your scope shortly.",
         ],
+        stepsHeading: "Once your estimator is assigned",
         steps: [
-          { title: "Desktop review", body: "Site, adjoining properties, DA conditions." },
+          { title: "Scope review", body: "Site, adjoining properties, DA conditions and any contract clauses." },
           { title: "Itemised quote", body: "Clear pricing, methodology and deliverables." },
           { title: "Kick-off", body: "A project coordinator confirms access and scheduling." },
         ],
@@ -130,22 +142,26 @@ function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Conte
         headline: "About your access letter.",
         intro: [
           d.contactAddress
-            ? `Thanks for getting in touch about <strong>${escapeHtml(d.contactAddress)}</strong>. Our projects team will be in touch shortly.`
-            : "Thanks for getting in touch. Our projects team will be in touch shortly.",
+            ? `Thanks for getting in touch about <strong>${escapeHtml(d.contactAddress)}</strong>.`
+            : "Thanks for getting in touch.",
           "In short: a construction project near you has engaged us to record the condition of nearby properties before work starts. The report is an independent photographic record of your property, so there's a clear baseline if anything changes during the works.",
         ],
+        stepsHeading: "What happens next",
         steps: [
           {
-            title: "We arrange a time",
+            title: "We'll get in touch with you",
             body: d.contactMethod?.length
-              ? `By ${d.contactMethod.map((m) => CONTACT_WORD[m]).join(" or ")}, at a time that suits you.`
-              : "At a time that suits you.",
+              ? `By ${d.contactMethod.map((m) => CONTACT_WORD[m]).join(" or ")}, as you asked.`
+              : "Our projects team will contact you shortly.",
           },
-          { title: "The inspection", body: "Interior and exterior photos. A standard home takes two to four hours." },
-          { title: "The record", body: `A report to ${SITE.standard}, your baseline for the rest of the project.` },
+          {
+            title: "If you'd like to arrange a time",
+            body: `Reply to this email or call ${SITE.phone} and we'll book one that suits you.`,
+          },
+          { title: "The inspection", body: "Interior and exterior photos. A standard home takes 15 to 45 minutes." },
         ],
         primary: whatIs,
-        links: [faq, samples],
+        links: [faq],
       };
 
     case "Report Inquiry": {
@@ -161,9 +177,10 @@ function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Conte
             ? `Thanks. With ${refs.join(" and ")} we can find your report straight away, and we'll come back to you shortly.`
             : "Thanks, we'll come back to you shortly. If you have a project or OPT number, or the document ID from the report, reply with it and we'll find it faster.",
         ],
+        stepsHeading: "",
         steps: [],
         primary: faq,
-        links: [samples, capability],
+        links: [capability],
       };
     }
 
@@ -173,9 +190,10 @@ function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Conte
         subject: "We've received your enquiry — AusDilaps",
         headline: "Thanks for getting in touch.",
         intro: ["We've got your enquiry and the right person will come back to you shortly."],
+        stepsHeading: "",
         steps: [],
-        primary: samples,
-        links: [capability, faq],
+        primary: capability,
+        links: [faq],
       };
   }
 }
@@ -185,34 +203,32 @@ export function enquiryAckEmail({ input, siteUrl, samplesCode }: AckInput): AckE
   const c = contentFor(input, base, samplesCode);
   const greeting = greetingFor(input.name);
   const logo = `${base}/logo/ad-logo.png`;
+  const tel = `tel:${SITE.phone.replace(/\s+/g, "")}`;
 
   const para = (s: string) =>
-    `<p style="margin:0 0 16px;font-size:16px;line-height:1.65;color:${INK};">${s}</p>`;
+    `<p style="margin:0 0 16px;font-family:${FONT_BODY};font-size:16px;line-height:1.65;color:${INK};">${s}</p>`;
+  const eyebrow = (s: string) =>
+    `<p style="margin:0 0 14px;font-family:${FONT_BODY};font-size:11px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:${STEEL};">${s}</p>`;
 
   const stepsHtml =
     c.steps.length === 0
       ? ""
-      : `<p style="margin:28px 0 12px;font-size:12px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${STEEL};">What happens next</p>
+      : `<div style="height:28px;line-height:28px;font-size:0;">&nbsp;</div>
+${eyebrow(c.stepsHeading)}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
 ${c.steps
   .map(
     (s, i) => `<tr>
-  <td valign="top" style="width:36px;padding:0 0 12px;"><div style="width:26px;height:26px;border-radius:13px;background:${STEEL};color:#ffffff;font-size:13px;font-weight:700;line-height:26px;text-align:center;">${i + 1}</div></td>
-  <td valign="top" style="padding:3px 0 14px;font-size:15px;line-height:1.4;color:${INK};"><strong>${s.title}</strong> <span style="color:${MUTED};">— ${s.body}</span></td>
+  <td valign="top" style="width:38px;padding:0 0 12px;"><div style="width:26px;height:26px;border-radius:13px;background:${STEEL};color:#ffffff;font-family:${FONT_HEADING};font-size:13px;font-weight:700;line-height:26px;text-align:center;">${i + 1}</div></td>
+  <td valign="top" style="padding:3px 0 12px;font-family:${FONT_BODY};font-size:15px;line-height:1.5;color:${INK};"><strong>${s.title}</strong> <span style="color:${MUTED};">— ${s.body}</span></td>
 </tr>`
   )
   .join("\n")}
 </table>`;
 
-  const linkCard = (l: Link) => `<tr>
-  <td style="padding:0 0 8px;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid ${BORDER};border-radius:6px;">
-      <tr>
-        <td style="padding:13px 18px;font-size:15px;font-weight:700;color:${INK};">${l.title}<span style="display:block;font-size:13px;font-weight:400;color:${MUTED};margin-top:2px;">${l.body}</span></td>
-        <td align="right" valign="middle" style="padding:13px 18px;white-space:nowrap;"><a href="${escapeHtml(l.href)}" style="font-size:14px;font-weight:700;color:${STEEL};text-decoration:none;">${l.cta} &rarr;</a></td>
-      </tr>
-    </table>
-  </td>
+  const linkRow = (l: Link) => `<tr>
+  <td style="padding:14px 0;border-top:1px solid ${BORDER};font-family:${FONT_BODY};font-size:15px;font-weight:600;color:${INK};">${l.title}<span style="display:block;font-size:13px;font-weight:400;line-height:1.5;color:${MUTED};margin-top:2px;">${l.body}</span></td>
+  <td align="right" valign="middle" style="padding:14px 0 14px 16px;border-top:1px solid ${BORDER};white-space:nowrap;"><a href="${escapeHtml(l.href)}" style="font-family:${FONT_BODY};font-size:14px;font-weight:600;color:${STEEL};text-decoration:none;">${l.cta} &rarr;</a></td>
 </tr>`;
 
   const html = `<!DOCTYPE html>
@@ -222,53 +238,62 @@ ${c.steps
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
 <title>${escapeHtml(c.subject)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
 </head>
 <body style="margin:0;padding:0;background:${SURFACE};">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(c.headline)} Here's what happens next.</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${SURFACE};">
-<tr><td align="center" style="padding:28px 16px;">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;font-family:${FONT};">
+<tr><td align="center" style="padding:32px 16px;">
 
-  <!-- Header -->
-  <tr><td style="background:#ffffff;border-radius:8px 8px 0 0;padding:28px 36px 22px;border-bottom:3px solid ${STEEL};">
-    <a href="${base}" style="text-decoration:none;"><img src="${logo}" width="168" height="62" alt="AusDilaps — Specialist Building Inspections" style="display:block;width:168px;height:auto;border:0;"></a>
+<!-- The card -->
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;border:1px solid ${BORDER};border-radius:${RADIUS};">
+
+  <!-- Logo -->
+  <tr><td style="padding:30px 40px 24px;">
+    <a href="${base}" style="text-decoration:none;"><img src="${logo}" width="160" height="59" alt="AusDilaps — Specialist Building Inspections" style="display:block;width:160px;height:auto;border:0;"></a>
   </td></tr>
+  <!-- Steel accent rule, the site's .rule-accent -->
+  <tr><td style="padding:0 40px;"><div style="height:2px;border-radius:2px;background:${STEEL};background-image:linear-gradient(90deg,${STEEL},${STEEL_LIGHT});font-size:0;line-height:0;">&nbsp;</div></td></tr>
 
   <!-- Body -->
-  <tr><td style="background:#ffffff;padding:32px 36px 8px;">
-    <h1 style="margin:0 0 18px;font-size:24px;line-height:1.3;font-weight:700;color:${INK};">${escapeHtml(c.headline)}</h1>
+  <tr><td style="padding:30px 40px 12px;">
+    <h1 style="margin:0 0 18px;font-family:${FONT_HEADING};font-size:26px;line-height:1.25;font-weight:700;letter-spacing:-0.01em;color:${INK};">${escapeHtml(c.headline)}</h1>
     ${para(`${greeting},`)}
     ${c.intro.map(para).join("\n    ")}
     ${stepsHtml}
-    ${para(`If it's urgent, call us on <a href="tel:${SITE.phone.replace(/\s+/g, "")}" style="color:${INK};font-weight:700;text-decoration:none;">${SITE.phone}</a> or just reply to this email.`)}
+    <div style="height:14px;font-size:0;">&nbsp;</div>
+    ${para(`If it's urgent, call us on <a href="${tel}" style="color:${INK};font-weight:600;text-decoration:none;">${SITE.phone}</a> or just reply to this email.`)}
   </td></tr>
 
   <!-- While you wait -->
-  <tr><td style="background:${SURFACE};border-top:1px solid ${BORDER};padding:26px 36px 18px;">
-    <p style="margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${STEEL};">While you wait</p>
-    <p style="margin:0 0 14px;font-size:17px;font-weight:700;color:${INK};">${c.primary.title} <span style="font-weight:400;color:${MUTED};">· ${c.primary.body}</span></p>
+  <tr><td style="padding:12px 40px 30px;">
+    <div style="height:1px;background:${BORDER};font-size:0;line-height:0;margin:0 0 26px;">&nbsp;</div>
+    ${eyebrow("While you wait")}
+    <p style="margin:0 0 4px;font-family:${FONT_HEADING};font-size:18px;font-weight:700;color:${INK};">${c.primary.title}</p>
+    <p style="margin:0 0 16px;font-family:${FONT_BODY};font-size:14px;line-height:1.6;color:${MUTED};">${c.primary.body}</p>
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;">
-      <tr><td style="background:${ORANGE};border-radius:4px;">
-        <a href="${escapeHtml(c.primary.href)}" style="display:inline-block;padding:12px 22px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;">${c.primary.cta}</a>
+      <tr><td style="background:${ORANGE};border-radius:6px;">
+        <a href="${escapeHtml(c.primary.href)}" style="display:inline-block;padding:12px 22px;font-family:${FONT_BODY};font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">${c.primary.cta}</a>
       </td></tr>
     </table>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-      ${c.links.map(linkCard).join("\n      ")}
+      ${c.links.map(linkRow).join("\n      ")}
     </table>
   </td></tr>
 
   <!-- Footer -->
-  <tr><td style="background:${DEEP};border-radius:0 0 8px 8px;padding:24px 36px;">
-    <p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#ffffff;">${SITE.name} <span style="font-weight:400;color:#9aa5b1;">· ${SITE.descriptor}</span></p>
-    <p style="margin:0 0 10px;font-size:13px;line-height:1.7;color:#c3cad2;">
-      <a href="tel:${SITE.phone.replace(/\s+/g, "")}" style="color:#ffffff;text-decoration:none;">${SITE.phone}</a> &nbsp;·&nbsp;
+  <tr><td style="background:${DEEP};border-radius:0 0 ${RADIUS} ${RADIUS};padding:22px 40px;">
+    <p style="margin:0 0 6px;font-family:${FONT_HEADING};font-size:14px;font-weight:700;color:#ffffff;">${SITE.name} <span style="font-family:${FONT_BODY};font-weight:400;color:#9aa5b1;">· ${SITE.descriptor}</span></p>
+    <p style="margin:0 0 8px;font-family:${FONT_BODY};font-size:13px;line-height:1.7;color:#c3cad2;">
+      <a href="${tel}" style="color:#ffffff;text-decoration:none;">${SITE.phone}</a> &nbsp;·&nbsp;
       <a href="mailto:${SITE.email}" style="color:#ffffff;text-decoration:none;">${SITE.email}</a> &nbsp;·&nbsp;
       <a href="${base}" style="color:#ffffff;text-decoration:none;">ausdilaps.com.au</a>
     </p>
-    <p style="margin:0;font-size:12px;line-height:1.6;color:#8a94a0;">${SITE.legalName} T/A ${SITE.name} · ABN ${SITE.abn} · ${SITE.address}</p>
+    <p style="margin:0;font-family:${FONT_BODY};font-size:12px;line-height:1.6;color:#8a94a0;">${SITE.legalName} T/A ${SITE.name} · ABN ${SITE.abn} · ${SITE.address}</p>
   </td></tr>
 
 </table>
+
 </td></tr>
 </table>
 </body>
@@ -291,7 +316,7 @@ ${c.steps
     "",
     ...c.intro.map(strip).flatMap((p) => [p, ""]),
     ...(c.steps.length > 0
-      ? ["WHAT HAPPENS NEXT", ...c.steps.map((s, i) => `${i + 1}. ${s.title} — ${strip(s.body)}`), ""]
+      ? [c.stepsHeading.toUpperCase(), ...c.steps.map((s, i) => `${i + 1}. ${s.title} — ${strip(s.body)}`), ""]
       : []),
     `If it's urgent, call us on ${SITE.phone} or reply to this email.`,
     "",

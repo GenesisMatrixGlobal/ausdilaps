@@ -113,19 +113,19 @@ function AddressFields({
       <label className={labelCls} htmlFor={line}>
         {label}
       </label>
-      <input id={line} placeholder="Street address" className={inputCls} {...register(line)} />
+      <input id={line} placeholder="Street address" autoComplete="address-line1" className={inputCls} {...register(line)} />
       <div className="mt-4 grid grid-cols-[2fr_1fr_1fr] gap-4">
         <div>
           <label className={labelCls} htmlFor={suburb}>
             Suburb
           </label>
-          <input id={suburb} className={inputCls} {...register(suburb)} />
+          <input id={suburb} autoComplete="address-level2" className={inputCls} {...register(suburb)} />
         </div>
         <div>
           <label className={labelCls} htmlFor={state}>
             State
           </label>
-          <select id={state} className={inputCls} defaultValue="" {...register(state)}>
+          <select id={state} autoComplete="address-level1" className={inputCls} defaultValue="" {...register(state)}>
             <option value="" disabled>
               —
             </option>
@@ -140,7 +140,7 @@ function AddressFields({
           <label className={labelCls} htmlFor={postcode}>
             Postcode
           </label>
-          <input id={postcode} inputMode="numeric" maxLength={4} className={inputCls} {...register(postcode)} />
+          <input id={postcode} inputMode="numeric" maxLength={4} autoComplete="postal-code" className={inputCls} {...register(postcode)} />
         </div>
       </div>
     </div>
@@ -641,6 +641,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
           </label>
           <input
             id="name"
+            autoComplete="name"
             className={cn(inputCls, errors.name && "border-ad-orange")}
             {...register("name", { required: "Please enter your name" })}
           />
@@ -653,6 +654,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
           <input
             id="email"
             type="email"
+            autoComplete="email"
             className={cn(inputCls, errors.email && "border-ad-orange")}
             {...register("email", {
               required: "Enter your email",
@@ -665,7 +667,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
           <label className={labelCls} htmlFor="phone">
             Phone
           </label>
-          <input id="phone" type="tel" className={inputCls} {...register("phone")} />
+          <input id="phone" type="tel" autoComplete="tel" className={inputCls} {...register("phone")} />
         </div>
       </div>
 
@@ -679,6 +681,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
             <input
               id="role"
               placeholder="e.g. Contracts Administrator"
+              autoComplete="organization-title"
               className={inputCls}
               {...register("role")}
             />
@@ -687,7 +690,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
             <label className={labelCls} htmlFor="company">
               Company
             </label>
-            <input id="company" className={inputCls} {...register("company")} />
+            <input id="company" autoComplete="organization" className={inputCls} {...register("company")} />
           </div>
           <div className="sm:col-span-2">
             <label className={labelCls} htmlFor="projectName">
@@ -743,6 +746,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
             </label>
             <input
               id="contactAddress"
+              autoComplete="street-address"
               placeholder="Street, suburb, state, postcode"
               className={cn(inputCls, errors.contactAddress && "border-ad-orange")}
               {...register("contactAddress", { required: "Please enter your address" })}

@@ -12,7 +12,7 @@ import {
   AU_STATES,
   ASSET_COUNT_RANGES,
   type InquiryType,
-} from "@/lib/leads";
+} from "@/lib/leads-options";
 
 type FormValues = {
   inquiryType: InquiryType | "";

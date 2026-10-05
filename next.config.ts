@@ -3,6 +3,14 @@ import { REDIRECTS } from "./data/redirects";
 
 const nextConfig: NextConfig = {
   images: {
+    // AVIF is ~30% smaller than WebP for the same look; the optimizer only serves it when
+    // listed. 40 is the hero photo's quality — it sits under an 84% colour wash — and any
+    // quality not listed here is refused by the optimizer, so add before using.
+    formats: ["image/avif", "image/webp"],
+    qualities: [40, 75],
+    // Optimised images are immutable per (src, size, quality); 30 days spares a returning
+    // visitor a revalidation round-trip on every picture.
+    minimumCacheTTL: 2_592_000,
     remotePatterns: [
       // Supabase Storage (public assets) and Cloudflare R2 public hostnames.
       // Fill in once the Supabase project + R2 bucket are provisioned, e.g.:
@@ -39,9 +47,18 @@ const nextConfig: NextConfig = {
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       { key: "X-DNS-Prefetch-Control", value: "on" },
     ];
+    // Brand assets and the capability statement are fetched on every page / every
+    // enquiry email but were served `max-age=0` — a day in the browser, a week at the
+    // edge. Not immutable: these files DO get overwritten in place.
+    const weekCache = [
+      { key: "Cache-Control", value: "public, max-age=86400, s-maxage=604800, stale-while-revalidate=604800" },
+    ];
     return [
       { source: "/email/:path*", headers: longCache },
       { source: "/field-service-icons/:path*", headers: longCache },
+      { source: "/logo/:path*", headers: weekCache },
+      { source: "/clients/:path*", headers: weekCache },
+      { source: "/AusDilaps-Capability-Statement-FY25-26.pdf", headers: weekCache },
       { source: "/:path*", headers: security },
       // The staff portal and admin must never be framable — a transparent iframe over a
       // real session is how a staff action gets clicked by someone else's page. The public

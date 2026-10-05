@@ -40,6 +40,21 @@ type ButtonProps = VariantProps<typeof buttonVariants> & {
 
 export function Button({ variant, size, className, href, children, type, onClick, newTab, disabled }: ButtonProps) {
   const cls = cn(buttonVariants({ variant, size }), className);
+  // A new-tab link, a file or an external URL is a plain anchor: wrapped in <Link>, the
+  // capability-statement PDF was prefetched as a route on every page (a 404 RSC payload
+  // per view) and `/quote` two or three times over.
+  if (href && (newTab || /^(https?:|mailto:|tel:)/.test(href) || /\.[a-z0-9]{2,5}$/i.test(href.split(/[?#]/)[0]))) {
+    return (
+      <a
+        href={href}
+        onClick={onClick}
+        className={cls}
+        {...(newTab ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+      >
+        {children}
+      </a>
+    );
+  }
   if (href) {
     return (
       <Link

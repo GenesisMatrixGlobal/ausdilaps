@@ -17,7 +17,8 @@ export function SiteHeader() {
             alt="AusDilaps — Specialist Building Inspections"
             width={1000}
             height={369}
-            priority
+            sizes="98px"
+            loading="eager"
             className="h-9 w-auto"
           />
         </Link>

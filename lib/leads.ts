@@ -1,24 +1,15 @@
 import { z } from "zod";
+import {
+  INQUIRY_TYPES,
+  PROPERTY_ROLES,
+  CONTACT_METHODS,
+  ASSET_COUNT_RANGES,
+  type AssetCountRange,
+} from "./leads-options";
 
-export const INQUIRY_TYPES = [
-  "New Quote",
-  "I Received An Access Letter",
-  "Report Inquiry",
-  "General Inquiry",
-] as const;
-export type InquiryType = (typeof INQUIRY_TYPES)[number];
-
-export const PROPERTY_ROLES = ["Tenant", "Property Owner", "Property Agent", "Other"] as const;
-export type PropertyRole = (typeof PROPERTY_ROLES)[number];
-
-export const CONTACT_METHODS = ["SMS", "Call", "Email"] as const;
-export type ContactMethod = (typeof CONTACT_METHODS)[number];
-
-export const AU_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"] as const;
-export type AuState = (typeof AU_STATES)[number];
-
-export const ASSET_COUNT_RANGES = ["<10", "10-100", "100+"] as const;
-export type AssetCountRange = (typeof ASSET_COUNT_RANGES)[number];
+// The option lists live in lib/leads-options.ts (no zod) so the client form can read
+// them without this module's schema; re-exported here so server callers are unchanged.
+export * from "./leads-options";
 
 /** Quote form payload. The server is the source of truth for validation; the
  *  client form mirrors these rules for UX.

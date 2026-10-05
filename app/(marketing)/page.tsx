@@ -58,6 +58,8 @@ function Hero() {
         aria-hidden="true"
         fill
         priority
+        fetchPriority="high"
+        quality={40}
         sizes="100vw"
         className="-z-10 object-cover object-center"
       />

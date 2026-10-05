@@ -59,6 +59,7 @@ export function SiteFooter() {
               alt="AusDilaps — Specialist Building Inspections"
               width={1000}
               height={369}
+              sizes="108px"
               className="h-10 w-auto"
             />
             <p className="mt-4 max-w-xs text-sm text-ad-on-dark-muted">

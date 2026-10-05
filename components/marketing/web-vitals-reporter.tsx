@@ -22,6 +22,8 @@ import { useReportWebVitals } from "next/web-vitals";
 export function WebVitalsReporter() {
   const metrics = useRef<Record<string, number>>({});
   const sent = useRef(false);
+  /** The single largest layout shift's elements, for the server log — see biggestShift(). */
+  const shift = useRef<string>("");
 
   useReportWebVitals((metric) => {
     // Next reports its own custom timings (hydration, render) alongside the web vitals.
@@ -45,6 +47,7 @@ export function WebVitalsReporter() {
         path: window.location.pathname,
         device: window.innerWidth < 768 ? "mobile" : "desktop",
         ...m,
+        ...(shift.current ? { clsTarget: shift.current } : {}),
       });
       try {
         navigator.sendBeacon?.("/api/vitals", new Blob([body], { type: "application/json" }));
@@ -64,16 +67,54 @@ export function WebVitalsReporter() {
     function onHide() {
       if (document.visibilityState === "hidden") setTimeout(send, 0);
     }
+    // Which element moved. A third of mobile homepage loads carried a CLS of 0.7-0.87 that
+    // neither Lighthouse nor a warm-cache reload reproduces (2026-10-06); the value alone
+    // can't say what shifted. Keeps the biggest non-input shift's first three sources as
+    // "TAG.class prev→cur", read back from the /api/vitals log line. Not stored.
+    let observer: PerformanceObserver | null = null;
+    try {
+      let biggest = 0;
+      observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries() as LayoutShift[]) {
+          if (entry.hadRecentInput || entry.value <= biggest) continue;
+          biggest = entry.value;
+          shift.current = describeShift(entry);
+        }
+      });
+      observer.observe({ type: "layout-shift", buffered: true });
+    } catch {
+      // Safari has no layout-shift entries; CLS itself is already absent there.
+    }
     document.addEventListener("visibilitychange", onHide);
     // pagehide is the belt to visibilitychange's braces — it fires on a real navigation away
     // in browsers that do not freeze the page. NOT deferred: this one can be the last code
     // to run, so a timeout here would never fire. The `sent` guard makes the overlap safe.
     window.addEventListener("pagehide", send);
     return () => {
+      observer?.disconnect();
       document.removeEventListener("visibilitychange", onHide);
       window.removeEventListener("pagehide", send);
     };
   }, []);
 
   return null;
+}
+
+type LayoutShift = PerformanceEntry & {
+  value: number;
+  hadRecentInput: boolean;
+  sources?: { node: Node | null; previousRect: DOMRectReadOnly; currentRect: DOMRectReadOnly }[];
+};
+
+function describeShift(entry: LayoutShift): string {
+  const rect = (r: DOMRectReadOnly) => [r.x, r.y, r.width, r.height].map(Math.round).join(",");
+  const parts = (entry.sources ?? []).slice(0, 3).map((s) => {
+    const n = s.node;
+    const el =
+      n instanceof Element
+        ? `${n.tagName}.${n.className && typeof n.className === "string" ? n.className.split(" ").slice(0, 3).join(".") : ""}`
+        : "?";
+    return `${el} ${rect(s.previousRect)}→${rect(s.currentRect)}`;
+  });
+  return `${entry.value.toFixed(3)}@${Math.round(entry.startTime)}ms ${parts.join(" | ")}`.slice(0, 400);
 }

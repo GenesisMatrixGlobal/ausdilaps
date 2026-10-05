@@ -24,6 +24,8 @@ const schema = z.object({
   cls: z.number().finite().min(0).max(100).optional().nullable(),
   fcp: ms,
   ttfb: ms,
+  /** The biggest layout shift's elements, logged (not stored) when CLS is past "good". */
+  clsTarget: z.string().max(400).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -48,6 +50,11 @@ export async function POST(req: NextRequest) {
     return new NextResponse(null, { status: 204 });
   }
 
-  await recordVitals(d);
+  const { clsTarget, ...sample } = d;
+  // Read in the Vercel function log: `vercel logs ausdilaps.com.au` filtered on "[vitals]".
+  if ((d.cls ?? 0) > 0.1 && clsTarget) {
+    console.warn(`[vitals] shift ${d.cls} on ${d.path} (${d.device}): ${clsTarget}`);
+  }
+  await recordVitals(sample);
   return new NextResponse(null, { status: 204 });
 }

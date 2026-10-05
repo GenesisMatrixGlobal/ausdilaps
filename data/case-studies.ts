@@ -40,7 +40,7 @@ export const CASE_STUDIES: CaseStudy[] = [
     objective:
       "A hospital expansion adding 200 beds, faster emergency care and expanded surgical services, with enhanced imaging and a modern sterilisation facility.",
     solution:
-      "Georeferenced pre- and post-construction dilapidation surveys enabled accurate, repeatable comparisons, with clear documentation of hospital structures and surrounding assets while maintaining safety amid high foot traffic.",
+      "Georeferenced pre and post-construction dilapidation surveys enabled accurate, repeatable comparisons, with clear documentation of hospital structures and surrounding assets while maintaining safety amid high foot traffic.",
     stats: [
       { value: "5,000m²+", label: "Inspected (plant rooms, roofs, wards)" },
       { value: "4,108", label: "Location-marked photos" },

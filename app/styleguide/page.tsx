@@ -48,7 +48,7 @@ export default function StyleGuide() {
           <div className="space-y-3">
             <p className="font-heading text-5xl font-semibold tracking-tight text-ad-ink">Display heading — Space Grotesk</p>
             <p className="font-heading text-3xl font-semibold tracking-tight text-ad-ink">Section heading</p>
-            <p className="max-w-2xl text-lg text-ad-muted">Body copy — Inter. Pre- and post-construction condition reports for Australia&apos;s most scrutinised projects.</p>
+            <p className="max-w-2xl text-lg text-ad-muted">Body copy — Inter. Pre and post-construction condition reports for Australia&apos;s most scrutinised projects.</p>
             <Eyebrow className="text-ad-blue">Eyebrow label</Eyebrow>
           </div>
         </section>

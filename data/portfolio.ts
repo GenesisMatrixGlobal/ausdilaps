@@ -231,7 +231,7 @@ const PROJECTS: PortfolioItem[] = [
     year: "2018",
     value: "$2B",
     image: "/portfolio/northern-beaches-hospital.jpg",
-    blurb: "410 pre- and post-construction property inspections for a purpose-built 488-bed hospital.",
+    blurb: "410 pre and post-construction property inspections for a purpose-built 488-bed hospital.",
     description:
       "The Northern Beaches Hospital in Frenchs Forest is a purpose-built facility with 488 beds (60% public, 40% private), a large integrated emergency department, state-of-the-art intensive and critical care units and a modern inpatient mental health facility. The hospital was a finalist for the 2018 Australian Construction Achievement Award.",
     scope: "AusDilaps conducted 410 residential and commercial property condition inspections, before and after construction.",

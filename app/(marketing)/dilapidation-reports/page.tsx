@@ -22,7 +22,7 @@ const CRUMBS = [
 export const metadata: Metadata = {
   title: "Dilapidation Reports | Pre- & Post-Construction Building Condition Reports",
   description:
-    "Australia's specialist dilapidation reporting firm. Pre- and post-construction building condition reports that document existing conditions and hold up when a damage claim is made. Compliant with AS 4349.0.",
+    "Australia's specialist dilapidation reporting firm. Pre and post-construction building condition reports that document existing conditions and hold up when a damage claim is made. Compliant with AS 4349.0.",
   alternates: { canonical: PATH },
 };
 
@@ -33,7 +33,7 @@ export default function DilapidationReportsPage() {
         data={[
           serviceSchema(
             "Dilapidation Reports",
-            "Pre- and post-construction property condition reports documenting the existing condition of adjoining structures, providing a defensible baseline that prevents and resolves damage disputes.",
+            "Pre and post-construction property condition reports documenting the existing condition of adjoining structures, providing a defensible baseline that prevents and resolves damage disputes.",
             PATH
           ),
           howToSchema("How a dilapidation report is delivered", PROCESS),
@@ -225,7 +225,7 @@ const INCLUSIONS = [
   { title: "Detailed description", body: "Property age, construction type and notable features of every inspected structure." },
   { title: "Existing damage & defects", body: "Cracks, settling, movement, leaks and wear — recorded with severity and location." },
   { title: "Photographic & video record", body: "High-resolution, location-referenced imagery — ultra-high-quality and defensible." },
-  { title: "Geo-referenced imagery", body: "GPS-logged capture so pre- and post-works images compare to the exact spot." },
+  { title: "Geo-referenced imagery", body: "GPS-logged capture so pre and post-works images compare to the exact spot." },
   { title: "Recommendations", body: "Repair or maintenance recommendations where existing issues are identified." },
   { title: "Summary of findings", body: "Clear conclusions and a defensible record, signed off by our engineers." },
 ];

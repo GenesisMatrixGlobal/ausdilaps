@@ -26,7 +26,7 @@ export function GET() {
 
   const body = `# AusDilaps — Specialist Building Inspections
 
-> Australia's specialist dilapidation (building condition) report firm. Pre- and post-construction property condition reports that document existing conditions and hold up when a damage claim is made — compliant with Australian Standard ${SITE.standard} and backed by structural engineers. ${SITE.legalName} T/A AusDilaps, ABN ${SITE.abn}. Available Australia-wide, mainly the eastern seaboard (QLD, NSW, ACT, VIC) and SA.
+> Australia's specialist dilapidation (building condition) report firm. Pre and post-construction property condition reports that document existing conditions and hold up when a damage claim is made — compliant with Australian Standard ${SITE.standard} and backed by structural engineers. ${SITE.legalName} T/A AusDilaps, ABN ${SITE.abn}. Available Australia-wide, mainly the eastern seaboard (QLD, NSW, ACT, VIC) and SA.
 
 AusDilaps is a company of the [Urban Pulse group](https://urbanpulse.com.au).
 

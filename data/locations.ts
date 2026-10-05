@@ -33,7 +33,7 @@ export const LOCATIONS: Location[] = [
     region: "New South Wales",
     title: "Dilapidation Reports Sydney | Pre-Construction Condition Surveys NSW",
     metaDescription:
-      "Specialist dilapidation reports across Sydney and NSW. Pre- and post-construction condition surveys for DA consent, compliant with AS 4349.0 — backed by structural engineers and proven on NorthConnex, WestConnex and Sydney Metro.",
+      "Specialist dilapidation reports across Sydney and NSW. Pre and post-construction condition surveys for DA consent, compliant with AS 4349.0 — backed by structural engineers and proven on NorthConnex, WestConnex and Sydney Metro.",
     h1: "Dilapidation Reports Sydney",
     intro:
       "Across Sydney, construction, excavation and demolition near third-party property is rarely without risk. A dilapidation report documents the existing condition of adjoining buildings, council assets and infrastructure — before and after works — so that when a damage claim is made, it's settled on evidence, not argument.",
@@ -79,7 +79,7 @@ export const LOCATIONS: Location[] = [
     region: "Queensland",
     title: "Dilapidation Reports Brisbane | Property Condition Surveys QLD",
     metaDescription:
-      "Specialist dilapidation reports across Brisbane and South East Queensland. Pre- and post-construction condition surveys compliant with AS 4349.0 — from a Queensland-based team proven on Queen's Wharf and Brisbane Airport.",
+      "Specialist dilapidation reports across Brisbane and South East Queensland. Pre and post-construction condition surveys compliant with AS 4349.0 — from a Queensland-based team proven on Queen's Wharf and Brisbane Airport.",
     h1: "Dilapidation Reports Brisbane",
     intro:
       "When demolition and construction in Brisbane involves heavy machinery and excavation, there's a real chance of impact on adjoining properties. A Brisbane dilapidation report captures the precise condition of those neighbouring buildings, roads, kerbs, bridges and assets — before and after construction — as protection and as the basis for answering any claim.",
@@ -88,7 +88,7 @@ export const LOCATIONS: Location[] = [
       body: "With the lead-up to the 2032 Olympic and Paralympic Games, Cross River Rail, Brisbane Metro and sustained South East Queensland growth, Brisbane is building at pace. AusDilaps is a Queensland-based, family-owned firm — and we've documented some of the city's most sensitive works, including the heritage-listed buildings surrounding Queen's Wharf and heritage items adjoining Brisbane Airport.",
     },
     drivers: [
-      "Council certification requiring pre- and post-construction condition reports",
+      "Council certification requiring pre and post-construction condition reports",
       "Works adjoining heritage-listed buildings or council assets",
       "Major SEQ infrastructure — rail, road and Games-related precincts",
       "Bond protection on works affecting kerbing, roadways, drainage or pathways",
@@ -99,7 +99,7 @@ export const LOCATIONS: Location[] = [
     faq: [
       {
         q: "Is a dilapidation report required in Brisbane?",
-        a: "For many Brisbane projects, yes. Councils often require pre- and post-construction condition reports for certification, and they're essential where works adjoin heritage buildings or council assets. The report protects you and provides the basis for resolving damage claims and recovering your bond.",
+        a: "For many Brisbane projects, yes. Councils often require pre and post-construction condition reports for certification, and they're essential where works adjoin heritage buildings or council assets. The report protects you and provides the basis for resolving damage claims and recovering your bond.",
       },
       {
         q: "Is AusDilaps based in Brisbane?",
@@ -118,7 +118,7 @@ export const LOCATIONS: Location[] = [
     region: "Victoria",
     title: "Dilapidation Reports Melbourne | Pre-Construction Condition Surveys VIC",
     metaDescription:
-      "Specialist dilapidation reports across Melbourne and Victoria. Pre- and post-construction property condition surveys compliant with AS 4349.0, backed by structural engineers and georeferenced capture.",
+      "Specialist dilapidation reports across Melbourne and Victoria. Pre and post-construction property condition surveys compliant with AS 4349.0, backed by structural engineers and georeferenced capture.",
     h1: "Dilapidation Reports Melbourne",
     intro:
       "Planning a major demolition or construction project in Melbourne? Before breaking ground, a dilapidation report records the status and condition of the adjoining properties — a photographic and written baseline that protects you if construction is later blamed for damage.",
@@ -157,7 +157,7 @@ export const LOCATIONS: Location[] = [
     region: "New South Wales",
     title: "Dilapidation Reports Wollongong | Illawarra Condition Surveys NSW",
     metaDescription:
-      "Specialist dilapidation reports across Wollongong and the Illawarra. Pre- and post-construction property condition surveys compliant with AS 4349.0 — proven on the Dapto bridge works for Wollongong City Council.",
+      "Specialist dilapidation reports across Wollongong and the Illawarra. Pre and post-construction property condition surveys compliant with AS 4349.0 — proven on the Dapto bridge works for Wollongong City Council.",
     h1: "Dilapidation Reports Wollongong",
     intro:
       "Planning a demolition or construction project in Wollongong or the Illawarra? A dilapidation report is a photographic and written record of the condition of the adjoining properties — buildings, pathways, fences and roads — that should be filed before work starts. It can seem like added paperwork, but the protection it provides is long-term.",
@@ -197,7 +197,7 @@ export const LOCATIONS: Location[] = [
     isNew: true,
     title: "Dilapidation Reports Canberra | ACT Property Condition Surveys",
     metaDescription:
-      "Specialist dilapidation reports across Canberra and the ACT. Pre- and post-construction condition surveys compliant with AS 4349.0 — proven on the Australian War Memorial and Commonwealth government works.",
+      "Specialist dilapidation reports across Canberra and the ACT. Pre and post-construction condition surveys compliant with AS 4349.0 — proven on the Australian War Memorial and Commonwealth government works.",
     h1: "Dilapidation Reports Canberra",
     intro:
       "Canberra's mix of Commonwealth landmarks, government precincts and growing residential development demands exacting documentation. A dilapidation report records the condition of adjoining and heritage-listed property before and after works — the defensible baseline that protects sensitive, high-profile projects.",
@@ -241,7 +241,7 @@ export const LOCATIONS: Location[] = [
     isNew: true,
     title: "Dilapidation Reports Perth | Property Condition Surveys WA",
     metaDescription:
-      "Specialist dilapidation reports for Perth and Western Australia. Pre- and post-construction property condition surveys compliant with AS 4349.0 — a national specialist available Australia-wide.",
+      "Specialist dilapidation reports for Perth and Western Australia. Pre and post-construction property condition surveys compliant with AS 4349.0 — a national specialist available Australia-wide.",
     h1: "Dilapidation Reports Perth",
     intro:
       "Building, excavating or demolishing near third-party property in Perth? A dilapidation report documents the existing condition of the adjoining buildings and assets before and after works — the defensible baseline that resolves damage claims on evidence, not argument.",

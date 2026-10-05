@@ -37,7 +37,7 @@ Australia-wide for Tier-1 contractors and government agencies, and reports to AS
 
 The four services to match against:
 
-- dilapidation — Pre- and post-construction property condition reports that document existing
+- dilapidation — Pre and post-construction property condition reports that document existing
   conditions and give a defensible baseline for damage claims. Residential, commercial and
   infrastructure. This is the flagship; most real matches name it directly.
 - condition-survey — Building or asset condition surveys and inspections carried out to establish
@@ -46,7 +46,7 @@ The four services to match against:
   identifying weaknesses or potential failures.
 - doa — Defect Origin Assessment. Investigating the root cause of a defect with evidence-based
   reporting, to support remediation, dispute resolution and liability.
-- dca — Defect Comparison Assessment. Comparing pre- and post-construction conditions to identify
+- dca — Defect Comparison Assessment. Comparing pre and post-construction conditions to identify
   change and construction impact, supporting claims management.
 
 Capture methods that often appear alongside the above and reinforce a match, but which are NOT a

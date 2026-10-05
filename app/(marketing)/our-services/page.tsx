@@ -83,7 +83,7 @@ export default function ServicesIndexPage() {
                     Dilapidation Reports
                   </h2>
                   <p className="mt-3 max-w-xl text-ad-on-dark-muted">
-                    Pre- and post-construction building condition reports that document existing
+                    Pre and post-construction building condition reports that document existing
                     conditions and provide a defensible baseline — residential, commercial and
                     infrastructure.
                   </p>

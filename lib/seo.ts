@@ -33,7 +33,7 @@ export function organizationSchema() {
     url: SITE_URL,
     logo: absoluteUrl("/logo/ad-logo.png"),
     description:
-      "Australia's specialist dilapidation reporting firm — pre- and post-construction building condition reports that hold up when a damage claim is made.",
+      "Australia's specialist dilapidation reporting firm — pre and post-construction building condition reports that hold up when a damage claim is made.",
     email: SITE.email,
     telephone: SITE.phone,
     address: POSTAL_ADDRESS,

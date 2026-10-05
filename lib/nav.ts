@@ -12,7 +12,7 @@ export type NavLink = { label: string; href: string };
 export const SERVICES_PILLAR = {
   label: "Dilapidation Reports",
   href: "/dilapidation-reports",
-  blurb: "Our flagship — defensible pre- and post-construction condition reports.",
+  blurb: "Our flagship — defensible pre and post-construction condition reports.",
 };
 
 /** Dilapidation variants, shown beneath the pillar. */

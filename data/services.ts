@@ -45,18 +45,18 @@ export const SERVICES_CONTENT: Service[] = [
     slug: "commercial-dilapidation-reports",
     title: "Commercial Dilapidation Reports | Council-Ready Condition Reports",
     metaDescription:
-      "Independent commercial dilapidation reports that document the pre- and post-construction condition of council-owned and adjoining assets — protecting your investment and your bond. Backed by structural engineers.",
+      "Independent commercial dilapidation reports that document the pre and post-construction condition of council-owned and adjoining assets — protecting your investment and your bond. Backed by structural engineers.",
     h1: "Commercial Dilapidation Reports",
     eyebrow: "Commercial Dilapidation",
     navLabel: "Commercial",
-    summary: "Council-ready pre- and post-construction condition reports for commercial property.",
+    summary: "Council-ready pre and post-construction condition reports for commercial property.",
     intro:
       "Owning a commercial property is a significant investment. Before construction or development begins, a commercial dilapidation report documents the existing condition of council-owned and adjoining assets — mitigating the risk of damage claims and protecting your bond.",
     sections: [
       {
         eyebrow: "Independent expertise",
         heading: "Prepared by experts who catch what others miss.",
-        body: "These reports are independently prepared by experts who can identify pre-existing conditions or concerns that might otherwise be missed. Whether your property has adjoining walls with other commercial premises or stands freestanding, a commercial dilapidation report confirms you have covered all pre- and post-construction requirements.",
+        body: "These reports are independently prepared by experts who can identify pre-existing conditions or concerns that might otherwise be missed. Whether your property has adjoining walls with other commercial premises or stands freestanding, a commercial dilapidation report confirms you have covered all pre and post-construction requirements.",
         variant: "light",
       },
       {
@@ -67,7 +67,7 @@ export const SERVICES_CONTENT: Service[] = [
       },
       {
         eyebrow: "What it covers",
-        heading: "A dual pre- and post-construction process.",
+        heading: "A dual pre and post-construction process.",
         cards: [
           {
             n: "01 — Pre-construction",
@@ -159,7 +159,7 @@ export const SERVICES_CONTENT: Service[] = [
     slug: "industrial-dilapidation-reports",
     title: "Industrial Dilapidation Reports | Factories, Warehouses & Pipelines",
     metaDescription:
-      "Industrial dilapidation reports for factories, warehouses, pipelines and railway sites. A two-step pre- and post-construction process that verifies conditions and mitigates damage claims.",
+      "Industrial dilapidation reports for factories, warehouses, pipelines and railway sites. A two-step pre and post-construction process that verifies conditions and mitigates damage claims.",
     h1: "Industrial Dilapidation Reports",
     eyebrow: "Industrial Dilapidation",
     navLabel: "Industrial",
@@ -175,7 +175,7 @@ export const SERVICES_CONTENT: Service[] = [
       },
       {
         eyebrow: "Our recommended two-step process",
-        heading: "Pre- and post-construction, matched.",
+        heading: "Pre and post-construction, matched.",
         cards: [
           {
             n: "01 — Pre-construction",
@@ -439,7 +439,7 @@ export const SERVICES_CONTENT: Service[] = [
     faqInline: [
       {
         q: "What is a Defect Origin Assessment?",
-        a: "A Defect Origin Assessment is a specialist report that supplements pre- and post-construction condition reports. It identifies physical changes in a structure and uses photographic evidence, site context and engineering insight to assess whether a defect is pre-existing, construction-related, the result of worsening conditions, or unrelated entirely — each supported by a confidence rating.",
+        a: "A Defect Origin Assessment is a specialist report that supplements pre and post-construction condition reports. It identifies physical changes in a structure and uses photographic evidence, site context and engineering insight to assess whether a defect is pre-existing, construction-related, the result of worsening conditions, or unrelated entirely — each supported by a confidence rating.",
       },
       {
         q: "When do I need a DOA?",
@@ -552,18 +552,18 @@ export const SERVICES_CONTENT: Service[] = [
     slug: "defect-comparison-assessments",
     title: "Defect Comparison Assessments (DCA) | Pre- vs Post-Construction",
     metaDescription:
-      "Defect Comparison Assessments from AusDilaps — compare pre- and post-construction asset conditions to identify changes, assess construction impacts, and provide independent, defensible reporting for claims management.",
+      "Defect Comparison Assessments from AusDilaps — compare pre and post-construction asset conditions to identify changes, assess construction impacts, and provide independent, defensible reporting for claims management.",
     h1: "Defect Comparison Assessments (DCA)",
     eyebrow: "Defect Comparison",
     navLabel: "Defect Comparison (DCA)",
     summary: "Pre- vs post-construction comparison that isolates what changed.",
     intro:
-      "A Defect Comparison Assessment compares pre- and post-construction asset conditions to identify changes, assess potential construction impacts, and provide independent, defensible reporting that supports claims management and transparent communication between all stakeholders.",
+      "A Defect Comparison Assessment compares pre and post-construction asset conditions to identify changes, assess potential construction impacts, and provide independent, defensible reporting that supports claims management and transparent communication between all stakeholders.",
     sections: [
       {
         eyebrow: "What a DCA does",
         heading: "Isolate exactly what changed — and why.",
-        body: "By directly comparing the pre- and post-construction records, a DCA identifies changes and assesses whether construction impacts caused them. It turns two sets of evidence into one clear, independent conclusion.",
+        body: "By directly comparing the pre and post-construction records, a DCA identifies changes and assesses whether construction impacts caused them. It turns two sets of evidence into one clear, independent conclusion.",
         variant: "light",
       },
       {
@@ -576,11 +576,11 @@ export const SERVICES_CONTENT: Service[] = [
     faqInline: [
       {
         q: "What is a Defect Comparison Assessment?",
-        a: "A DCA compares pre- and post-construction asset conditions to identify changes, assess potential construction impacts, and provide independent, defensible reporting that supports claims management and transparent communication between all stakeholders.",
+        a: "A DCA compares pre and post-construction asset conditions to identify changes, assess potential construction impacts, and provide independent, defensible reporting that supports claims management and transparent communication between all stakeholders.",
       },
       {
         q: "How is a DCA different from a dilapidation report?",
-        a: "A dilapidation report documents condition at a point in time; a DCA directly compares the pre- and post-construction records to isolate what changed and whether construction caused it.",
+        a: "A dilapidation report documents condition at a point in time; a DCA directly compares the pre and post-construction records to isolate what changed and whether construction caused it.",
       },
     ],
     related: ["defect-origin-assessments-doa", "structural-integrity-assessments", "commercial-dilapidation-reports"],

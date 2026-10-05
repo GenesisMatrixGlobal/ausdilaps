@@ -53,7 +53,7 @@ export default async function ServicePage({ params }: { params: Promise<{ slug: 
       return {
         label: "Dilapidation Reports",
         href: "/dilapidation-reports",
-        description: "Pre- and post-construction building condition reports — the flagship service.",
+        description: "Pre and post-construction building condition reports — the flagship service.",
       };
     }
     const s = SERVICE_BY_SLUG[rel];

@@ -62,7 +62,7 @@ export function SiteFooter() {
               className="h-10 w-auto"
             />
             <p className="mt-4 max-w-xs text-sm text-ad-on-dark-muted">
-              Pre- and post-construction building condition reports that hold up when
+              Pre and post-construction building condition reports that hold up when
               a damage claim is made. Compliant with {SITE.standard}.
             </p>
           </div>

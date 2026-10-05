@@ -73,7 +73,7 @@ function Hero() {
             in court.
           </h1>
           <p className="mt-6 max-w-xl text-lg font-medium leading-relaxed text-ad-ink-deep sm:text-xl">
-            Pre- and post-construction building condition reports for Australia&apos;s
+            Pre and post-construction building condition reports for Australia&apos;s
             most scrutinised projects. When a damage claim is made — not if — your
             report has to defend it.
           </p>

@@ -41,7 +41,7 @@ export const SERVICES = [
     title: "Dilapidation Reports",
     tag: "Flagship",
     href: "/dilapidation-reports",
-    body: "Pre- and post-construction property condition reports that document existing conditions and provide a defensible baseline — residential, commercial and infrastructure.",
+    body: "Pre and post-construction property condition reports that document existing conditions and provide a defensible baseline — residential, commercial and infrastructure.",
   },
   {
     title: "Structural Integrity Assessments",
@@ -59,7 +59,7 @@ export const SERVICES = [
     title: "Defect Comparison Assessments",
     tag: "DCA",
     href: "/our-services/defect-comparison-assessments",
-    body: "Compare pre- and post-construction conditions to identify changes and construction impacts, supporting claims management and transparent reporting.",
+    body: "Compare pre and post-construction conditions to identify changes and construction impacts, supporting claims management and transparent reporting.",
   },
 ];
 

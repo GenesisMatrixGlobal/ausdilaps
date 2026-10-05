@@ -72,7 +72,7 @@ function Hero() {
           form is what most visitors came for; on a 375px screen it otherwise sat
           below a screen and a half of copy), while on desktop the form spans both
           rows on the right and the two text blocks meet in the middle beside it. */}
-      <Container className="grid gap-10 py-14 lg:grid-cols-[1.1fr_minmax(380px,440px)] lg:grid-rows-[auto_auto] lg:items-center lg:gap-x-16 lg:gap-y-0 lg:py-20">
+      <Container className="grid gap-10 py-14 lg:grid-cols-[minmax(0,1.2fr)_minmax(440px,1fr)] lg:grid-rows-[auto_auto] lg:items-center lg:gap-x-12 lg:gap-y-0 lg:py-20">
         <div className="lg:self-end">
           <Eyebrow className="text-ad-accent-2">Specialist Building Inspections</Eyebrow>
           <h1 className="mt-6 text-balance font-heading text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">

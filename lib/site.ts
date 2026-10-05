@@ -7,7 +7,7 @@ export const SITE = {
   abn: "82 650 700 226",
   email: "info@ausdilaps.com.au",
   phone: "1800 345 277",
-  address: "PO Box 81, Aspley QLD 4034",
+  address: "PO Box 3270, Rouse Hill NSW 2155",
   standard: "AS 4349.0",
 };
 

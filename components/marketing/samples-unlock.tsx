@@ -83,16 +83,15 @@ export function SamplesUnlock() {
           aria-hidden
           className="hidden"
         />
-        {/* TICKED by default (Rhys, 2026-09-30). It is the only sentence on the page that
-            says what the address is for, which is the thing the privacy principles actually
-            want at the point of collection — and unticking it is a real decision that lands
-            in `leads.marketing_consent` as false, not as silence. An unchecked checkbox
-            sends NO field at all, which is why the route reads a missing value as false. */}
+        {/* UNTICKED by default (Rhys, 2026-10-06; it was ticked from 2026-09-30). A pre-ticked
+            box is weak ground for marketing under the Spam Act, so consent is now an opt-in
+            the visitor makes. Unlocking the library does NOT depend on it. An unchecked
+            checkbox sends NO field at all, which is why the route reads a missing value as
+            false — `leads.marketing_consent` is false, not silence. */}
         <label className="mt-1 flex items-start gap-2.5 text-sm text-ad-muted">
           <input
             type="checkbox"
             name="marketing_consent"
-            defaultChecked
             className="mt-0.5 h-4 w-4 shrink-0 rounded border-ad-border text-ad-accent accent-ad-accent focus:outline-none"
           />
           <span>I consent to marketing.</span>

@@ -7,11 +7,13 @@ export function absoluteUrl(path = "/") {
   return new URL(path, SITE_URL).toString();
 }
 
+// The postal address (Rhys, 2026-10-06) — the same one the footer and every email carry.
 const POSTAL_ADDRESS = {
   "@type": "PostalAddress",
-  addressLocality: "Aspley",
-  addressRegion: "QLD",
-  postalCode: "4034",
+  postOfficeBoxNumber: "3270",
+  addressLocality: "Rouse Hill",
+  addressRegion: "NSW",
+  postalCode: "2155",
   addressCountry: "AU",
 };
 
@@ -117,7 +119,7 @@ export function breadcrumbSchema(crumbs: { name: string; path: string }[]) {
   };
 }
 
-/** Per-city professional-service schema for local packs / AEO. HQ stays Aspley
+/** Per-city professional-service schema for local packs / AEO. One postal address
  *  (mobile/on-site delivery) — areaServed signals local relevance honestly,
  *  without fabricating a branch address. */
 export function localBusinessForCity(loc: {

@@ -60,7 +60,7 @@ If you have a privacy complaint, contact us first and we will respond within 30 
 
 ## Contact us
 
-Privacy contact, AusDilaps · [info@ausdilaps.com.au](mailto:info@ausdilaps.com.au) · 1800 345 277 · PO Box 81, Aspley QLD 4034
+Privacy contact, AusDilaps · [info@ausdilaps.com.au](mailto:info@ausdilaps.com.au) · 1800 345 277 · PO Box 3270, Rouse Hill NSW 2155
 
 ## Changes to this policy
 

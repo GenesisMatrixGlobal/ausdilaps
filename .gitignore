@@ -53,3 +53,6 @@ next-env.d.ts
 
 # gstack security reports and checkpoints — local only
 /.gstack/
+
+# Session scratch output (check:ack previews etc.)
+scratchpad/

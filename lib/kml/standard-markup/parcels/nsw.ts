@@ -2,11 +2,11 @@
 // lib/property-sizing/nsw.ts, but an envelope query instead of a point query.
 // Geocodes via Google (same as the property-sizing tool); the SIX Maps cadastre is open.
 
-import type { LatLng } from "@/lib/kml/types";
 import { geocodeNsw } from "@/lib/property-sizing/nsw";
 import { envelopeAroundPoint, ringAreaSqm } from "../geometry";
 import { assertNoArcgisError } from "@/lib/arcgis";
 import { describeFetchError } from "./describe-fetch-error";
+import { outerRingToLatLng } from "./arcgis-ring";
 import type { ParcelFeature, ParcelQueryResult } from "./types";
 
 const CADASTRE_URL = "https://maps.six.nsw.gov.au/arcgis/rest/services/sixmaps/Boundaries/MapServer/15/query";
@@ -29,12 +29,6 @@ async function fetchJson<T>(url: string, timeoutMs = 12000): Promise<T> {
   } finally {
     clearTimeout(t);
   }
-}
-
-function outerRingToLatLng(rings?: number[][][]): LatLng[] {
-  const ring = rings?.[0];
-  if (!ring) return [];
-  return ring.map(([lng, lat]) => ({ lat, lng }));
 }
 
 export async function fetchParcelsNsw(addr: {

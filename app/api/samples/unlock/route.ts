@@ -4,6 +4,8 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { z } from "zod";
+import { escapeHtml } from "@/lib/html";
+import { formatBrisbane } from "@/lib/dates";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   SAMPLES_COOKIE,
@@ -27,7 +29,6 @@ const schema = z.object({
   marketing_consent: z.string().optional(),
 });
 
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 export async function POST(req: NextRequest) {
   const form = await req.formData().catch(() => null);
@@ -132,21 +133,17 @@ async function notify(
   if (!key) return false;
   const from = process.env.RESEND_FROM_EMAIL ?? "AusDilaps <no-reply@ausdilaps.com.au>";
   const to = process.env.SALES_NOTIFY_EMAIL || process.env.ADMIN_EMAIL || "info@ausdilaps.com.au";
-  const when = new Intl.DateTimeFormat("en-AU", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Australia/Brisbane",
-  }).format(new Date());
+  const when = formatBrisbane();
 
   const html = `
     <p>Someone opened the <strong>sample report library</strong> with their email instead of an access code — a warm lead worth a call.</p>
     <table cellpadding="4" style="border-collapse:collapse">
-      <tr><td><strong>Name</strong></td><td>${esc(d.name)}</td></tr>
-      <tr><td><strong>Email</strong></td><td><a href="mailto:${esc(d.email)}">${esc(d.email)}</a></td></tr>
-      <tr><td><strong>Company</strong></td><td>${esc(d.company || "—")}</td></tr>
+      <tr><td><strong>Name</strong></td><td>${escapeHtml(d.name)}</td></tr>
+      <tr><td><strong>Email</strong></td><td><a href="mailto:${escapeHtml(d.email)}">${escapeHtml(d.email)}</a></td></tr>
+      <tr><td><strong>Company</strong></td><td>${escapeHtml(d.company || "—")}</td></tr>
       <tr><td><strong>Marketing</strong></td><td>${consented ? "Consented" : "<strong>Declined</strong> — do not add to a list"}</td></tr>
-      <tr><td><strong>When</strong></td><td>${esc(when)} (Brisbane)</td></tr>
-      <tr><td><strong>Lead id</strong></td><td>${esc(leadId ?? "not saved")}</td></tr>
+      <tr><td><strong>When</strong></td><td>${escapeHtml(when)} (Brisbane)</td></tr>
+      <tr><td><strong>Lead id</strong></td><td>${escapeHtml(leadId ?? "not saved")}</td></tr>
     </table>`;
 
   const res = await fetch("https://api.resend.com/emails", {

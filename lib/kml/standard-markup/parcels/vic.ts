@@ -2,11 +2,11 @@
 // lib/property-sizing/vic.ts, but an envelope query instead of a point query.
 // Free, no API key. VIC has no fuzzy-match confidence score (matchScore is always null).
 
-import type { LatLng } from "@/lib/kml/types";
 import { geocodeVic, splitStreet } from "@/lib/property-sizing/vic";
 import { centroidOf, envelopeAroundPoint, ringAreaSqm } from "../geometry";
 import { assertNoArcgisError } from "@/lib/arcgis";
 import { describeFetchError } from "./describe-fetch-error";
+import { outerRingToLatLng } from "./arcgis-ring";
 import { PROPERTY_ID_PREFIX } from "./parcel-id";
 import type { ParcelFeature, ParcelQueryResult } from "./types";
 
@@ -45,12 +45,6 @@ async function fetchJson<T>(url: string, params: URLSearchParams, timeoutMs = 25
   } finally {
     clearTimeout(t);
   }
-}
-
-function outerRingToLatLng(rings?: number[][][]): LatLng[] {
-  const ring = rings?.[0];
-  if (!ring) return [];
-  return ring.map(([lng, lat]) => ({ lat, lng }));
 }
 
 export async function fetchParcelsVic(addr: {

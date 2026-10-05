@@ -19,7 +19,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { splitExtension } from "@/lib/box";
 
 /** 15- or 18-character Salesforce record id. */
-export const SF_ID = /^[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?$/;
+export { SF_ID } from "@/lib/salesforce-links";
 
 const PNG_MAGIC = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 

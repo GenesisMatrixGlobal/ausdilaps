@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { SF_ID } from "@/lib/salesforce-links";
 import { isStaffInAnyDepartment } from "@/lib/auth/is-staff";
 import { asPngName, destinationProblem, isPng, verifyDestination } from "@/lib/box-destination";
 import { COVER_PHOTO_DEPARTMENTS } from "@/lib/sync-departments";
@@ -19,7 +20,7 @@ const requestSchema = z.object({
   /** A Survey ID ONLY, never pasted text. The client has already resolved it through
    *  /resolve and shown the operator the Survey and its Opportunity, so a mistyped
    *  reference cannot reach a record nobody looked at. */
-  surveyId: z.string().trim().regex(/^[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?$/, "Not a Salesforce Id"),
+  surveyId: z.string().trim().regex(SF_ID, "Not a Salesforce Id"),
   /** Box folder ids are numeric strings. */
   folderId: z.string().trim().regex(/^\d+$/, "Invalid Box folder id"),
   /** Issued by /resolve for exactly this surveyId + folderId — see lib/box-destination.ts. */

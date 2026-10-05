@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { SF_ID } from "@/lib/salesforce-links";
 import { isStaff } from "@/lib/auth/is-staff";
 import { isConfigError, MarkupSyncError } from "@/lib/markup-sync";
 import { createRecords } from "@/lib/salesforce";
@@ -37,7 +38,7 @@ const rowSchema = z.object({
 });
 
 const requestSchema = z.object({
-  quoteId: z.string().regex(/^[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?$/, "Not a Salesforce Id"),
+  quoteId: z.string().regex(SF_ID, "Not a Salesforce Id"),
   rows: z.array(rowSchema).min(1, "Tick at least one row").max(200),
 });
 

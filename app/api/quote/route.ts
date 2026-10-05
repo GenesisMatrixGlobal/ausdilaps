@@ -3,11 +3,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { quoteSchema, classifyTier, type QuoteInput, type LeadTier } from "@/lib/leads";
 import { syncLeadToSalesforce } from "@/lib/salesforce";
 import { SITE } from "@/lib/site";
+import { escapeHtml } from "@/lib/html";
+import { formatBrisbane } from "@/lib/dates";
 import { enquiryAckEmail } from "@/lib/emails/enquiry-ack";
 import { accessCodes } from "@/lib/samples-access";
-
-const esc = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** Once per cold start, not per submission. */
 let warnedUnprotected = false;
@@ -44,11 +43,7 @@ async function sendEmails(
     "General Inquiry": "General enquiry",
   }[d.inquiryType];
 
-  const submittedAt = new Intl.DateTimeFormat("en-AU", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Australia/Brisbane",
-  }).format(new Date());
+  const submittedAt = formatBrisbane();
 
   // EVERY field on the form, in the order it is asked. Blanks are printed as a
   // dash rather than dropped: an absent row used to be indistinguishable from a
@@ -76,7 +71,7 @@ async function sendEmails(
   const tableRows = rows
     .map(([k, v]) => {
       const blank = v === undefined || v === null || v === "";
-      const value = blank ? "\u2014" : esc(String(v));
+      const value = blank ? "\u2014" : escapeHtml(String(v));
       const style = blank
         ? "color:#9ca3af;font-weight:400;"
         : "color:#2f343a;font-weight:600;";
@@ -136,7 +131,7 @@ async function sendEmails(
       <table style="width:100%;border-collapse:collapse;">${tableRows}</table>
       <div style="margin-top:20px;padding-top:20px;border-top:1px solid #eee;">
         <p style="color:#5b6570;margin:0 0 8px;">Notes</p>
-        <p style="white-space:pre-wrap;margin:0;${d.notes ? "" : "color:#9ca3af;"}">${d.notes ? esc(d.notes) : "\u2014"}</p>
+        <p style="white-space:pre-wrap;margin:0;${d.notes ? "" : "color:#9ca3af;"}">${d.notes ? escapeHtml(d.notes) : "\u2014"}</p>
       </div>
     </div>`,
   });

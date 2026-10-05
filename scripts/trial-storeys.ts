@@ -6,6 +6,7 @@
 // Writes <out-dir>/<n>.jpg (the exact image the model judged) and <out-dir>/storeys.csv with
 // the verdict, confidence, clear/check decision and a Street View link per address.
 
+import { csvCell } from "@/lib/csv";
 import { config } from "dotenv";
 import fs from "node:fs";
 import path from "node:path";
@@ -24,11 +25,6 @@ if (!keys.maps || !keys.anthropic) throw new Error("GOOGLE_MAPS_API_KEY and ANTH
 const [, , inputPath, outDir = "storeys-trial"] = process.argv;
 if (!inputPath) throw new Error("usage: tsx scripts/trial-storeys.ts <addresses.txt> [out-dir]");
 fs.mkdirSync(outDir, { recursive: true });
-
-function csvCell(v: unknown): string {
-  const s = v == null ? "" : String(v);
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 async function main() {
   const addresses = parseAddressBlock(fs.readFileSync(inputPath, "utf8"));

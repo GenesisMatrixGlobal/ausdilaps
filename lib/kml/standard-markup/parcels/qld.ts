@@ -3,11 +3,11 @@
 // ../neighbours.ts). Same free/no-key ArcGIS service as lib/property-sizing/qld.ts,
 // just an envelope query instead of a point query so it returns more than one feature.
 
-import type { LatLng } from "@/lib/kml/types";
 import { geocodeQld } from "@/lib/property-sizing/qld";
 import { envelopeAroundPoint, ringAreaSqm } from "../geometry";
 import { assertNoArcgisError } from "@/lib/arcgis";
 import { describeFetchError } from "./describe-fetch-error";
+import { outerRingToLatLng } from "./arcgis-ring";
 import type { ParcelFeature, ParcelKind, ParcelQueryResult } from "./types";
 
 const CADASTRE_URL =
@@ -44,12 +44,6 @@ async function fetchJson<T>(url: string, timeoutMs = 12000): Promise<T> {
   } finally {
     clearTimeout(t);
   }
-}
-
-function outerRingToLatLng(rings?: number[][][]): LatLng[] {
-  const ring = rings?.[0];
-  if (!ring) return [];
-  return ring.map(([lng, lat]) => ({ lat, lng }));
 }
 
 export async function fetchParcelsQld(addr: {

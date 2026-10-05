@@ -1,4 +1,5 @@
 import { soqlQuery } from "@/lib/salesforce";
+import { soqlEscape } from "@/lib/salesforce-links";
 
 export { salesforceRecordUrl, salesforceSearchUrl } from "./salesforce-urls";
 
@@ -87,8 +88,6 @@ export function parseLocality(siteLocation: string | null | undefined): Locality
   return { suburb: suburb.toUpperCase(), state: parts[stateIndex].toUpperCase() };
 }
 
-const escapeSoql = (value: string) => value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-
 const key = (l: Locality) => `${l.suburb}|${l.state}`;
 
 /**
@@ -108,7 +107,7 @@ export async function findOpportunitiesIn(localities: Locality[]): Promise<Local
   const clauses = [...unique.values()]
     .map(
       (l) =>
-        `(Site_Address__City__s = '${escapeSoql(l.suburb)}' AND Site_Address__StateCode__s = '${escapeSoql(l.state)}')`
+        `(Site_Address__City__s = '${soqlEscape(l.suburb)}' AND Site_Address__StateCode__s = '${soqlEscape(l.state)}')`
     )
     .join(" OR ");
 
@@ -251,8 +250,8 @@ export async function findOpportunitiesNamed(phrases: string[]): Promise<Map<str
   if (unique.length === 0) return new Map();
 
   // ⚠️ LIKE needs its wildcards escaped too, or a phrase containing % or _ silently widens
-  // the search. escapeSoql only handles quotes and backslashes.
-  const forLike = (v: string) => escapeSoql(v).replace(/[%_]/g, "\\$&");
+  // the search. soqlEscape only handles quotes and backslashes.
+  const forLike = (v: string) => soqlEscape(v).replace(/[%_]/g, "\\$&");
   const clauses = unique.map((p) => `Name LIKE '%${forLike(p)}%'`).join(" OR ");
 
   try {

@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/auth/session";
+import { formatBrisbane as when } from "@/lib/dates";
 import { loadLeads, type LeadRecord } from "@/lib/admin/leads";
 
 export const metadata = {
@@ -25,13 +26,6 @@ const TIER_LABEL: Record<string, string> = {
   unclassified: "Unclassified",
 };
 
-function when(iso: string): string {
-  return new Intl.DateTimeFormat("en-AU", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Australia/Brisbane",
-  }).format(new Date(iso));
-}
 
 /** Whether the notice to info@ got out, as one glyph you can scan a column of.
  *

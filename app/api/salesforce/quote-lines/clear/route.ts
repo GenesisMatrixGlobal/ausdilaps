@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { SF_ID } from "@/lib/salesforce-links";
 import { isStaff } from "@/lib/auth/is-staff";
 import { isConfigError, MarkupSyncError } from "@/lib/markup-sync";
 import { clearQuote } from "@/lib/quote-lines/clear";
@@ -16,7 +17,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const requestSchema = z.object({
-  quoteId: z.string().regex(/^[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?$/, "Not a Salesforce Id"),
+  quoteId: z.string().regex(SF_ID, "Not a Salesforce Id"),
 });
 
 export async function POST(req: NextRequest) {

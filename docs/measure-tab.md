@@ -131,7 +131,7 @@ tab switch.
 | `app/api/maps/resolve-link/route.ts` | Resolves `maps.app.goo.gl` share links. |
 | `lib/maps/measure-export.ts` | The PNG render — Static Maps + sharp composite. |
 | `app/api/maps/measure-export/route.ts` | The export endpoint. |
-| `lib/maps/measure-file.ts` | The .json save format, and a defensive parser for reading one back. |
+| ~~`lib/maps/measure-file.ts`~~ | Deleted 2026-10-05 — the Browse tab keeps nothing, so the save format went with it. |
 
 ---
 

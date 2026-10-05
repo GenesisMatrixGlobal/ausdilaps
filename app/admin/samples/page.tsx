@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/auth/session";
+import { formatBrisbane as when } from "@/lib/dates";
 import { StatTiles, type Stat } from "@/components/staff/stat-tiles";
 import {
   VISITORS_WINDOW_DAYS,
@@ -20,13 +21,6 @@ export const metadata = {
  * on every quote, so a code unlock is anonymous and is shown as one rather than guessed at.
  */
 
-function when(iso: string): string {
-  return new Intl.DateTimeFormat("en-AU", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Australia/Brisbane",
-  }).format(new Date(iso));
-}
 
 function ago(iso: string): string {
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);

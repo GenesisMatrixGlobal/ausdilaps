@@ -26,7 +26,7 @@ import {
   uploadFileAutoRenamed,
 } from "@/lib/box";
 import { SalesforceConfigError, soqlQuery, updateRecord } from "@/lib/salesforce";
-import { soqlEscape } from "@/lib/markup-sync";
+import { SF_ID, soqlEscape } from "@/lib/salesforce-links";
 
 /** Folder naming convention inside an Opportunity's Box folder. Constants rather than config:
  *  when the convention has drifted the operator pastes a folder link instead, which is cheaper
@@ -56,8 +56,6 @@ function boxFolderField(): string {
 /** Survey__c's key prefix — fixed per object in Salesforce, so it identifies a bare pasted
  *  Id. Confirmed from EntityDefinition. */
 const SURVEY_PREFIX = "a4F";
-
-const SF_ID = /^[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?$/;
 
 export class CoverPhotoSyncError extends Error {}
 

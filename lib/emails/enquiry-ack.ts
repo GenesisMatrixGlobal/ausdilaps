@@ -14,10 +14,8 @@
  * link carries the access code so the recipient lands in the library without re-typing
  * the name and email the form already took.
  *
- * Facts come from lib/site.ts and data/faq.ts — the methodology steps, the AS 4349.0
- * reference. ⚠️ The "15 to 45 minutes" figure for a standard home is Rhys's (2026-10-05)
- * and DISAGREES with data/faq.ts, which still says "two to four hours" — the FAQ is the
- * one to fix.
+ * Facts come from lib/site.ts and data/faq.ts (the methodology steps, the 15-to-45-minute
+ * inspection). Don't add a claim you can't point at.
  *
  * ⚠️ The recipient is whoever typed the address, so everything reflected back (name,
  * project, address, references) goes through `escapeHtml`, and the greeting falls back to
@@ -70,7 +68,6 @@ const STEEL_LIGHT = "#6d90b4"; // --color-ad-steel-light
 const ORANGE = "#e8642a"; // --color-ad-orange
 const SURFACE = "#f3f4f5"; // --color-ad-surface
 const BORDER = "#e1e3e6"; // --color-ad-border (rgba 12% ink) flattened on white
-const DEEP = "#23272b"; // --color-ad-navy-deep
 const RADIUS = "10px"; // --radius-md
 const FONT_BODY = "Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 const FONT_HEADING = "'Space Grotesk',Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
@@ -130,7 +127,7 @@ function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Conte
         steps: [
           { title: "Scope review", body: "Site, adjoining properties, DA conditions and any contract clauses." },
           { title: "Itemised quote", body: "Clear pricing, methodology and deliverables." },
-          { title: "Kick-off", body: "A project coordinator confirms access and scheduling." },
+          { title: "Kick-off, once approved", body: "A project coordinator confirms access and scheduling." },
         ],
         primary: samples,
         links: [capability, faq],
@@ -154,11 +151,8 @@ function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Conte
               ? `By ${d.contactMethod.map((m) => CONTACT_WORD[m]).join(" or ")}, as you asked.`
               : "Our projects team will contact you shortly.",
           },
-          {
-            title: "If you'd like to arrange a time",
-            body: `Reply to this email or call ${SITE.phone} and we'll book one that suits you.`,
-          },
-          { title: "The inspection", body: "Interior and exterior photos. A standard home takes 15 to 45 minutes." },
+          { title: "If you'd like to arrange a time", body: "We'll book one that suits you." },
+          { title: "The inspection", body: "A standard home takes 15 to 45 minutes." },
         ],
         primary: whatIs,
         links: [faq],
@@ -262,7 +256,7 @@ ${c.steps
     ${c.intro.map(para).join("\n    ")}
     ${stepsHtml}
     <div style="height:14px;font-size:0;">&nbsp;</div>
-    ${para(`If it's urgent, call us on <a href="${tel}" style="color:${INK};font-weight:600;text-decoration:none;">${SITE.phone}</a> or just reply to this email.`)}
+    ${para(`If it's urgent, call us on <a href="${tel}" style="color:${INK};font-weight:600;text-decoration:none;">${SITE.phone}</a>.`)}
   </td></tr>
 
   <!-- While you wait -->
@@ -282,14 +276,14 @@ ${c.steps
   </td></tr>
 
   <!-- Footer -->
-  <tr><td style="background:${DEEP};border-radius:0 0 ${RADIUS} ${RADIUS};padding:22px 40px;">
-    <p style="margin:0 0 6px;font-family:${FONT_HEADING};font-size:14px;font-weight:700;color:#ffffff;">${SITE.name} <span style="font-family:${FONT_BODY};font-weight:400;color:#9aa5b1;">· ${SITE.descriptor}</span></p>
-    <p style="margin:0 0 8px;font-family:${FONT_BODY};font-size:13px;line-height:1.7;color:#c3cad2;">
+  <tr><td style="background:${STEEL};border-radius:0 0 ${RADIUS} ${RADIUS};padding:22px 40px;">
+    <p style="margin:0 0 6px;font-family:${FONT_HEADING};font-size:14px;font-weight:700;color:#ffffff;">${SITE.name} <span style="font-family:${FONT_BODY};font-weight:400;color:#d6e0ea;">· ${SITE.descriptor}</span></p>
+    <p style="margin:0 0 8px;font-family:${FONT_BODY};font-size:13px;line-height:1.7;color:#ffffff;">
       <a href="${tel}" style="color:#ffffff;text-decoration:none;">${SITE.phone}</a> &nbsp;·&nbsp;
       <a href="mailto:${SITE.email}" style="color:#ffffff;text-decoration:none;">${SITE.email}</a> &nbsp;·&nbsp;
       <a href="${base}" style="color:#ffffff;text-decoration:none;">ausdilaps.com.au</a>
     </p>
-    <p style="margin:0;font-family:${FONT_BODY};font-size:12px;line-height:1.6;color:#8a94a0;">${SITE.legalName} T/A ${SITE.name} · ABN ${SITE.abn} · ${SITE.address}</p>
+    <p style="margin:0;font-family:${FONT_BODY};font-size:12px;line-height:1.6;color:#c9d5e1;">${SITE.legalName} T/A ${SITE.name} · ABN ${SITE.abn} · ${SITE.address}</p>
   </td></tr>
 
 </table>
@@ -318,7 +312,7 @@ ${c.steps
     ...(c.steps.length > 0
       ? [c.stepsHeading.toUpperCase(), ...c.steps.map((s, i) => `${i + 1}. ${s.title} — ${strip(s.body)}`), ""]
       : []),
-    `If it's urgent, call us on ${SITE.phone} or reply to this email.`,
+    `If it's urgent, call us on ${SITE.phone}.`,
     "",
     "WHILE YOU WAIT",
     `${c.primary.title}: ${c.primary.href}`,

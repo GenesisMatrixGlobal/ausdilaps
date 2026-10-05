@@ -64,7 +64,7 @@ for (const type of INQUIRY_TYPES) {
 const quote = enquiryAckEmail({ input: cases["New Quote"], siteUrl: site });
 assert.ok(quote.html.includes("Western Tunnelling Package, Rozelle NSW"), "quote names the project");
 assert.ok(quote.html.includes("An estimator will be assigned to your scope shortly"), "quote: estimator line");
-assert.ok(quote.html.includes("Once your estimator is assigned") && quote.html.includes("Itemised quote"), "quote explains the steps");
+assert.ok(quote.html.includes("Once your estimator is assigned") && quote.html.includes("Kick-off, once approved"), "quote explains the steps");
 assert.ok(quote.html.includes("/dilapidation-reports/samples\""), "no code → plain samples link");
 
 const letter = enquiryAckEmail({ input: cases["I Received An Access Letter"], siteUrl: site });

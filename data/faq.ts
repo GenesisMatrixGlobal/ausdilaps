@@ -27,7 +27,7 @@ export const FAQ: FaqCategory[] = [
       },
       {
         q: "How long does it take to complete a dilapidation report?",
-        a: "A standard residential inspection typically takes two to four hours; larger commercial properties or complex structures take longer. Report writing afterwards can take several days to weeks depending on complexity. Allow sufficient time before construction begins to document pre-existing conditions accurately.",
+        a: "A standard residential inspection typically takes 15 to 45 minutes; larger commercial properties or complex structures take longer. Report writing afterwards can take several days to weeks depending on complexity. Allow sufficient time before construction begins to document pre-existing conditions accurately.",
       },
       {
         q: "Can I use a previous dilapidation report for a new project?",

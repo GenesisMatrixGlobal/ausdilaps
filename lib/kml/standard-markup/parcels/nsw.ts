@@ -3,6 +3,7 @@
 // Geocodes via Google (same as the property-sizing tool); the SIX Maps cadastre is open.
 
 import { geocodeNsw } from "@/lib/property-sizing/nsw";
+import { fetchJson } from "@/lib/fetch-json";
 import { envelopeAroundPoint, ringAreaSqm } from "../geometry";
 import { assertNoArcgisError } from "@/lib/arcgis";
 import { describeFetchError } from "./describe-fetch-error";
@@ -19,17 +20,6 @@ interface CadastreResp {
   }[];
 }
 
-async function fetchJson<T>(url: string, timeoutMs = 12000): Promise<T> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: "application/json" } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return (await res.json()) as T;
-  } finally {
-    clearTimeout(t);
-  }
-}
 
 export async function fetchParcelsNsw(addr: {
   street: string;

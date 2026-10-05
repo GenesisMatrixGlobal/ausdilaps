@@ -18,6 +18,7 @@
 // .env.local.example) — no new setup.
 
 import type { LotResult } from "./types";
+import { fetchJson as fetchJsonShared } from "@/lib/fetch-json";
 import { geocodeViaGoogle, type GoogleGeocodeOutcome } from "./google-geocode";
 import { arcgisErrorMessage } from "@/lib/arcgis";
 import { ringAreaSqm } from "@/lib/kml/standard-markup/geometry";
@@ -36,17 +37,7 @@ interface ParcelResp {
 
 // Vicmap_Parcel (an ArcGIS Online hosted feature service) has been observed taking
 // 12-15s to respond on occasion — more headroom than QLD/NSW's own state-run services.
-async function fetchJson<T>(url: string, params: URLSearchParams, timeoutMs = 25000): Promise<T> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(`${url}?${params.toString()}`, { signal: ctrl.signal, headers: { Accept: "application/json" } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return (await res.json()) as T;
-  } finally {
-    clearTimeout(t);
-  }
-}
+const fetchJson = <T,>(url: string, params: URLSearchParams) => fetchJsonShared<T>(url, { params, timeoutMs: 25_000 });
 
 /** Split "8 Ironwood Ct" into a house number + road name, dropping the road type
  *  (VIC's road_name field excludes it) so "Ct" vs "Court" can't cause a mismatch. */

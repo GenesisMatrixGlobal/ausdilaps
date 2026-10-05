@@ -10,7 +10,7 @@
 // an empty map, the cells come up blank, and the operator types them. Same rule as the
 // knowledge base's vision pass.
 
-import { assertNoArcgisError } from "@/lib/arcgis";
+import { fetchJson as fetchJsonShared } from "@/lib/fetch-json";
 import type { LatLng } from "@/lib/kml/types";
 import { centroidOf, envelopeOfRings, pointInRing } from "../geometry";
 import type { StandardMarkupState } from "../resolve";
@@ -51,25 +51,8 @@ interface Lot {
   ring: LatLng[];
 }
 
-async function fetchJson<T>(url: string, params: URLSearchParams): Promise<T> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(`${url}?${params.toString()}`, {
-      signal: ctrl.signal,
-      headers: { Accept: "application/json" },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const body = await res.json();
-    // An ArcGIS failure is HTTP 200 with an `error` body — see lib/arcgis.ts. Thrown here and
-    // caught by fetchLotAddresses, so the log says the service broke instead of reporting a
-    // confident "0 addresses". The markup is unaffected either way.
-    assertNoArcgisError(body, "The address layer");
-    return body as T;
-  } finally {
-    clearTimeout(t);
-  }
-}
+const fetchJson = <T,>(url: string, params: URLSearchParams) =>
+  fetchJsonShared<T>(url, { params, timeoutMs: TIMEOUT_MS, arcgisService: "The address layer" });
 
 /** NSW returns SHOUTED addresses; QLD's locality is upper case too. Handles the hyphenated
  *  and apostrophe cases ("O'CONNELL", "STRATH-CREEK") that a naive per-word rule mangles.

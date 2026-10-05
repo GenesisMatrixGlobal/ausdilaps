@@ -11,6 +11,7 @@
 // Trade-off: Google returns no match score, so matchScore is null here — same as VIC.
 
 import type { LotResult } from "./types";
+import { fetchJson } from "@/lib/fetch-json";
 import { geocodeViaGoogle } from "./google-geocode";
 import { arcgisErrorMessage } from "@/lib/arcgis";
 import { ringAreaSqm } from "@/lib/kml/standard-markup/geometry";
@@ -25,17 +26,6 @@ interface CadastreResp {
   }[];
 }
 
-async function fetchJson<T>(url: string, timeoutMs = 12000): Promise<T> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: "application/json" } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return (await res.json()) as T;
-  } finally {
-    clearTimeout(t);
-  }
-}
 
 export interface NswGeocodeResult {
   x: number;

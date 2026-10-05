@@ -10,6 +10,7 @@
 // match score, so there's nothing to gain by moving it.
 
 import { recordApiCall } from "@/lib/api-usage";
+import { fetchJson as fetchJsonShared } from "@/lib/fetch-json";
 
 const GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 
@@ -61,20 +62,9 @@ export type GoogleGeocodeOutcome =
   | { status: "no_candidates" }
   | { status: "no_location"; matchedAddress: string | null };
 
-async function fetchJson<T>(url: string, params: URLSearchParams, timeoutMs: number): Promise<T> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(`${url}?${params.toString()}`, {
-      signal: ctrl.signal,
-      headers: { Accept: "application/json" },
-    });
-    void recordApiCall({ provider: "google", api: "geocoding" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return (await res.json()) as T;
-  } finally {
-    clearTimeout(t);
-  }
+function fetchJson<T>(url: string, params: URLSearchParams, timeoutMs: number): Promise<T> {
+  void recordApiCall({ provider: "google", api: "geocoding" });
+  return fetchJsonShared<T>(url, { params, timeoutMs });
 }
 
 /**

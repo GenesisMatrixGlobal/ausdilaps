@@ -9,7 +9,7 @@
 // ⚠ THIS MODULE MUST NEVER THROW — same rule as addresses.ts. A failed lookup returns [] and
 // the geocoded parcel stands, unverified. Verification is a safety net, not a dependency.
 
-import { assertNoArcgisError } from "@/lib/arcgis";
+import { fetchJson as fetchJsonShared } from "@/lib/fetch-json";
 import type { LatLng } from "@/lib/kml/types";
 import { centroidOf, envelopeAroundPoint } from "../geometry";
 import { ringAnchor } from "../measure";
@@ -35,19 +35,8 @@ export interface AddressFeature extends AddressFeatureLike {
   full: string;
 }
 
-async function fetchJson<T>(url: string, params: URLSearchParams): Promise<T> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(`${url}?${params.toString()}`, { signal: ctrl.signal, headers: { Accept: "application/json" } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const body = await res.json();
-    assertNoArcgisError(body, "The address layer");
-    return body as T;
-  } finally {
-    clearTimeout(t);
-  }
-}
+const fetchJson = <T,>(url: string, params: URLSearchParams) =>
+  fetchJsonShared<T>(url, { params, timeoutMs: TIMEOUT_MS, arcgisService: "The address layer" });
 
 function envelopeParams(point: LatLng, halfWidthM: number): Record<string, string> {
   const env = envelopeAroundPoint(point.lng, point.lat, halfWidthM);

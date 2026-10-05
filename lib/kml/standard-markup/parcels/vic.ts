@@ -3,6 +3,7 @@
 // Free, no API key. VIC has no fuzzy-match confidence score (matchScore is always null).
 
 import { geocodeVic, splitStreet } from "@/lib/property-sizing/vic";
+import { fetchJson as fetchJsonShared } from "@/lib/fetch-json";
 import { centroidOf, envelopeAroundPoint, ringAreaSqm } from "../geometry";
 import { assertNoArcgisError } from "@/lib/arcgis";
 import { describeFetchError } from "./describe-fetch-error";
@@ -35,17 +36,7 @@ interface PropertyResp {
 
 // Same generous timeout as lib/property-sizing/vic.ts — VIC's ArcGIS Online hosted
 // feature services have been observed taking 12-15s to respond.
-async function fetchJson<T>(url: string, params: URLSearchParams, timeoutMs = 25000): Promise<T> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(`${url}?${params.toString()}`, { signal: ctrl.signal, headers: { Accept: "application/json" } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return (await res.json()) as T;
-  } finally {
-    clearTimeout(t);
-  }
-}
+const fetchJson = <T,>(url: string, params: URLSearchParams) => fetchJsonShared<T>(url, { params, timeoutMs: 25_000 });
 
 export async function fetchParcelsVic(addr: {
   street: string;

@@ -4,6 +4,7 @@
 // just an envelope query instead of a point query so it returns more than one feature.
 
 import { geocodeQld } from "@/lib/property-sizing/qld";
+import { fetchJson } from "@/lib/fetch-json";
 import { envelopeAroundPoint, ringAreaSqm } from "../geometry";
 import { assertNoArcgisError } from "@/lib/arcgis";
 import { describeFetchError } from "./describe-fetch-error";
@@ -34,17 +35,6 @@ function qldParcelKind(parcelTyp: string | undefined): ParcelKind {
   return "other";
 }
 
-async function fetchJson<T>(url: string, timeoutMs = 12000): Promise<T> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: "application/json" } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return (await res.json()) as T;
-  } finally {
-    clearTimeout(t);
-  }
-}
 
 export async function fetchParcelsQld(addr: {
   street: string;

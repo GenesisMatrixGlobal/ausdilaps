@@ -77,6 +77,9 @@ const trimSlash = (u: string) => u.replace(/\/+$/, "");
 /** How a chosen contact method reads mid-sentence ("by SMS or phone"). */
 const CONTACT_WORD: Record<ContactMethod, string> = { SMS: "SMS", Call: "phone", Email: "email" };
 
+/** "SMS", "SMS or phone", "SMS, phone or email". */
+const listWords = (w: string[]) => (w.length < 2 ? w.join("") : `${w.slice(0, -1).join(", ")} or ${w[w.length - 1]}`);
+
 function greetingFor(name: string): string {
   const first = name.trim().split(/\s+/)[0] ?? "";
   if (!first || /[/:@\\<>]/.test(first) || first.length > 30) return "Hi there";
@@ -148,8 +151,8 @@ function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Conte
           {
             title: "We'll get in touch with you",
             body: d.contactMethod?.length
-              ? `By ${d.contactMethod.map((m) => CONTACT_WORD[m]).join(" or ")}, as you asked.`
-              : "Our projects team will contact you shortly.",
+              ? `By ${listWords(d.contactMethod.map((m) => CONTACT_WORD[m]))}, as you asked.`
+              : "By SMS, phone or email.",
           },
           { title: "If you'd like to arrange a time", body: "We'll book one that suits you." },
           { title: "The inspection", body: "A standard home takes 15 to 45 minutes." },

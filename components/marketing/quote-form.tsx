@@ -147,6 +147,34 @@ function AddressFields({
   );
 }
 
+/** "How would you like us to get in touch?" — SMS / Call / Email, shared by both variants. */
+function ContactMethodField({
+  register,
+  className,
+}: {
+  register: UseFormRegister<FormValues>;
+  className?: string;
+}) {
+  return (
+    <fieldset className={className}>
+      <legend className={labelCls}>How would you like us to get in touch?</legend>
+      <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+        {CONTACT_METHODS.map((m) => (
+          <label key={m} className="flex items-center gap-2 text-sm text-ad-ink">
+            <input
+              type="checkbox"
+              value={m}
+              className="h-4 w-4 rounded border-ad-border text-ad-accent focus:ring-ad-accent/30"
+              {...register("contactMethod")}
+            />
+            {m}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 /**
  * `variant="full"` is the /quote page: every field, branched by enquiry type.
  * `variant="compact"` is the homepage hero card: contact details and the relevant
@@ -494,6 +522,10 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
             </div>
           )}
 
+          {/* The acknowledgement email tells a resident how we'll get in touch, so the
+              homepage form has to ask (Rhys, 2026-10-05) — the same field as the full form. */}
+          {isAccessLetter && <ContactMethodField register={register} />}
+
           {isNewQuote && (
             <div>
               <label className={labelCls} htmlFor="assetCount">
@@ -771,22 +803,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
         <textarea id="notes" rows={4} className={inputCls} {...register("notes")} />
       </div>
 
-      <fieldset className="mt-5">
-        <legend className={labelCls}>How would you like us to get in touch?</legend>
-        <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
-          {CONTACT_METHODS.map((m) => (
-            <label key={m} className="flex items-center gap-2 text-sm text-ad-ink">
-              <input
-                type="checkbox"
-                value={m}
-                className="h-4 w-4 rounded border-ad-border text-ad-accent focus:ring-ad-accent/30"
-                {...register("contactMethod")}
-              />
-              {m}
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <ContactMethodField register={register} className="mt-5" />
 
       {siteKey && (
         <>

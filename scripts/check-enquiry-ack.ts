@@ -71,6 +71,10 @@ const letter = enquiryAckEmail({ input: cases["I Received An Access Letter"], si
 assert.ok(letter.html.includes("12 Craig Avenue, Vaucluse NSW 2030"), "letter echoes the address");
 assert.ok(letter.html.includes("We'll get in touch with you") && letter.html.includes("By SMS or phone"), "letter uses the chosen contact method");
 assert.ok(letter.html.includes("15 to 45 minutes"), "letter sets expectations on the inspection");
+const letterAll = enquiryAckEmail({ input: base({ inquiryType: "I Received An Access Letter", contactMethod: ["SMS", "Call", "Email"] }), siteUrl: site });
+assert.ok(letterAll.html.includes("By SMS, phone or email, as you asked."), "three methods read as a list");
+const letterNone = enquiryAckEmail({ input: base({ inquiryType: "I Received An Access Letter" }), siteUrl: site });
+assert.ok(letterNone.html.includes("By SMS, phone or email."), "no method ticked → all three");
 assert.ok(letter.html.includes("Hi Tom,"), "apostrophe in the surname doesn't break the greeting");
 
 const report = enquiryAckEmail({ input: cases["Report Inquiry"], siteUrl: site });

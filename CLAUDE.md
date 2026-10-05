@@ -24,7 +24,7 @@ Not a brochure. The goal is to make AusDilaps **the category authority** in Aust
 4. **A conversion machine.** Every page routes to a qualified quote. The form captures real project detail, classifies the lead (Tier-1 vs residential), and pushes to Salesforce.
 5. **Craft an engineer is proud of.** Fast, accessible, precise, beautiful. Hybrid light/charcoal design from the logo.
 
-**Positioning line to build around:** *AusDilaps is the Tier 1 dilapidation specialist Australian contractors and government agencies trust when a damage claim has to be defensible, not just delivered.* (StoryBrand: the customer — a project manager / contracts admin / council risk officer — is the hero; we are the guide with Tier-1 proof + chartered engineers.)
+**Positioning line to build around:** *AusDilaps is the Tier 1 dilapidation specialist Australian contractors and government agencies trust when a damage claim has to be defensible, not just delivered.* (StoryBrand: the customer — a project manager / contracts admin / council risk officer — is the hero; we are the guide with Tier-1 proof + structural engineers. Never write "chartered" — nobody has confirmed a CPEng, Rhys softened it 2026-10-06.)
 
 ---
 

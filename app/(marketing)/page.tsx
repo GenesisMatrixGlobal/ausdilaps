@@ -219,7 +219,7 @@ function Services() {
           <div className="max-w-2xl">
             <Eyebrow className="text-ad-accent">What we do</Eyebrow>
             <h2 className="mt-5 font-heading text-3xl font-semibold tracking-tight text-ad-ink sm:text-4xl">
-              Specialist reports, backed by chartered engineering.
+              Specialist reports, backed by structural engineers.
             </h2>
           </div>
           <Link href="/our-services" className="text-sm font-semibold text-ad-steel-dark transition-colors hover:text-ad-ink">

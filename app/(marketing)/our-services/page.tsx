@@ -64,7 +64,7 @@ export default function ServicesIndexPage() {
       <PageHero
         crumbs={CRUMBS}
         eyebrow="Our Services"
-        title="Specialist reports, backed by chartered engineering."
+        title="Specialist reports, backed by structural engineers."
         intro="Every service is framed under one specialism — dilapidation. From a single residential build to billion-dollar infrastructure, we match the right method and the right engineer to the asset, so the record holds up when a claim is made."
       />
 
@@ -118,7 +118,7 @@ export default function ServicesIndexPage() {
             </h2>
             <p className="mt-4 text-ad-muted">
               The assessments, surveys and engineering that surround a dilapidation programme — each
-              delivered by the same chartered team.
+              delivered by the same team of structural engineers.
             </p>
           </div>
           <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">

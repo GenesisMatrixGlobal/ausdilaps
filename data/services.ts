@@ -214,7 +214,7 @@ export const SERVICES_CONTENT: Service[] = [
     h1: "Structural Engineering",
     eyebrow: "Structural Engineering",
     navLabel: "Structural Engineering",
-    summary: "Chartered structural design, certificates and existing-structure reviews.",
+    summary: "Structural design, certificates and existing-structure reviews by our structural engineers.",
     intro:
       "Successful structural engineering relies on understanding the client's needs and applying the latest design technology in a way that enhances a structure's functionality and look — without onerous financial commitments or inflexible building use. We deliver it from simple wall removals to the detailed design of high-rise buildings.",
     sections: [

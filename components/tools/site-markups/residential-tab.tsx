@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { fileSlug } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { SyncToSalesforce } from "@/components/tools/shared/sync-to-salesforce";
@@ -86,14 +87,7 @@ interface GenerateResponse {
   flags: string[];
 }
 
-function slugify(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "") || "standard-markup"
-  );
-}
+const slugify = (value: string) => fileSlug(value, "standard-markup");
 
 function base64ToBlob(base64: string, mimeType: string): Blob {
   const bytes = atob(base64);

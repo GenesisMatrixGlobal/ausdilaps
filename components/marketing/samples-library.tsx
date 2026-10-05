@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { fileSlug } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import type { SampleCategory, SampleItem, SampleKind } from "@/lib/samples";
 import { SAMPLES_CLICK_PATH } from "@/lib/samples-access";
@@ -160,6 +161,4 @@ function KindIcon({ kind }: { kind: SampleKind }) {
   );
 }
 
-function slug(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-}
+const slug = (s: string) => fileSlug(s);

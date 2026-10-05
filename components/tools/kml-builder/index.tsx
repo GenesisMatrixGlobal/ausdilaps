@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { fileSlug } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { parseKmlCsv, SAMPLE_CSV, type CsvParseError } from "@/lib/kml/csv";
@@ -52,14 +53,7 @@ function rowToPath(row: Row): KmlPathInput {
   };
 }
 
-function slugify(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "") || "paths"
-  );
-}
+const slugify = (value: string) => fileSlug(value, "paths");
 
 export function KmlBuilderTool() {
   const [mode, setMode] = useState<"straight-line" | "road-segments">("straight-line");

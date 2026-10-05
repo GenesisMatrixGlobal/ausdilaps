@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { fileSlug } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { SyncToSalesforce } from "@/components/tools/shared/sync-to-salesforce";
@@ -24,14 +25,7 @@ function formatKm(km: number): string {
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(2)} km`;
 }
 
-function slugify(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "") || "site-markup"
-  );
-}
+const slugify = (value: string) => fileSlug(value, "site-markup");
 
 type InputMode = "cross_streets" | "coordinates" | "route_url";
 

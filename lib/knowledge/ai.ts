@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
+import { callAnthropic as callAnthropicShared, textFrom, toolInputFrom } from "@/lib/anthropic";
 
 /** Shared Anthropic plumbing for knowledge ingest.
  *
@@ -24,9 +24,7 @@ export const MAX_PDF_BYTES_FOR_VISION = 20 * 1024 * 1024;
 
 const TIMEOUT_MS = 240_000;
 
-export function aiConfigured(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY;
-}
+export { anthropicConfigured as aiConfigured } from "@/lib/anthropic";
 
 /** Wraps untrusted content in a tag the model is told to treat as data, after removing
  *  any forged copy of that tag from the content itself — which closes the
@@ -44,53 +42,12 @@ type ContentBlock =
   | { type: "text"; text: string }
   | { type: "document"; source: { type: "base64"; media_type: string; data: string } };
 
-type AnthropicResponse = {
-  content?: { type: string; text?: string; name?: string; input?: unknown }[];
-  stop_reason?: string;
-  usage?: AnthropicUsage;
-};
-
-/** One call. Throws on any failure — callers catch and degrade. */
-export async function callAnthropic(body: Record<string, unknown>): Promise<AnthropicResponse> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error("ANTHROPIC_API_KEY not configured");
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`Anthropic ${res.status}: ${detail.slice(0, 300)}`);
-  }
-  const data = (await res.json()) as AnthropicResponse;
+/** One call, billed to the indexer. Throws on any failure — callers catch and degrade. */
+export function callAnthropic(body: Record<string, unknown>) {
   // Indexing runs from the postbuild script and the manage page, neither of which is a tool
   // page, so the job is named here.
-  void recordApiCall({ provider: "anthropic", api: "messages", model: String(body.model ?? KNOWLEDGE_MODEL), usage: data.usage, tool: "knowledge-index" });
-  return data;
+  return callAnthropicShared(body, { timeoutMs: TIMEOUT_MS, tool: "knowledge-index" });
 }
 
-export function textFrom(res: AnthropicResponse): string {
-  return (res.content ?? [])
-    .filter((b) => b.type === "text" && typeof b.text === "string")
-    .map((b) => b.text as string)
-    .join("")
-    .trim();
-}
-
-export function toolInputFrom(res: AnthropicResponse, toolName: string): unknown {
-  const block = (res.content ?? []).find((b) => b.type === "tool_use" && b.name === toolName);
-  if (!block?.input) {
-    throw new Error(`No tool_use block (stop_reason: ${res.stop_reason ?? "unknown"})`);
-  }
-  return block.input;
-}
-
+export { textFrom, toolInputFrom };
 export type { ContentBlock };

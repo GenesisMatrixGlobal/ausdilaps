@@ -16,14 +16,13 @@
 // 6.5k -> 4.1k on the same page, which shows the API was not already downscaling these.
 
 import { repairInteriorGaps } from "./grid";
+import { fileSlug } from "@/lib/slug";
 import { LABEL_DEFAULTS, OUTSIDE, type Door, type FloorPlan, type Room } from "./types";
-import { recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
+import { anthropicConfigured, callAnthropic, imageBlock, textFrom } from "@/lib/anthropic";
 
 const MODEL = process.env.ANTHROPIC_FLOOR_PLAN_MODEL ?? "claude-opus-5";
 
-export function visionConfigured(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY;
-}
+export const visionConfigured = anthropicConfigured;
 
 const rectProps = {
   type: "object",
@@ -201,9 +200,7 @@ type RawPlan = {
 /** Spare cells left around the building so rooms can be dragged outward in the editor. */
 const PAD = 3;
 
-function slug(value: string, fallback: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || fallback;
-}
+const slug = (value: string, fallback: string) => fileSlug(value, fallback);
 
 /** Model output speaks in room labels; the plan speaks in ids. Assign them once, here. */
 function toFloorPlan(raw: RawPlan): FloorPlan {
@@ -281,17 +278,7 @@ function toFloorPlan(raw: RawPlan): FloorPlan {
 }
 
 export async function extractFloorPlan(imageBase64: string, mediaType: string): Promise<FloorPlan> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error("ANTHROPIC_API_KEY not configured");
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
+  const data = await callAnthropic({
       model: MODEL,
       // Covers thinking AND output. At 16000 a dense plan spent the entire budget reasoning
       // and emitted zero JSON — a 29-room commercial fire-exit plan returned stop_reason
@@ -304,29 +291,8 @@ export async function extractFloorPlan(imageBase64: string, mediaType: string): 
       // in ~37% less wall-clock (169s vs 270s on the worst case), which is what keeps a big
       // plan inside this route's maxDuration.
       output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: imageBase64 } },
-            { type: "text", text: PROMPT },
-          ],
-        },
-      ],
-    }),
+      messages: [{ role: "user", content: [imageBlock(imageBase64, mediaType), { type: "text", text: PROMPT }] }],
   });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Anthropic API ${res.status}: ${body.slice(0, 300)}`);
-  }
-
-  const data = (await res.json()) as {
-    stop_reason?: string;
-    content?: Array<{ type: string; text?: string }>;
-    usage?: AnthropicUsage;
-  };
-  void recordApiCall({ provider: "anthropic", api: "messages", model: MODEL, usage: data.usage });
 
   // Structured outputs are not honoured on a refusal, and a max_tokens cut leaves invalid
   // JSON — both need to surface as a clear message rather than a parse error.
@@ -338,7 +304,7 @@ export async function extractFloorPlan(imageBase64: string, mediaType: string): 
     throw new Error("Ran out of room reading that plan. Try a tighter crop of just the drawing.");
   }
 
-  const text = (data.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+  const text = textFrom(data);
   let raw: RawPlan;
   try {
     raw = JSON.parse(text) as RawPlan;

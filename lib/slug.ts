@@ -45,3 +45,19 @@ export function createHeadingSlugger() {
     return n === 0 ? base : `${base}-${n}`;
   };
 }
+
+/**
+ * ASCII slug for a FILENAME — "44 Eastern Avenue, Dover Heights" → "44-eastern-avenue-dover-heights".
+ * Nine copies of this one-liner lived in the tool components before 2026-10-05, differing only
+ * in the fallback and the length cap. Not `headingSlug`: that one keeps Unicode letters because
+ * it has to agree with rendered heading ids; a download name wants plain ASCII.
+ */
+export function fileSlug(value: string, fallback = "", max = 120): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, max) || fallback
+  );
+}

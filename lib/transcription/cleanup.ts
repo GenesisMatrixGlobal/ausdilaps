@@ -6,7 +6,8 @@
 // Degrades, never blocks: any failure hands the raw transcript back unchanged with
 // `changed: false`, and the UI says so. Same rule as the knowledge base's AI path.
 
-import { anthropicCostCents, recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
+import { anthropicCostCents } from "@/lib/api-usage";
+import { anthropicConfigured, callAnthropic, textFrom } from "@/lib/anthropic";
 import { CLEANUP_MODEL } from "./config";
 import { chunkBody, splitHeader, timestampLines } from "./format";
 import { DICTATION_KEYTERMS, keytermsFor } from "./keyterms";
@@ -37,8 +38,7 @@ const CLEANUP_CHUNK_PAIRS = 120;
 const CLEANUP_CONCURRENCY = 3;
 
 export async function cleanTranscript(input: { raw: string; filename: string }): Promise<CleanupResult> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return { text: input.raw, changed: false, note: "Clean-up not configured", costCents: 0 };
+  if (!anthropicConfigured()) return { text: input.raw, changed: false, note: "Clean-up not configured", costCents: 0 };
 
   const { header, body } = splitHeader(input.raw);
   const chunks = chunkBody(body, CLEANUP_CHUNK_PAIRS);
@@ -48,7 +48,7 @@ export async function cleanTranscript(input: { raw: string; filename: string }):
     for (;;) {
       const i = next++;
       if (i >= chunks.length) return;
-      results[i] = await cleanChunk(chunks[i], input.filename, key);
+      results[i] = await cleanChunk(chunks[i], input.filename);
     }
   };
   await Promise.all(Array.from({ length: Math.min(CLEANUP_CONCURRENCY, chunks.length) }, worker));
@@ -70,7 +70,7 @@ type ChunkResult = { text: string; ok: boolean; costCents: number };
 
 /** One model call over one chunk of the body. Never throws: a failed chunk comes back as its
  *  own raw text with `ok: false`, and the cost it incurred before failing. */
-async function cleanChunk(body: string, filename: string, key: string): Promise<ChunkResult> {
+async function cleanChunk(body: string, filename: string): Promise<ChunkResult> {
   // Billed the moment the response lands — a pass that is then discarded still cost this.
   let costCents = 0;
   try {
@@ -87,41 +87,21 @@ async function cleanChunk(body: string, filename: string, key: string): Promise<
 
       .join("\n");
 
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({
-        model: CLEANUP_MODEL,
-        max_tokens: 16000,
-        thinking: { type: "adaptive" },
-        // A copy-edit, not a reasoning task: "low" returns the same fixes in a fraction of the time.
-        output_config: { effort: "low" },
-        system: SYSTEM,
-        messages: [{ role: "user", content: userText }],
-      }),
+    const data = await callAnthropic({
+      model: CLEANUP_MODEL,
+      max_tokens: 16000,
+      thinking: { type: "adaptive" },
+      // A copy-edit, not a reasoning task: "low" returns the same fixes in a fraction of the time.
+      output_config: { effort: "low" },
+      system: SYSTEM,
+      messages: [{ role: "user", content: userText }],
     });
-
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Anthropic API ${res.status}: ${body.slice(0, 300)}`);
-    }
-
-    const data = (await res.json()) as {
-      stop_reason?: string;
-      content?: Array<{ type: string; text?: string }>;
-      usage?: AnthropicUsage;
-    };
-    void recordApiCall({ provider: "anthropic", api: "messages", model: CLEANUP_MODEL, usage: data.usage });
     costCents = anthropicCostCents(CLEANUP_MODEL, data.usage) ?? 0;
 
     if (data.stop_reason === "refusal") throw new Error("declined");
     if (data.stop_reason === "max_tokens") throw new Error("ran out of room");
 
-    const text = (data.content ?? [])
-      .filter((b) => b.type === "text")
-      .map((b) => b.text ?? "")
-      .join("")
-      .trim();
+    const text = textFrom(data);
     if (!text) throw new Error("empty");
 
     // The one structural invariant: every timestamp, in order. A model that dropped or

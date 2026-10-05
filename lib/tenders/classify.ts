@@ -3,7 +3,7 @@ import { FETCH_TIMEOUT_MS } from "./config";
 import { MATCH_PROFILE, SERVICE_KEYS } from "./profile";
 import { classificationSchema } from "./schema";
 import type { Classification, RawItem } from "./types";
-import { recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
+import { anthropicConfigured, callAnthropic, toolInputFrom, type AnthropicError } from "@/lib/anthropic";
 
 /**
  * Tender classification.
@@ -150,27 +150,11 @@ function fence(item: RawItem): string {
   return `<tender_document id="${id}">\n${fields}\n</tender_document>`;
 }
 
-type AnthropicResponse = {
-  content?: { type: string; name?: string; input?: unknown }[];
-  stop_reason?: string;
-  usage?: AnthropicUsage;
-};
-
 async function callOnce(item: RawItem): Promise<{ ok: true; data: unknown } | { ok: false; retryable: boolean; error: string }> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return { ok: false, retryable: false, error: "ANTHROPIC_API_KEY not configured" };
-
-  let res: Response;
+  let data;
   try {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      body: JSON.stringify({
+    data = await callAnthropic(
+      {
         model: CLASSIFY_MODEL,
         max_tokens: 4096,
         // Thinking stays on (adaptive is the Opus 5 default). Disabling it can leak
@@ -181,31 +165,25 @@ async function callOnce(item: RawItem): Promise<{ ok: true; data: unknown } | { 
         tools: [TOOL],
         tool_choice: { type: "tool", name: TOOL.name },
         messages: [{ role: "user", content: fence(item) }],
-      }),
-    });
+      },
+      // The nightly cron has no page behind it, so the tool is named here.
+      { timeoutMs: FETCH_TIMEOUT_MS, tool: "tender-watch" }
+    );
   } catch (e) {
-    return { ok: false, retryable: true, error: (e as Error).message };
+    const err = e as AnthropicError;
+    // A 400 is deterministic — the same request will fail identically forever. Retrying
+    // it nightly is the classic way to leak money for no result. No status at all means
+    // the request never got an answer (network, timeout), which is worth another go —
+    // unless there is no key, which no retry will fix.
+    const retryable = err.status !== undefined ? RETRYABLE_STATUS.has(err.status) : anthropicConfigured();
+    return { ok: false, retryable, error: err.message };
   }
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    return {
-      ok: false,
-      // A 400 is deterministic — the same request will fail identically forever. Retrying
-      // it nightly is the classic way to leak money for no result.
-      retryable: RETRYABLE_STATUS.has(res.status),
-      error: `Anthropic ${res.status}: ${body.slice(0, 300)}`,
-    };
+  try {
+    return { ok: true, data: toolInputFrom(data, TOOL.name) };
+  } catch (e) {
+    return { ok: false, retryable: false, error: (e as Error).message };
   }
-
-  const data = (await res.json()) as AnthropicResponse;
-  // The nightly cron has no page behind it, so the tool is named here.
-  void recordApiCall({ provider: "anthropic", api: "messages", model: CLASSIFY_MODEL, usage: data.usage, tool: "tender-watch" });
-  const block = data.content?.find((b) => b.type === "tool_use" && b.name === TOOL.name);
-  if (!block?.input) {
-    return { ok: false, retryable: false, error: `No tool_use block (stop_reason: ${data.stop_reason ?? "unknown"})` };
-  }
-  return { ok: true, data: block.input };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

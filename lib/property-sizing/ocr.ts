@@ -4,13 +4,11 @@
 
 import type { ParsedAddress } from "./types";
 import { normalizeState, parseAddressLine } from "./parse";
-import { recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
+import { anthropicConfigured, callAnthropic, imageBlock, parseJsonArray, textFrom } from "@/lib/anthropic";
 
 const OCR_MODEL = process.env.ANTHROPIC_OCR_MODEL ?? "claude-haiku-4-5-20251001";
 
-export function ocrConfigured(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY;
-}
+export const ocrConfigured = anthropicConfigured;
 
 const PROMPT = `You are extracting a list of Australian property addresses from a screenshot (usually a spreadsheet/table).
 Return ONLY a JSON array. Each element must be:
@@ -37,60 +35,14 @@ export async function extractAddressesFromImage(
   base64: string,
   mediaType: string
 ): Promise<ParsedAddress[]> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error("ANTHROPIC_API_KEY not configured");
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: OCR_MODEL,
-      max_tokens: 8192,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
-            { type: "text", text: PROMPT },
-          ],
-        },
-      ],
-    }),
+  const res = await callAnthropic({
+    model: OCR_MODEL,
+    max_tokens: 8192,
+    messages: [{ role: "user", content: [imageBlock(base64, mediaType), { type: "text", text: PROMPT }] }],
   });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Anthropic API ${res.status}: ${body.slice(0, 300)}`);
-  }
-
-  const data = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: AnthropicUsage };
-  void recordApiCall({ provider: "anthropic", api: "messages", model: OCR_MODEL, usage: data.usage });
-  const text =
-    data.content
-      ?.filter((b) => b.type === "text")
-      .map((b) => b.text ?? "")
-      .join("") ?? "";
-
-  return parseJsonArray(text)
+  return parseJsonArray<OcrRow>(textFrom(res))
     .map(normalizeRow)
-    .filter((a): a is ParsedAddress => !!a);
-}
-
-/** Tolerate code fences / prose around the JSON array. */
-function parseJsonArray(text: string): OcrRow[] {
-  const start = text.indexOf("[");
-  const end = text.lastIndexOf("]");
-  if (start === -1 || end === -1 || end < start) return [];
-  try {
-    const parsed: unknown = JSON.parse(text.slice(start, end + 1));
-    return Array.isArray(parsed) ? (parsed as OcrRow[]) : [];
-  } catch {
-    return [];
-  }
+    .filter((r): r is ParsedAddress => !!r);
 }
 
 function normalizeRow(r: OcrRow): ParsedAddress | null {

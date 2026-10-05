@@ -11,6 +11,7 @@
 // and no measurements. The boundary is always green and always an area.
 
 import { useCallback, useRef, useState } from "react";
+import { fileSlug } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import type { LatLng } from "@/lib/kml/types";
@@ -51,9 +52,7 @@ function boxAround(point: LatLng, metres = 120): LatLngBox {
   };
 }
 
-function slug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-}
+const slug = (value: string) => fileSlug(value);
 
 export function CoverPhotoTool() {
   const mapRef = useRef<CoverMapCommands>(null);

@@ -15,6 +15,7 @@
 // not want, and those are the only parts written fresh.
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { fileSlug } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { downloadBlob } from "@/components/tools/shared/download";
@@ -77,9 +78,7 @@ function siteNoteFor(site: ResolvedCloseoutSite): string | null {
     : `${parts.join("; ")} — not placed separately; check it isn't already inside the outline.`;
 }
 
-function slugify(s: string) {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "overview";
-}
+const slugify = (s: string) => fileSlug(s, "overview", 80);
 
 export function CloseoutMarkupTool() {
   const [opportunity, setOpportunity] = useState<CloseoutOpportunity | null>(null);

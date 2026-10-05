@@ -10,6 +10,7 @@
 // numbers use — only the tray that fills them from Salesforce is still to come.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fileSlug } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { downloadBlob } from "@/components/tools/shared/download";
@@ -76,12 +77,7 @@ type Aerial = {
   frame: Frame;
 };
 
-function slugify(value: string): string {
-  return (
-    value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 60) ||
-    "floor-plan"
-  );
-}
+const slugify = (value: string) => fileSlug(value, "floor-plan", 60);
 
 function readAsBase64(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {

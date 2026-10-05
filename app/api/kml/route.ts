@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isStaff } from "@/lib/auth/is-staff";
+import { fileSlug } from "@/lib/slug";
 import { kmlRequestSchema } from "@/lib/kml/schema";
 import { buildKml } from "@/lib/kml/build";
 
 export const runtime = "nodejs";
 
-function slugify(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "") || "paths"
-  );
-}
+const slugify = (value: string) => fileSlug(value, "paths");
 
 // Gated like every other admin tool route. This was deliberately left open while there
 // was no admin login to gate it with; the shared-password gate now exists and the app is

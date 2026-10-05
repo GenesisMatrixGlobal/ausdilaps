@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { fileSlug } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { buildKml } from "@/lib/kml/build";
@@ -47,14 +48,7 @@ function rowToInput(row: Row): RoadSegmentInput {
   };
 }
 
-function slugify(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "") || "road-paths"
-  );
-}
+const slugify = (value: string) => fileSlug(value, "road-paths");
 
 async function fileToBase64(file: File): Promise<{ data: string; mediaType: string }> {
   const dataUrl = await new Promise<string>((resolve, reject) => {

@@ -6,7 +6,7 @@ import sharp from "sharp";
 import type { RawImage, Blob } from "./segment";
 import type { LabelAnchor } from "./voronoi";
 import { runPool } from "@/lib/concurrency";
-import { recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
+import { anthropicConfigured, callAnthropic, imageBlock, parseJsonArray, textFrom } from "@/lib/anthropic";
 
 const VISION_MODEL = process.env.ANTHROPIC_OCR_MODEL ?? "claude-haiku-4-5-20251001";
 const BATCH_SIZE = 4;
@@ -14,9 +14,7 @@ const CONCURRENCY = 4;
 // e.g. EDU045, RES010, MED003, HLS002, CMU001 — 2-4 letters then 2-4 digits.
 const CODE_PATTERN = /^[A-Z]{2,4}\d{2,4}$/;
 
-export function visionConfigured(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY;
-}
+export const visionConfigured = anthropicConfigured;
 
 interface CropJob {
   blobIndex: number;
@@ -73,48 +71,16 @@ interface VisionRow {
 }
 
 async function callVisionRaw(batch: CropJob[]): Promise<VisionRow[][] | null> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error("ANTHROPIC_API_KEY not configured");
-
   const content: Record<string, unknown>[] = [];
   batch.forEach((job, i) => {
     content.push({ type: "text", text: `Crop ${i + 1}:` });
-    content.push({ type: "image", source: { type: "base64", media_type: "image/png", data: job.pngBase64 } });
+    content.push(imageBlock(job.pngBase64, "image/png"));
   });
   content.push({ type: "text", text: PROMPT });
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: VISION_MODEL,
-      max_tokens: 4096,
-      messages: [{ role: "user", content }],
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Anthropic API ${res.status}: ${body.slice(0, 300)}`);
-  }
-
-  const data = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: AnthropicUsage };
-  void recordApiCall({ provider: "anthropic", api: "messages", model: VISION_MODEL, usage: data.usage });
-  const text = data.content?.filter((b) => b.type === "text").map((b) => b.text ?? "").join("") ?? "";
-  const start = text.indexOf("[");
-  const end = text.lastIndexOf("]");
-  if (start === -1 || end === -1 || end < start) return null;
-  try {
-    const parsed: unknown = JSON.parse(text.slice(start, end + 1));
-    if (!Array.isArray(parsed) || parsed.length !== batch.length) return null;
-    return parsed as VisionRow[][];
-  } catch {
-    return null;
-  }
+  const res = await callAnthropic({ model: VISION_MODEL, max_tokens: 4096, messages: [{ role: "user", content }] });
+  const parsed = parseJsonArray<VisionRow[]>(textFrom(res));
+  return parsed.length === batch.length ? parsed : null;
 }
 
 /**

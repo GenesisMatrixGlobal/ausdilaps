@@ -17,7 +17,8 @@
 
 import type { LatLng } from "@/lib/kml/types";
 import { closeRing, minDistanceBetween, pointInRing, projectToLocalMetres } from "@/lib/kml/standard-markup/geometry";
-import { recordApiCall, type AnthropicUsage } from "@/lib/api-usage";
+import { recordApiCall } from "@/lib/api-usage";
+import { callAnthropic, imageBlock, textFrom } from "@/lib/anthropic";
 
 export const STOREYS_MODEL = process.env.STOREYS_MODEL ?? "claude-sonnet-5";
 /** At or above this the Levels cell is filled and NOT highlighted; below it the operator has to
@@ -174,37 +175,30 @@ interface RawVerdict {
   notes?: unknown;
 }
 
-export async function judgeStoreys(imageBase64: string, label: string, key: string): Promise<Omit<StoreyVerdict, "clear" | "cameraDistanceM" | "attempts">> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({
-      model: STOREYS_MODEL,
-      max_tokens: 300,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: imageBase64 } },
-            {
-              type: "text",
-              text:
-                `This is a Google Street View photo aimed at the property "${label}" (Australia). ` +
-                `The property of interest should be roughly in the centre of the frame. Count its above-ground storeys (habitable levels; a garage under a house counts as a level). ` +
-                `Reply with JSON only: {"storeys": <integer or null if you cannot tell>, "confidence": <0-100>, "facade_visible": <true if you can see most of the building's front>, ` +
-                `"building_type": "house" | "units" | "commercial" | "vacant" | "other", "notes": "<one short sentence>"}. ` +
-                `Be conservative: if trees, fences, distance or angle hide the upper part of the building, lower the confidence. ` +
-                `If several buildings are in frame and you cannot tell which one is the property, set facade_visible to false and keep the confidence low.`,
-            },
-          ],
-        },
-      ],
-    }),
+export async function judgeStoreys(imageBase64: string, label: string): Promise<Omit<StoreyVerdict, "clear" | "cameraDistanceM" | "attempts">> {
+  const data = await callAnthropic({
+    model: STOREYS_MODEL,
+    max_tokens: 300,
+    messages: [
+      {
+        role: "user",
+        content: [
+          imageBlock(imageBase64, "image/jpeg"),
+          {
+            type: "text",
+            text:
+              `This is a Google Street View photo aimed at the property "${label}" (Australia). ` +
+              `The property of interest should be roughly in the centre of the frame. Count its above-ground storeys (habitable levels; a garage under a house counts as a level). ` +
+              `Reply with JSON only: {"storeys": <integer or null if you cannot tell>, "confidence": <0-100>, "facade_visible": <true if you can see most of the building's front>, ` +
+              `"building_type": "house" | "units" | "commercial" | "vacant" | "other", "notes": "<one short sentence>"}. ` +
+              `Be conservative: if trees, fences, distance or angle hide the upper part of the building, lower the confidence. ` +
+              `If several buildings are in frame and you cannot tell which one is the property, set facade_visible to false and keep the confidence low.`,
+          },
+        ],
+      },
+    ],
   });
-  const data = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: AnthropicUsage; error?: { message?: string } };
-  void recordApiCall({ provider: "anthropic", api: "messages", model: STOREYS_MODEL, usage: data.usage });
-  if (!res.ok) throw new Error(data.error?.message ?? `vision ${res.status}`);
-  const text = data.content?.find((c) => c.type === "text")?.text ?? "";
+  const text = textFrom(data);
   const json = text.match(/\{[\s\S]*\}/)?.[0];
   if (!json) throw new Error(`no JSON in: ${text.slice(0, 120)}`);
   const v = JSON.parse(json) as RawVerdict;
@@ -338,7 +332,7 @@ export async function estimateStoreys(
     const cam = cameras[i];
     const jpeg = await streetViewImage(cam, keys.maps);
     onImage?.(jpeg, i + 1);
-    judged.push(await judgeStoreys(jpeg.toString("base64"), input.label, keys.anthropic));
+    judged.push(await judgeStoreys(jpeg.toString("base64"), input.label));
     nearest = Math.min(nearest, cam.distanceM);
     tally = tallyVerdicts(judged, cameras.length);
     if (tally.clear || !tally.wantsMore) break;

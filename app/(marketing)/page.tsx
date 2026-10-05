@@ -1,9 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Check } from "lucide-react";
+import { Check, FileDown } from "lucide-react";
 import { Container } from "@/components/marketing/container";
 import { Eyebrow } from "@/components/marketing/eyebrow";
-import { Button } from "@/components/ui/button";
 import { CtaBand } from "@/components/marketing/cta-band";
 import { ClientLogoBar } from "@/components/marketing/client-logo-bar";
 import { QuoteForm } from "@/components/marketing/quote-form";
@@ -33,17 +32,17 @@ export default function HomePage() {
       <Projects />
       <Experience />
       <About />
-      <FaqSection items={HOME_FAQ} heading="Dilapidation reports, answered." />
-      <CtaBand eyebrow="Let's work together" />
+      <FaqSection items={HOME_FAQ} heading="Dilapidation reports, answered." tone="brand" />
+      <CtaBand eyebrow="Let's work together" tone="light" />
     </>
   );
 }
 
-/* ─── Hero (charcoal, photo-backed) — headline + the quote form itself ──
+/* ─── Hero (project photo with an even pale-blue tint) ──────────────────
    The form used to live one click away on /quote, and ~1 in 13 homepage
    visitors made that click. Putting a short version of it here is the
    Grout Guy pattern: the thing most visitors came to do is on the first
-   screen. The photo is a real AusDilaps project (NorthConnex), not stock. */
+   screen. The photo is a real AusDilaps project (Queens Wharf), not stock. */
 function Hero() {
   const proof = [
     `Reports compliant with ${SITE.standard}`,
@@ -52,34 +51,28 @@ function Hero() {
     "Australia-wide",
   ];
   return (
-    <section className="relative isolate overflow-hidden bg-ad-navy-deep text-ad-on-dark">
+    <section className="relative isolate overflow-hidden bg-ad-sky text-ad-ink">
       <Image
-        src="/projects/northconnex.jpg"
+        src="/projects/queens-wharf.jpg"
         alt=""
         aria-hidden="true"
         fill
         priority
-        loading="eager"
         sizes="100vw"
         className="-z-10 object-cover object-center"
       />
-      {/* Charcoal wash, heavier on the left where the headline sits; the photo
-          stays legible behind the form card on the right. */}
-      <div className="absolute inset-0 -z-10 bg-gradient-to-r from-ad-navy-deep via-ad-navy-deep/85 to-ad-navy-deep/55" />
-      <div className="blueprint-grid absolute inset-0 -z-10" />
+      <div className="absolute inset-0 -z-10 bg-ad-sky/[0.84]" />
 
-      {/* Three grid children so the phone order is headline → form → proof (the
-          form is what most visitors came for; on a 375px screen it otherwise sat
-          below a screen and a half of copy), while on desktop the form spans both
-          rows on the right and the two text blocks meet in the middle beside it. */}
-      <Container className="grid gap-10 py-14 lg:grid-cols-[minmax(0,1.2fr)_minmax(440px,1fr)] lg:grid-rows-[auto_auto] lg:items-center lg:gap-x-12 lg:gap-y-0 lg:py-20">
+      {/* Keep the form immediately after the introduction on phones. On desktop
+          the copy and proof sit together beside the form. */}
+      <Container className="grid grid-cols-1 gap-10 py-14 lg:grid-cols-[minmax(0,1.2fr)_minmax(440px,1fr)] lg:grid-rows-[auto_auto] lg:items-center lg:gap-x-12 lg:gap-y-8">
         <div className="lg:self-end">
-          <Eyebrow className="text-ad-accent-2">Specialist Building Inspections</Eyebrow>
-          <h1 className="mt-6 text-balance font-heading text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">
+          <Eyebrow className="text-[0.8125rem] font-bold tracking-[0.12em] text-ad-ink-deep">Specialist Building Inspections</Eyebrow>
+          <h1 className="mt-5 text-balance font-heading text-4xl font-bold leading-[1.1] tracking-tight text-[#1b2025] sm:text-5xl">
             The dilapidation specialists Tier&nbsp;1 contractors trust to hold up
             in court.
           </h1>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-ad-on-dark-muted">
+          <p className="mt-6 max-w-xl text-lg font-medium leading-relaxed text-ad-ink-deep sm:text-xl">
             Pre- and post-construction building condition reports for Australia&apos;s
             most scrutinised projects. When a damage claim is made — not if — your
             report has to defend it.
@@ -90,24 +83,26 @@ function Hero() {
           <QuoteForm variant="compact" />
         </div>
 
-        <div className="lg:col-start-1 lg:self-start lg:pt-8">
-          <ul className="grid max-w-xl gap-3 sm:grid-cols-2">
+        <div className="lg:col-start-1 lg:row-start-2 lg:self-start">
+          <ul className="flex max-w-xl flex-wrap gap-2.5">
             {proof.map((p) => (
-              <li key={p} className="flex items-start gap-2.5 text-sm text-white/90">
-                <Check className="mt-0.5 h-4 w-4 shrink-0 text-ad-accent-2" aria-hidden="true" />
-                {p}
+              <li key={p} className="inline-flex max-w-full items-center gap-2 rounded-full bg-ad-sky px-4 py-2 text-sm font-normal leading-snug text-ad-ink">
+                <Check className="h-3.5 w-3.5 shrink-0 text-ad-steel-dark" aria-hidden="true" />
+                <span className="min-w-0">{p}</span>
               </li>
             ))}
           </ul>
-          <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
-            <Button href={CAPABILITY_HREF} size="lg" variant="onDarkOutline" newTab>
-              Download Capability Statement
-            </Button>
+          <div className="mt-7">
             <Link
-              href="/dilapidation-reports/samples"
-              className="text-sm font-medium text-ad-accent-2 transition-colors hover:text-white"
+              href={CAPABILITY_HREF}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Download Capability Statement (PDF, opens in a new tab)"
+              className="inline-flex min-h-11 max-w-full items-center gap-2.5 rounded-md py-2 text-[0.95rem] font-medium text-ad-steel-dark transition-colors hover:text-ad-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ad-steel focus-visible:ring-offset-4"
             >
-              See a sample report →
+              <FileDown className="h-5 w-5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 underline decoration-ad-steel/50 underline-offset-4">Download Capability Statement</span>
+              <span className="shrink-0 text-xs font-normal text-ad-ink">PDF</span>
             </Link>
           </div>
         </div>
@@ -116,10 +111,10 @@ function Hero() {
   );
 }
 
-/* ─── Stats band (navy) ──────────────────────────────────────────── */
+/* ─── Stats band (steel blue) ────────────────────────────────────── */
 function StatsBand() {
   return (
-    <section className="bg-ad-navy text-ad-on-dark">
+    <section className="bg-ad-steel text-ad-on-dark">
       <Container className="py-12">
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           {STATS.map((s) => (
@@ -127,12 +122,12 @@ function StatsBand() {
               <div className="font-heading text-3xl font-bold tracking-tight text-white sm:text-4xl">
                 {s.value}
               </div>
-              <div className="rule-accent mt-3 w-10" />
-              <div className="mt-3 text-sm text-ad-on-dark-muted">{s.label}</div>
+              <div className="mt-3 h-0.5 w-10 rounded-full bg-ad-sky/60" />
+              <div className="mt-3 text-sm text-white/85">{s.label}</div>
             </div>
           ))}
         </div>
-        <p className="mt-10 text-center text-sm text-ad-on-dark-muted">
+        <p className="mt-10 text-center text-sm text-white/85">
           15 years · Family-owned · Reports compliant with Australian Standard {SITE.standard}
         </p>
       </Container>
@@ -167,10 +162,10 @@ function Problem() {
         </div>
         <div className="mt-12 grid gap-6 md:grid-cols-3">
           {costs.map((c) => (
-            <div key={c.title} className="rounded-xl border border-ad-border bg-white p-6">
-              <div className="rule-accent mb-5 w-10" />
+            <div key={c.title} className="rounded-xl border border-ad-steel/15 bg-ad-sky/40 p-6">
+              <div className="mb-5 h-1 w-10 rounded-full bg-ad-sky-deep" />
               <h3 className="font-heading text-lg font-semibold text-ad-ink">{c.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-ad-muted">{c.body}</p>
+              <p className="mt-2 text-[0.95rem] leading-relaxed text-ad-muted">{c.body}</p>
             </div>
           ))}
         </div>
@@ -183,7 +178,7 @@ function Problem() {
 function Process() {
   const steps = PROCESS.slice(0, 3);
   return (
-    <section id="process" className="scroll-mt-20 bg-ad-surface py-20 lg:py-28">
+    <section id="process" className="scroll-mt-20 bg-ad-sky py-20 lg:py-28">
       <Container>
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div className="max-w-2xl">
@@ -194,17 +189,17 @@ function Process() {
           </div>
           <Link
             href="/dilapidation-reports#methodology"
-            className="text-sm font-medium text-ad-accent hover:brightness-90"
+            className="text-sm font-semibold text-ad-steel-dark transition-colors hover:text-ad-ink"
           >
             See the full 6-step methodology →
           </Link>
         </div>
-        <div className="mt-12 grid gap-px overflow-hidden rounded-xl border border-ad-border bg-ad-border md:grid-cols-3">
+        <div className="mt-12 grid gap-px overflow-hidden rounded-xl border border-ad-steel/15 bg-ad-steel/15 md:grid-cols-3">
           {steps.map((s) => (
             <div key={s.n} className="bg-white p-8">
-              <div className="font-heading text-sm font-bold text-ad-accent">{s.n}</div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-ad-sky font-heading text-sm font-bold text-ad-steel-dark">{s.n}</div>
               <h3 className="mt-4 font-heading text-xl font-semibold text-ad-ink">{s.title}</h3>
-              <p className="mt-3 text-sm leading-relaxed text-ad-muted">{s.body}</p>
+              <p className="mt-3 text-[0.95rem] leading-relaxed text-ad-muted">{s.body}</p>
             </div>
           ))}
         </div>
@@ -225,7 +220,7 @@ function Services() {
               Specialist reports, backed by chartered engineering.
             </h2>
           </div>
-          <Link href="/our-services" className="text-sm font-medium text-ad-accent hover:brightness-90">
+          <Link href="/our-services" className="text-sm font-semibold text-ad-steel-dark transition-colors hover:text-ad-ink">
             View all services →
           </Link>
         </div>
@@ -234,16 +229,16 @@ function Services() {
             <Link
               key={s.title}
               href={s.href}
-              className="group flex flex-col rounded-xl border border-ad-border bg-white p-7 transition-colors hover:border-ad-accent/40"
+              className="group flex flex-col rounded-xl border border-ad-steel/15 bg-white p-7 transition-colors hover:border-ad-steel/40 hover:bg-ad-sky/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ad-steel focus-visible:ring-offset-4"
             >
-              <span className="self-start rounded-full bg-ad-surface px-3 py-1 text-xs font-medium uppercase tracking-wider text-ad-muted">
+              <span className="self-start rounded-full bg-ad-sky px-3 py-1 text-xs font-semibold uppercase tracking-wider text-ad-steel-dark">
                 {s.tag}
               </span>
               <h3 className="mt-5 font-heading text-lg font-semibold text-ad-ink group-hover:text-ad-accent">
                 {s.title}
               </h3>
-              <p className="mt-3 flex-1 text-sm leading-relaxed text-ad-muted">{s.body}</p>
-              <span className="mt-6 text-sm font-medium text-ad-accent">Learn more →</span>
+              <p className="mt-3 flex-1 text-[0.95rem] leading-relaxed text-ad-muted">{s.body}</p>
+              <span className="mt-6 text-sm font-semibold text-ad-steel-dark">Learn more →</span>
             </Link>
           ))}
         </div>
@@ -256,7 +251,7 @@ function Services() {
 function Projects() {
   const featured = TIER1_PROJECTS.slice(0, 3);
   return (
-    <section id="projects" className="scroll-mt-20 bg-ad-surface py-20 lg:py-28">
+    <section id="projects" className="scroll-mt-20 bg-ad-sky py-20 lg:py-28">
       <Container>
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div className="max-w-2xl">
@@ -265,7 +260,7 @@ function Projects() {
               The projects that built our reputation.
             </h2>
           </div>
-          <Link href="/portfolio" className="text-sm font-medium text-ad-accent hover:brightness-90">
+          <Link href="/portfolio" className="text-sm font-semibold text-ad-steel-dark transition-colors hover:text-ad-ink">
             View full portfolio →
           </Link>
         </div>
@@ -274,7 +269,7 @@ function Projects() {
             <Link
               key={p.name}
               href={`/portfolio/${p.slug}`}
-              className="group overflow-hidden rounded-xl border border-ad-border bg-white transition-colors hover:border-ad-accent/40"
+              className="group overflow-hidden rounded-xl border border-ad-steel/15 bg-white transition-colors hover:border-ad-steel/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ad-steel focus-visible:ring-offset-4"
             >
               <div className="relative aspect-[3/2] overflow-hidden">
                 <Image
@@ -286,7 +281,7 @@ function Projects() {
                 />
               </div>
               <div className="p-6">
-                <div className="text-xs font-medium uppercase tracking-wider text-ad-accent">{p.sector}</div>
+                <span className="inline-flex rounded-full bg-ad-sky px-3 py-1 text-xs font-semibold uppercase tracking-wider text-ad-steel-dark">{p.sector}</span>
                 <h3 className="mt-2 font-heading text-lg font-semibold text-ad-ink group-hover:text-ad-accent">{p.name}</h3>
               </div>
             </Link>
@@ -313,15 +308,15 @@ function Experience() {
             <Link
               key={c.slug}
               href={`/portfolio/${c.slug}`}
-              className="group flex flex-col rounded-xl border border-ad-border bg-white p-7 transition-colors hover:border-ad-accent/40"
+              className="group flex flex-col rounded-xl border border-ad-steel/15 bg-white p-7 transition-colors hover:border-ad-steel/40 hover:bg-ad-sky/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ad-steel focus-visible:ring-offset-4"
             >
-              <div className="font-heading text-2xl font-bold text-ad-ink">{c.value}</div>
+              <div className="font-heading text-2xl font-bold text-ad-steel-dark">{c.value}</div>
               <h3 className="mt-3 font-heading text-lg font-semibold text-ad-ink group-hover:text-ad-accent">{c.project}</h3>
               <p className="mt-1 text-sm text-ad-muted">
                 {c.client} · {c.location}
               </p>
-              <div className="rule-hairline my-5" />
-              <ul className="space-y-2 text-sm text-ad-muted">
+              <div className="my-5 h-px bg-ad-sky-deep" />
+              <ul className="space-y-2 text-[0.95rem] leading-relaxed text-ad-muted">
                 {c.stats.map((st) => (
                   <li key={st.label} className="flex gap-2">
                     <span className="font-semibold text-ad-accent">{st.value}</span>
@@ -337,37 +332,37 @@ function Experience() {
   );
 }
 
-/* ─── About / authority (navy) ───────────────────────────────────── */
+/* ─── About / authority (deep steel blue) ────────────────────────── */
 function About() {
   return (
-    <section id="about" className="scroll-mt-20 bg-ad-navy text-ad-on-dark">
+    <section id="about" className="scroll-mt-20 bg-ad-steel-dark text-ad-on-dark">
       <Container className="grid gap-12 py-20 lg:grid-cols-2 lg:items-center lg:py-28">
         <div>
-          <Eyebrow className="text-ad-accent-2">Why AusDilaps</Eyebrow>
+          <Eyebrow className="text-ad-sky-deep">Why AusDilaps</Eyebrow>
           <h2 className="mt-5 font-heading text-3xl font-semibold tracking-tight text-white sm:text-4xl">
             Specialist work deserves specialists.
           </h2>
-          <p className="mt-6 text-lg leading-relaxed text-ad-on-dark-muted">
+          <p className="mt-6 text-lg leading-relaxed text-white/85">
             A family-owned business with a 15-year history and a team of structural
             engineers experienced in defect classification. We deliver thorough,
             impartial, high-quality reports that provide a defensible record of
             existing conditions — for any project scale or environment.
           </p>
-          <p className="mt-4 text-lg leading-relaxed text-ad-on-dark-muted">
+          <p className="mt-4 text-lg leading-relaxed text-white/85">
             Every report is compliant with Australian Standard {SITE.standard}, combining
             ultra-high-quality imagery, precise defect annotations and pinpoint
             location references.
           </p>
         </div>
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-ad-on-dark-muted">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ad-sky-deep">
             The delivery team
           </p>
-          <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10">
+          <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-ad-sky/20 bg-ad-sky/20">
             {TEAM.map((m) => (
-              <div key={m.name} className="bg-ad-navy p-5">
+              <div key={m.name} className="bg-ad-steel p-5">
                 <div className="font-heading text-base font-semibold text-white">{m.name}</div>
-                <div className="text-sm text-ad-on-dark-muted">{m.role}</div>
+                <div className="mt-1 text-sm text-white/85">{m.role}</div>
               </div>
             ))}
           </div>
@@ -376,4 +371,3 @@ function About() {
     </section>
   );
 }
-

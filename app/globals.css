@@ -33,6 +33,8 @@
   --color-ad-steel: #46688a;         /* logo steel blue — brand */
   --color-ad-steel-dark: #38536f;    /* hover / deeper */
   --color-ad-steel-light: #6d90b4;   /* light steel — on dark, gradients */
+  --color-ad-sky: #eaf2f8;          /* pale blue — light brand surfaces */
+  --color-ad-sky-deep: #d4e5f2;     /* pale blue — photographic wash */
   --color-ad-accent: #46688a;        /* accent = the brand steel blue */
   --color-ad-accent-2: #6d90b4;      /* secondary steel highlight */
   --color-ad-orange: #e8642a;        /* conversion accent (energy) — from Capability Statement */

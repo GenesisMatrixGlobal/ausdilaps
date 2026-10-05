@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Menu, X, ChevronDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { NAV, SITE, QUOTE_HREF } from "@/lib/site";
+import { HeaderContactButton } from "./header-contact-button";
+import { NAV, SITE } from "@/lib/site";
 import {
   SERVICES_PILLAR,
   SERVICES_DILAPIDATION,
@@ -13,12 +13,14 @@ import {
 } from "@/lib/nav";
 
 /**
- * Mobile navigation drawer. Renders the hamburger trigger (md:hidden) and a
+ * Mobile/tablet navigation drawer. Renders the hamburger trigger (lg:hidden) and a
  * full-width panel below the 64px sticky header. Reuses brand tokens only.
  */
 export function MobileNav() {
   const [open, setOpen] = useState(false);
   const [servicesOpen, setServicesOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // Close the drawer and collapse the Services accordion together.
   const closeDrawer = () => {
@@ -32,28 +34,60 @@ export function MobileNav() {
     const html = document.documentElement;
     const prev = html.style.overflow;
     html.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const onDesktop = (e: MediaQueryListEvent) => {
+      if (e.matches) {
         setOpen(false);
         setServicesOpen(false);
       }
     };
+    const onNavigate = (e: MouseEvent) => {
+      if (e.target instanceof Element && e.target.closest("a[href]")) {
+        setOpen(false);
+        setServicesOpen(false);
+      }
+    };
+    panelRef.current?.querySelector<HTMLElement>("a[href], button")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        setServicesOpen(false);
+        triggerRef.current?.focus();
+      } else if (e.key === "Tab") {
+        const controls = panelRef.current?.querySelectorAll<HTMLElement>("a[href], button:not([disabled])");
+        const first = controls?.[0];
+        const last = controls?.[controls.length - 1];
+        if (!first || !last) return;
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
     window.addEventListener("keydown", onKey);
+    document.addEventListener("click", onNavigate);
+    desktop.addEventListener("change", onDesktop);
     return () => {
       html.style.overflow = prev;
       window.removeEventListener("keydown", onKey);
+      document.removeEventListener("click", onNavigate);
+      desktop.removeEventListener("change", onDesktop);
     };
   }, [open]);
 
   return (
-    <div className="md:hidden">
+    <div className="lg:hidden">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => (open ? closeDrawer() : setOpen(true))}
         aria-label={open ? "Close menu" : "Open menu"}
         aria-expanded={open}
         aria-controls="mobile-nav-panel"
-        className="-mr-1 inline-flex h-10 w-10 items-center justify-center rounded-md text-ad-ink transition-colors hover:bg-ad-surface"
+        className="-mr-1 inline-flex h-11 w-11 items-center justify-center rounded-md text-ad-ink transition-colors hover:bg-ad-sky focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ad-steel focus-visible:ring-offset-2"
       >
         {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
       </button>
@@ -70,11 +104,12 @@ export function MobileNav() {
           />
           {/* Panel */}
           <div
+            ref={panelRef}
             id="mobile-nav-panel"
             role="dialog"
             aria-modal="true"
             aria-label="Site navigation"
-            className="fixed inset-x-0 top-16 z-50 border-b border-ad-border bg-white/98 backdrop-blur-md"
+            className="fixed inset-x-0 top-16 z-50 max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain border-b border-ad-steel/15 bg-white"
           >
             <nav className="flex flex-col px-6 py-4">
               {NAV.map((item) =>
@@ -143,14 +178,11 @@ export function MobileNav() {
               >
                 Call {SITE.phone}
               </a>
-              <Button
-                href={QUOTE_HREF}
+              <HeaderContactButton
                 size="lg"
-                variant="accent"
                 className="mt-2 w-full"
-              >
-                Request a Quote
-              </Button>
+                onClick={closeDrawer}
+              />
             </nav>
           </div>
         </>

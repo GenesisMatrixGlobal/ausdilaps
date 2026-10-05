@@ -1,17 +1,17 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Container } from "./container";
-import { Button } from "@/components/ui/button";
+import { HeaderContactButton } from "./header-contact-button";
 import { MobileNav } from "./mobile-nav";
 import { CommandCentreLink } from "./command-centre-link";
 import { ServicesMenu } from "./services-menu";
-import { NAV, SITE, QUOTE_HREF } from "@/lib/site";
+import { NAV, SITE } from "@/lib/site";
 
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-50 border-b border-ad-border bg-white/85 backdrop-blur-md">
-      <Container className="flex h-16 items-center justify-between">
-        <Link href="/" className="flex items-center" aria-label="AusDilaps home">
+    <header className="sticky top-0 z-50 border-b border-ad-steel/15 bg-white">
+      <Container className="flex h-16 items-center justify-between gap-4">
+        <Link href="/" className="flex min-h-11 shrink-0 items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ad-steel focus-visible:ring-offset-4" aria-label="AusDilaps home">
           <Image
             src="/logo/ad-logo.png"
             alt="AusDilaps — Specialist Building Inspections"
@@ -22,7 +22,7 @@ export function SiteHeader() {
           />
         </Link>
 
-        <nav className="hidden items-center gap-8 md:flex">
+        <nav aria-label="Main navigation" className="hidden items-center gap-6 lg:flex">
           {NAV.map((item) =>
             item.menu === "services" ? (
               <ServicesMenu key={item.href} />
@@ -30,7 +30,7 @@ export function SiteHeader() {
               <Link
                 key={item.href}
                 href={item.href}
-                className="text-sm font-medium text-ad-muted transition-colors hover:text-ad-ink"
+                className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-ad-ink transition-colors hover:text-ad-steel-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ad-steel focus-visible:ring-offset-4"
               >
                 {item.label}
               </Link>
@@ -42,13 +42,11 @@ export function SiteHeader() {
           <CommandCentreLink />
           <a
             href={`tel:${SITE.phone.replace(/\s/g, "")}`}
-            className="hidden text-sm font-medium text-ad-muted transition-colors hover:text-ad-ink lg:block"
+            className="hidden min-h-11 items-center rounded-md text-sm font-medium text-ad-ink transition-colors hover:text-ad-steel-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ad-steel focus-visible:ring-offset-4 lg:inline-flex"
           >
             {SITE.phone}
           </a>
-          <Button href={QUOTE_HREF} size="sm" variant="accent" className="hidden md:inline-flex">
-            Request a Quote
-          </Button>
+          <HeaderContactButton className="hidden md:inline-flex" />
           <MobileNav />
         </div>
       </Container>

@@ -89,8 +89,8 @@ export function ServicesMenu() {
         aria-expanded={open}
         aria-controls="services-menu-panel"
         onClick={() => setOpen((v) => !v)}
-        className={`inline-flex items-center gap-1 text-sm font-medium transition-colors hover:text-ad-ink ${
-          open ? "text-ad-ink" : "text-ad-muted"
+        className={`inline-flex min-h-11 items-center gap-1 rounded-md text-sm font-medium transition-colors hover:text-ad-steel-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ad-steel focus-visible:ring-offset-4 ${
+          open ? "text-ad-steel-dark" : "text-ad-ink"
         }`}
       >
         Services
@@ -110,10 +110,10 @@ export function ServicesMenu() {
       >
         <nav
           aria-label="Services"
-          className="overflow-hidden rounded-md border border-ad-border bg-white shadow-xl shadow-ad-ink/10"
+          className="overflow-hidden rounded-xl border border-ad-steel/15 bg-white shadow-xl shadow-ad-steel/10"
         >
           {/* Flagship pillar */}
-          <div className="border-l-2 border-ad-steel bg-ad-surface px-5 py-4">
+          <div className="border-l-2 border-ad-steel bg-ad-sky px-5 py-4">
             <Link
               href={SERVICES_PILLAR.href}
               onClick={closeNow}
@@ -144,7 +144,7 @@ export function ServicesMenu() {
                 key={l.href}
                 href={l.href}
                 onClick={closeNow}
-                className="rounded-sm px-3 py-2 text-sm font-medium text-ad-ink transition-colors hover:bg-ad-surface hover:text-ad-steel"
+                className="rounded-md px-3 py-2 text-sm font-medium text-ad-ink transition-colors hover:bg-ad-sky hover:text-ad-steel-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ad-steel"
               >
                 {l.label}
               </Link>

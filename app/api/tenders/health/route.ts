@@ -5,6 +5,7 @@ import { isApiAdmin } from "@/lib/auth/is-staff";
 import { safeText } from "@/lib/html";
 import { STALE_TRIAGE_DAYS, STALLED_RUN_MS, WINDOW_DAYS } from "@/lib/tenders/config";
 import { findRedundant } from "@/lib/tenders/redundancy";
+import { groupItems } from "@/lib/tenders/group";
 import { isActionable } from "@/lib/tenders/actionable";
 
 /**
@@ -66,7 +67,7 @@ async function handle(req: NextRequest, allowSession: boolean) {
       // week and here it is again from another portal" is the expensive version of this.
       db
         .from("tender_items")
-        .select("id, title, source_slug, closes_at")
+        .select("id, title, source_slug, closes_at, agency, created_at")
         .in("relevance", ["match", "maybe"])
         .neq("status", "archived")
         .gte("created_at", new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString()),
@@ -169,6 +170,24 @@ async function handle(req: NextRequest, allowSession: boolean) {
     // estimator reviewing the same job twice. Zero on the day it was written; VendorPanel,
     // Buying for Victoria and TenderSearch all reach the same councils, so it will not stay
     // zero. See lib/tenders/redundancy.ts for why this reports instead of merging.
+    //
+    // ⚠️ Pairs the tool ALREADY merges into one card are not reported. group.ts collapses the
+    // same buyer + same deadline + near-identical title across portals, so a reviewer sees one
+    // opportunity and one code. Before this filter the Bega Valley pair — merged, sent and in
+    // Salesforce — raised this warning every morning for a fortnight.
+    const groupOf = new Map<string, string>();
+    for (const g of groupItems(
+      (sweep.data ?? []).map((r) => ({
+        id: r.id as string,
+        title: (r.title as string) ?? "",
+        agency: (r.agency as string | null) ?? null,
+        closes_at: (r.closes_at as string | null) ?? null,
+        created_at: (r.created_at as string | null) ?? null,
+        source_slug: r.source_slug as string,
+      }))
+    )) {
+      for (const m of g.members) groupOf.set(m.id, g.key);
+    }
     const redundant = findRedundant(
       (sweep.data ?? []).map((r) => ({
         id: r.id as string,
@@ -176,7 +195,7 @@ async function handle(req: NextRequest, allowSession: boolean) {
         source_slug: r.source_slug as string,
         closes_at: (r.closes_at as string | null) ?? null,
       }))
-    );
+    ).filter((p) => groupOf.get(p.left.id) !== groupOf.get(p.right.id));
     if (redundant.length > 0) {
       const examples = redundant
         .slice(0, 3)

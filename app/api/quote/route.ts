@@ -35,6 +35,18 @@ async function sendEmails(
   const from = process.env.RESEND_FROM_EMAIL ?? "AusDilaps <no-reply@ausdilaps.com.au>";
   const adminEmail = process.env.ADMIN_EMAIL ?? "info@ausdilaps.com.au";
   const salesNotify = process.env.SALES_NOTIFY_EMAIL;
+  const enquiryLabel = {
+    "New Quote": "Quote request",
+    "I Received An Access Letter": "Access letter enquiry",
+    "Report Inquiry": "Report enquiry",
+    "General Inquiry": "General enquiry",
+  }[d.inquiryType];
+  const acknowledgement = {
+    "New Quote": "Thanks for your enquiry. We've received the details of your project and will scope it and come back to you shortly.",
+    "I Received An Access Letter": "Thanks for getting in touch about your access letter. We've received your details and our projects team will be in touch to help with your enquiry.",
+    "Report Inquiry": "Thanks for getting in touch about your report. We've received your enquiry and will come back to you shortly.",
+    "General Inquiry": "Thanks for getting in touch. We've received your enquiry and will come back to you shortly.",
+  }[d.inquiryType];
 
   const submittedAt = new Intl.DateTimeFormat("en-AU", {
     dateStyle: "medium",
@@ -122,9 +134,9 @@ async function sendEmails(
     to: [adminEmail],
     ...(cc.length > 0 ? { cc } : {}),
     reply_to: d.email,
-    subject: `New quote — ${d.name}${d.company ? ` (${d.company})` : ""}${tier === "tier1" ? " · TIER 1" : ""}`,
+    subject: `${enquiryLabel} — ${d.name}${d.company ? ` (${d.company})` : ""}${tier === "tier1" ? " · TIER 1" : ""}`,
     html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;color:#2f343a;">
-      <h2 style="margin:0 0 20px;">New quote request — ausdilaps.com.au</h2>
+      <h2 style="margin:0 0 20px;">${enquiryLabel} — ausdilaps.com.au</h2>
       <table style="width:100%;border-collapse:collapse;">${tableRows}</table>
       <div style="margin-top:20px;padding-top:20px;border-top:1px solid #eee;">
         <p style="color:#5b6570;margin:0 0 8px;">Notes</p>
@@ -143,15 +155,17 @@ async function sendEmails(
     from,
     to: [testMode ? adminEmail : d.email],
     reply_to: adminEmail,
-    subject: "We've received your quote request — AusDilaps",
+    subject: d.inquiryType === "New Quote"
+      ? "We've received your quote request — AusDilaps"
+      : "We've received your enquiry — AusDilaps",
     html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;color:#2f343a;">
       <div style="background:#23272b;padding:28px 36px;">
         <p style="color:#6d90b4;font-size:11px;letter-spacing:0.15em;text-transform:uppercase;margin:0 0 6px;">AusDilaps · Specialist Building Inspections</p>
-        <p style="color:#ffffff;font-size:18px;font-weight:700;margin:0;">Quote request received.</p>
+        <p style="color:#ffffff;font-size:18px;font-weight:700;margin:0;">${d.inquiryType === "New Quote" ? "Quote request received." : "Enquiry received."}</p>
       </div>
       <div style="padding:36px;">
         <p style="margin-top:0;">${greeting},</p>
-        <p style="line-height:1.7;">Thanks for your enquiry. We've received the details of your project and will scope it and come back to you shortly.</p>
+        <p style="line-height:1.7;">${acknowledgement}</p>
         <p style="line-height:1.7;">If it's urgent, call us on <strong>${SITE.phone}</strong> or reply to this email.</p>
         <p style="color:#5b6570;font-size:14px;margin-bottom:0;">— The AusDilaps team</p>
       </div>
@@ -186,7 +200,10 @@ export async function POST(req: NextRequest) {
   const d = parsed.data;
 
   // Honeypot — silently accept and drop bots.
-  if (d.company_website) return NextResponse.json({ ok: true });
+  if (d.company_website) {
+    console.info("[quote] submission rejected by honeypot");
+    return NextResponse.json({ ok: true });
+  }
 
   // Turnstile. Enforced whenever the widget is on the form (site key set) — and then a
   // missing secret FAILS CLOSED rather than quietly waving every submission through, which

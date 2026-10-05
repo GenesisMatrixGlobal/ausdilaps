@@ -1,70 +1,114 @@
 import Image from "next/image";
 import Link from "next/link";
+import { Check } from "lucide-react";
 import { Container } from "@/components/marketing/container";
 import { Eyebrow } from "@/components/marketing/eyebrow";
 import { Button } from "@/components/ui/button";
 import { CtaBand } from "@/components/marketing/cta-band";
 import { ClientLogoBar } from "@/components/marketing/client-logo-bar";
-import { SITE, STATS, SERVICES, PROCESS, TEAM, TIER1_PROJECTS, QUOTE_HREF, CAPABILITY_HREF } from "@/lib/site";
+import { QuoteForm } from "@/components/marketing/quote-form";
+import { FaqSection } from "@/components/marketing/faq-accordion";
+import { JsonLd } from "@/components/seo/json-ld";
+import { faqPageSchema } from "@/lib/seo";
+import { SITE, STATS, SERVICES, PROCESS, TEAM, TIER1_PROJECTS, CAPABILITY_HREF } from "@/lib/site";
 import { CASE_STUDIES } from "@/data/case-studies";
+import { FAQ } from "@/data/faq";
+
+/* The four dilapidation questions a first-time visitor asks, lifted from the real
+   FAQ (data/faq.ts) so the homepage and /faq can never disagree. Same items feed the
+   FAQPage schema below — answer-first copy is what the AI overviews quote. */
+const DILAP_FAQ = FAQ.find((c) => c.id === "dilapidation-reports")?.items ?? [];
+const HOME_FAQ = [0, 2, 1, 4].map((i) => DILAP_FAQ[i]).filter(Boolean);
 
 export default function HomePage() {
   return (
     <>
+      <JsonLd data={[faqPageSchema(HOME_FAQ)]} />
       <Hero />
-      <StatsBand />
       <ClientLogoBar />
+      <StatsBand />
       <Problem />
       <Process />
       <Services />
       <Projects />
       <Experience />
       <About />
+      <FaqSection items={HOME_FAQ} heading="Dilapidation reports, answered." />
       <CtaBand eyebrow="Let's work together" />
     </>
   );
 }
 
-/* ─── Hero (light) ───────────────────────────────────────────────── */
+/* ─── Hero (charcoal, photo-backed) — headline + the quote form itself ──
+   The form used to live one click away on /quote, and ~1 in 13 homepage
+   visitors made that click. Putting a short version of it here is the
+   Grout Guy pattern: the thing most visitors came to do is on the first
+   screen. The photo is a real AusDilaps project (NorthConnex), not stock. */
 function Hero() {
+  const proof = [
+    `Reports compliant with ${SITE.standard}`,
+    "15 years, family-owned",
+    "1,000+ surveys every quarter",
+    "Australia-wide",
+  ];
   return (
-    <section className="relative overflow-hidden">
-      <Container className="grid items-center gap-12 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:py-24">
-        <div>
-          <Eyebrow className="text-ad-accent">Specialist Building Inspections</Eyebrow>
-          <h1 className="mt-6 text-balance font-heading text-4xl font-semibold leading-[1.05] tracking-tight text-ad-ink sm:text-5xl lg:text-6xl">
+    <section className="relative isolate overflow-hidden bg-ad-navy-deep text-ad-on-dark">
+      <Image
+        src="/projects/northconnex.jpg"
+        alt=""
+        aria-hidden="true"
+        fill
+        priority
+        loading="eager"
+        sizes="100vw"
+        className="-z-10 object-cover object-center"
+      />
+      {/* Charcoal wash, heavier on the left where the headline sits; the photo
+          stays legible behind the form card on the right. */}
+      <div className="absolute inset-0 -z-10 bg-gradient-to-r from-ad-navy-deep via-ad-navy-deep/85 to-ad-navy-deep/55" />
+      <div className="blueprint-grid absolute inset-0 -z-10" />
+
+      {/* Three grid children so the phone order is headline → form → proof (the
+          form is what most visitors came for; on a 375px screen it otherwise sat
+          below a screen and a half of copy), while on desktop the form spans both
+          rows on the right and the two text blocks meet in the middle beside it. */}
+      <Container className="grid gap-10 py-14 lg:grid-cols-[minmax(0,1.2fr)_minmax(440px,1fr)] lg:grid-rows-[auto_auto] lg:items-center lg:gap-x-12 lg:gap-y-0 lg:py-20">
+        <div className="lg:self-end">
+          <Eyebrow className="text-ad-accent-2">Specialist Building Inspections</Eyebrow>
+          <h1 className="mt-6 text-balance font-heading text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">
             The dilapidation specialists Tier&nbsp;1 contractors trust to hold up
             in court.
           </h1>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-ad-muted">
+          <p className="mt-6 max-w-xl text-lg leading-relaxed text-ad-on-dark-muted">
             Pre- and post-construction building condition reports for Australia&apos;s
             most scrutinised projects. When a damage claim is made — not if — your
             report has to defend it.
           </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Button href={QUOTE_HREF} size="lg" variant="accent">Request a Quote</Button>
-            <Button href={CAPABILITY_HREF} size="lg" variant="outline" newTab>
-              Download Capability Statement
-            </Button>
-          </div>
         </div>
 
-        <div className="relative">
-          <div className="relative aspect-[4/5] overflow-hidden rounded-2xl shadow-xl shadow-ad-navy/15">
-            <Image
-              src="/projects/queens-wharf.jpg"
-              alt="Queens Wharf, Brisbane — a Tier 1 project AusDilaps has reported on"
-              fill
-              priority
-              sizes="(max-width: 1024px) 100vw, 45vw"
-              className="object-cover"
-            />
-          </div>
-          <div className="absolute -bottom-5 -left-5 hidden rounded-xl border border-ad-border bg-white px-5 py-4 shadow-lg sm:block">
-            <div className="font-heading text-2xl font-bold text-ad-ink">1M+</div>
-            <div className="text-xs uppercase tracking-wider text-ad-muted">
-              photos captured annually
-            </div>
+        <div id="quote" className="scroll-mt-24 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+          <QuoteForm variant="compact" />
+        </div>
+
+        <div className="lg:col-start-1 lg:self-start lg:pt-8">
+          <ul className="grid max-w-xl gap-3 sm:grid-cols-2">
+            {proof.map((p) => (
+              <li key={p} className="flex items-start gap-2.5 text-sm text-white/90">
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-ad-accent-2" aria-hidden="true" />
+                {p}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+            <Button href={CAPABILITY_HREF} size="lg" variant="onDarkOutline" newTab>
+              Download Capability Statement
+            </Button>
+            <Link
+              href="/dilapidation-reports/samples"
+              className="text-sm font-medium text-ad-accent-2 transition-colors hover:text-white"
+            >
+              See a sample report →
+            </Link>
           </div>
         </div>
       </Container>
@@ -148,9 +192,12 @@ function Process() {
               A defensible report, the right way.
             </h2>
           </div>
-          <a href="#contact" className="text-sm font-medium text-ad-accent hover:brightness-90">
+          <Link
+            href="/dilapidation-reports#methodology"
+            className="text-sm font-medium text-ad-accent hover:brightness-90"
+          >
             See the full 6-step methodology →
-          </a>
+          </Link>
         </div>
         <div className="mt-12 grid gap-px overflow-hidden rounded-xl border border-ad-border bg-ad-border md:grid-cols-3">
           {steps.map((s) => (

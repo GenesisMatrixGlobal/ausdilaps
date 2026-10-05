@@ -27,6 +27,23 @@ export const REDIRECTS: Redirect[] = [
     permanent: true,
   },
 
+  // Legacy pages with no equivalent here, still receiving direct traffic a
+  // month after cutover (web_vitals, 2026-10-06: /about-ausdilaps alone had 25
+  // visits in 28 days, all 404s). The old About content is the team section.
+  { source: "/about-ausdilaps", destination: "/#about", permanent: true },
+  { source: "/about-ausdilaps/why-choose-ausdilaps", destination: "/#about", permanent: true },
+  // Old /projects/ archives (commercial-projects, road-projects, …). The
+  // pattern is letters and hyphens only, so it cannot swallow the hero images
+  // served from /public/projects/*.jpg.
+  { source: "/projects", destination: "/portfolio", permanent: true },
+  { source: "/projects/:cat([a-z0-9-]+)", destination: "/portfolio", permanent: true },
+  // A service slug typed without its /our-services/ prefix.
+  {
+    source: "/industrial-dilapidation-reports",
+    destination: "/our-services/industrial-dilapidation-reports",
+    permanent: true,
+  },
+
   // Thin / moved legacy pages.
   { source: "/contact-us/faqs", destination: "/faq", permanent: true },
   {

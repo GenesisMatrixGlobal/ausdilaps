@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     template: "%s — AusDilaps",
   },
   description:
-    "Australia's specialist dilapidation reporting firm — pre and post-construction condition reports that hold up when a damage claim is made. Trusted on Queens Wharf, NorthConnex, Brisbane Airport and Barangaroo.",
+    "Australia's specialist dilapidation reporting firm — pre and post-construction condition reports that hold up when a damage claim is made. Trusted on Queen's Wharf, NorthConnex, Brisbane Airport and Barangaroo.",
 };
 
 export default function RootLayout({

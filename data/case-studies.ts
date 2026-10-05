@@ -34,7 +34,7 @@ export const CASE_STUDIES: CaseStudy[] = [
     slug: "ipswich-hospital",
     project: "Ipswich Hospital",
     value: "$710M",
-    client: "Bennet & Bennet",
+    client: "Bennett + Bennett",
     location: "Ipswich, QLD",
     date: "July 2024",
     objective:

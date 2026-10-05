@@ -96,7 +96,7 @@ export const LOCATIONS: Location[] = [
     ],
     localProjects: ["queens-wharf-brisbane", "brisbane-airport"],
     serviceNote:
-      "Our Queensland-based inspectors cover Brisbane, the Gold Coast, the Sunshine Coast and across SEQ — and the wider team travels Australia-wide for major works.",
+      "Our inspectors based in Queensland cover Brisbane, the Gold Coast, the Sunshine Coast and across SEQ — and the wider team travels Australia-wide for major works.",
     faq: [
       {
         q: "Is a dilapidation report required in Brisbane?",

@@ -13,7 +13,7 @@ const CRUMBS = [
 ];
 
 export const metadata: Metadata = {
-  title: "Portfolio | Tier-1 Dilapidation Projects Across Australia",
+  title: "Portfolio | Tier 1 Dilapidation Projects Across Australia",
   description:
     "AusDilaps' project portfolio — dilapidation reporting on Australia's most scrutinised infrastructure: NorthConnex, WestConnex, North West Rail Link, Barangaroo, Queen's Wharf, major hospitals, defence and government works.",
   alternates: { canonical: "/portfolio" },

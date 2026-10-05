@@ -303,7 +303,7 @@ export const SERVICES_CONTENT: Service[] = [
           },
           {
             title: "Mapping & photogrammetry",
-            body: "Using RTK and PPK positioning to generate 3D point-cloud mapping with precise GPS, enabling side-by-side pre-, during- and post-construction comparisons of buildings, towers and assets.",
+            body: "Using RTK and PPK positioning to generate 3D point-cloud mapping with precise GPS, enabling side-by-side pre, during and post-construction comparisons of buildings, towers and assets.",
           },
         ],
         variant: "surface",
@@ -550,13 +550,13 @@ export const SERVICES_CONTENT: Service[] = [
   /* ── Defect Comparison Assessments (DCA) ─────────────────────────── */
   {
     slug: "defect-comparison-assessments",
-    title: "Defect Comparison Assessments (DCA) | Pre- vs Post-Construction",
+    title: "Defect Comparison Assessments (DCA) | Pre vs Post-Construction",
     metaDescription:
       "Defect Comparison Assessments from AusDilaps — compare pre and post-construction asset conditions to identify changes, assess construction impacts, and provide independent, defensible reporting for claims management.",
     h1: "Defect Comparison Assessments (DCA)",
     eyebrow: "Defect Comparison",
     navLabel: "Defect Comparison (DCA)",
-    summary: "Pre- vs post-construction comparison that isolates what changed.",
+    summary: "Pre vs post-construction comparison that isolates what changed.",
     intro:
       "A Defect Comparison Assessment compares pre and post-construction asset conditions to identify changes, assess potential construction impacts, and provide independent, defensible reporting that supports claims management and transparent communication between all stakeholders.",
     sections: [

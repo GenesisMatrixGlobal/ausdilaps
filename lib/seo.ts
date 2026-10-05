@@ -23,6 +23,7 @@ const AREAS = [
   "Victoria",
   "Australian Capital Territory",
   "South Australia",
+  "Western Australia",
 ];
 
 /** Site-wide Organization schema (E-E-A-T / GEO). */

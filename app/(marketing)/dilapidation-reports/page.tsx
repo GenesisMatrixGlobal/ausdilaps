@@ -20,7 +20,7 @@ const CRUMBS = [
 ];
 
 export const metadata: Metadata = {
-  title: "Dilapidation Reports | Pre- & Post-Construction Building Condition Reports",
+  title: "Dilapidation Reports | Pre and Post-Construction Building Condition Reports",
   description:
     "Australia's specialist dilapidation reporting firm. Pre and post-construction building condition reports that document existing conditions and hold up when a damage claim is made. Compliant with AS 4349.0.",
   alternates: { canonical: PATH },

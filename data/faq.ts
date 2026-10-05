@@ -75,7 +75,7 @@ export const FAQ: FaqCategory[] = [
       },
       {
         q: "How long is a BASIX report valid for?",
-        a: "BASIX reports remain valid for 12 months from the issue date. If construction hasn't commenced within 12 months, a new report may be required; significant plan or material changes can also require a new report.",
+        a: "A BASIX certificate must be lodged with the council or certifier within 3 months of being issued; once lodged it stays valid for the life of that development application. Significant plan or material changes can require a new certificate.",
       },
     ],
   },

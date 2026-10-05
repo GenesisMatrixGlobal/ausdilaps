@@ -351,17 +351,16 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
     return (
       <form
         onSubmit={handleSubmit(onSubmit)}
-        className="relative rounded-xl border border-ad-border bg-white p-6 shadow-2xl shadow-black/40 sm:p-7"
+        className="relative rounded-xl border border-ad-steel/15 bg-white p-6 shadow-xl shadow-ad-steel/10 sm:p-7"
       >
         {honeypot}
 
-        <h2 className="font-heading text-2xl font-semibold tracking-tight text-ad-ink">
-          Get in touch
-        </h2>
         {/* Give the enquiry choices visual priority before the contact details. */}
-        <fieldset className="mt-5" aria-describedby="enquiry-hint">
-          <legend className="text-sm font-semibold text-ad-ink">
-            How can we help you?
+        <fieldset className="min-w-0" aria-describedby="enquiry-hint">
+          <legend className="max-w-full">
+            <h2 className="font-heading text-2xl font-semibold tracking-tight text-ad-steel-dark">
+              How can we help you?
+            </h2>
           </legend>
           <div className="mt-3 grid grid-cols-1 gap-2.5 min-[375px]:grid-cols-2">
             {TYPE_OPTIONS.map((o) => {
@@ -377,7 +376,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
                   />
                   <span
                     className={cn(
-                      "relative flex min-h-16 items-center gap-2.5 rounded-lg border bg-ad-accent/5 py-3 pl-3 pr-7 text-sm font-medium leading-snug text-ad-steel-dark transition-colors group-hover:border-ad-accent/70 group-hover:bg-ad-accent/10",
+                      "relative flex min-h-16 items-center gap-2.5 rounded-lg border bg-ad-sky py-3 pl-3 pr-7 text-sm font-medium leading-snug text-ad-steel-dark transition-colors group-hover:border-ad-accent/70 group-hover:bg-ad-sky-deep",
                       "peer-checked:border-ad-accent peer-checked:bg-ad-accent peer-checked:text-white",
                       "peer-focus-visible:ring-2 peer-focus-visible:ring-ad-accent peer-focus-visible:ring-offset-2",
                       "[&_.choice-check]:opacity-0 peer-checked:[&_.choice-check]:opacity-100",

@@ -86,8 +86,8 @@ export const PROCESS = [
 
 /** Leadership + delivery team (Capability Statement). */
 export const TEAM = [
-  { name: "Mike Burford", role: "CEO" },
-  { name: "Rhys Morgan", role: "General Manager" },
+  { name: "Mike Burford", role: "Founder" },
+  { name: "Rhys Morgan", role: "CEO" },
   { name: "Kylie Crosson", role: "Senior Estimator" },
   { name: "Niro Rudrakumar", role: "Civil Engineer" },
   { name: "Jessica Lebbos", role: "Project Manager" },

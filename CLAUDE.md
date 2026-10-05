@@ -6,7 +6,7 @@
 
 ## 1. What this is
 
-A ground-up rebuild of **ausdilaps.com.au** for **AusDilaps — Specialist Building Inspections**, Australia's specialist **dilapidation (building condition) report** firm. ~$5M revenue, family-owned, 15 years, team <50. Legal entity **Urban Pulse Strategies Pty Ltd T/A AusDilaps**, ABN **82 650 700 226**, postal address **PO Box 3270, Rouse Hill NSW 2155** (changed 2026-10-06 from PO Box 81, Aspley QLD — `SITE.address` in `lib/site.ts` is the one source; the footer, every email footer, the privacy policy and the LocalBusiness schema read it or match it), Australia-wide.
+A ground-up rebuild of **ausdilaps.com.au** for **AusDilaps — Specialist Building Inspections**, Australia's specialist **dilapidation (building condition) report** firm. ~$5M revenue, family-owned, 15 years, team <50. Legal entity **Urban Pulse Strategies Pty Ltd T/A AusDilaps**, ABN **82 650 700 226**, postal address **PO Box 3270, Rouse Hill NSW 2155** (changed 2026-10-06 from PO Box 81, Aspley QLD — `SITE.address` in `lib/site.ts` is the one source; the footer, every email footer, the privacy policy and the LocalBusiness schema read it or match it), Australia-wide. **No office anywhere (Rhys, 2026-10-06): fully remote, staff permanently based in NSW (Sydney = main base of operations), QLD, VIC and SA** — never write "Queensland-based" or name an office; `data/locations.ts` was reworded that day.
 
 It replaces an old WordPress/Tatsu site (kept locally as a read-only reference at `20260616-AusDilaps-WordPress/` — git/vercel-ignored). The live old site still ranks for hundreds of terms; **we must preserve that** (see §7).
 

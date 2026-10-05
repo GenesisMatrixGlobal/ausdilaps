@@ -1,7 +1,8 @@
 // Location landing pages. Built as best-practice local pages — unique local copy,
 // real local drivers, real project proof (linked to the portfolio), honest
-// service-area framing. AusDilaps is HQ'd in Aspley QLD and delivers on-site
-// Australia-wide (mainly the eastern seaboard + SA) — no fabricated branch offices.
+// service-area framing. AusDilaps has NO office anywhere (Rhys, 2026-10-06): it is fully
+// remote, with staff permanently based in NSW (Sydney, the main base of operations), QLD,
+// VIC and SA, delivering on-site Australia-wide — no fabricated branch offices.
 
 import type { FaqItem } from "@/data/faq";
 
@@ -79,13 +80,13 @@ export const LOCATIONS: Location[] = [
     region: "Queensland",
     title: "Dilapidation Reports Brisbane | Property Condition Surveys QLD",
     metaDescription:
-      "Specialist dilapidation reports across Brisbane and South East Queensland. Pre and post-construction condition surveys compliant with AS 4349.0 — from a Queensland-based team proven on Queen's Wharf and Brisbane Airport.",
+      "Specialist dilapidation reports across Brisbane and South East Queensland. Pre and post-construction condition surveys compliant with AS 4349.0 — from a team with inspectors based in Queensland, proven on Queen's Wharf and Brisbane Airport.",
     h1: "Dilapidation Reports Brisbane",
     intro:
       "When demolition and construction in Brisbane involves heavy machinery and excavation, there's a real chance of impact on adjoining properties. A Brisbane dilapidation report captures the precise condition of those neighbouring buildings, roads, kerbs, bridges and assets — before and after construction — as protection and as the basis for answering any claim.",
     why: {
       heading: "Brisbane's building boom makes the baseline essential.",
-      body: "With the lead-up to the 2032 Olympic and Paralympic Games, Cross River Rail, Brisbane Metro and sustained South East Queensland growth, Brisbane is building at pace. AusDilaps is a Queensland-based, family-owned firm — and we've documented some of the city's most sensitive works, including the heritage-listed buildings surrounding Queen's Wharf and heritage items adjoining Brisbane Airport.",
+      body: "With the lead-up to the 2032 Olympic and Paralympic Games, Cross River Rail, Brisbane Metro and sustained South East Queensland growth, Brisbane is building at pace. AusDilaps is a family-owned firm with inspectors permanently based in Queensland — and we've documented some of the city's most sensitive works, including the heritage-listed buildings surrounding Queen's Wharf and heritage items adjoining Brisbane Airport.",
     },
     drivers: [
       "Council certification requiring pre and post-construction condition reports",
@@ -95,7 +96,7 @@ export const LOCATIONS: Location[] = [
     ],
     localProjects: ["queens-wharf-brisbane", "brisbane-airport"],
     serviceNote:
-      "As a Queensland-based firm, our engineers cover Brisbane, the Gold Coast, the Sunshine Coast and across SEQ — and travel Australia-wide for major works.",
+      "Our Queensland-based inspectors cover Brisbane, the Gold Coast, the Sunshine Coast and across SEQ — and the wider team travels Australia-wide for major works.",
     faq: [
       {
         q: "Is a dilapidation report required in Brisbane?",
@@ -103,7 +104,7 @@ export const LOCATIONS: Location[] = [
       },
       {
         q: "Is AusDilaps based in Brisbane?",
-        a: "AusDilaps is a Queensland-based, family-owned firm (Aspley, Brisbane). We've delivered dilapidation surveys on some of Brisbane's most significant projects, including Queen's Wharf and Brisbane Airport.",
+        a: "AusDilaps is a family-owned, fully remote firm with staff permanently based in Queensland, as well as New South Wales, Victoria and South Australia. We've delivered dilapidation surveys on some of Brisbane's most significant projects, including Queen's Wharf and Brisbane Airport.",
       },
       {
         q: "What does a Brisbane dilapidation report cover?",
@@ -257,7 +258,7 @@ export const LOCATIONS: Location[] = [
     ],
     localProjects: [],
     serviceNote:
-      "AusDilaps is HQ'd in Queensland and delivers on-site Australia-wide. For Perth and WA projects, our engineers travel to your site — get in touch to scope it.",
+      "AusDilaps has staff based in NSW, Queensland, Victoria and South Australia and delivers on-site Australia-wide. For Perth and WA projects, our engineers travel to your site — get in touch to scope it.",
     faq: [
       {
         q: "Does AusDilaps service Perth and WA?",

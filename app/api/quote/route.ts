@@ -3,6 +3,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { quoteSchema, classifyTier, type QuoteInput, type LeadTier } from "@/lib/leads";
 import { syncLeadToSalesforce } from "@/lib/salesforce";
 import { SITE } from "@/lib/site";
+import { enquiryAckEmail } from "@/lib/emails/enquiry-ack";
+import { accessCodes } from "@/lib/samples-access";
 
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -40,12 +42,6 @@ async function sendEmails(
     "I Received An Access Letter": "Access letter enquiry",
     "Report Inquiry": "Report enquiry",
     "General Inquiry": "General enquiry",
-  }[d.inquiryType];
-  const acknowledgement = {
-    "New Quote": "Thanks for your enquiry. We've received the details of your project and will scope it and come back to you shortly.",
-    "I Received An Access Letter": "Thanks for getting in touch about your access letter. We've received your details and our projects team will be in touch to help with your enquiry.",
-    "Report Inquiry": "Thanks for getting in touch about your report. We've received your enquiry and will come back to you shortly.",
-    "General Inquiry": "Thanks for getting in touch. We've received your enquiry and will come back to you shortly.",
   }[d.inquiryType];
 
   const submittedAt = new Intl.DateTimeFormat("en-AU", {
@@ -145,34 +141,20 @@ async function sendEmails(
     </div>`,
   });
 
-  // Acknowledgement (routed to admin in test mode)
-  // The ack goes to whatever address was typed, so anything reflected into it is a
-  // free DKIM-signed message from us to a stranger. A "first name" that is a URL or an
-  // email gets a neutral greeting instead of an autolinked one.
-  const firstName = d.name.split(/\s+/)[0] ?? "";
-  const greeting = /[/:@\\]/.test(firstName) || firstName.length > 30 ? "Hi there" : `Hi ${esc(firstName)}`;
+  // Acknowledgement (routed to admin in test mode). Content is per enquiry type and lives in
+  // lib/emails/enquiry-ack.ts — pure, so `npm run check:ack` renders every branch.
+  const ack = enquiryAckEmail({
+    input: d,
+    siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? "https://ausdilaps.com.au",
+    samplesCode: accessCodes()[0],
+  });
   const ackSent = await send({
     from,
     to: [testMode ? adminEmail : d.email],
     reply_to: adminEmail,
-    subject: d.inquiryType === "New Quote"
-      ? "We've received your quote request — AusDilaps"
-      : "We've received your enquiry — AusDilaps",
-    html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;color:#2f343a;">
-      <div style="background:#23272b;padding:28px 36px;">
-        <p style="color:#6d90b4;font-size:11px;letter-spacing:0.15em;text-transform:uppercase;margin:0 0 6px;">AusDilaps · Specialist Building Inspections</p>
-        <p style="color:#ffffff;font-size:18px;font-weight:700;margin:0;">${d.inquiryType === "New Quote" ? "Quote request received." : "Enquiry received."}</p>
-      </div>
-      <div style="padding:36px;">
-        <p style="margin-top:0;">${greeting},</p>
-        <p style="line-height:1.7;">${acknowledgement}</p>
-        <p style="line-height:1.7;">If it's urgent, call us on <strong>${SITE.phone}</strong> or reply to this email.</p>
-        <p style="color:#5b6570;font-size:14px;margin-bottom:0;">— The AusDilaps team</p>
-      </div>
-      <div style="border-top:1px solid #e5e7eb;padding:20px 36px;">
-        <p style="color:#9ca3af;font-size:12px;margin:0;">AusDilaps · ausdilaps.com.au · Reports compliant with ${SITE.standard}</p>
-      </div>
-    </div>`,
+    subject: ack.subject,
+    html: ack.html,
+    text: ack.text,
   });
   // ⚠️ Returned SEPARATELY, never ANDed. The info@ notice is the one that matters: if it
   // fails, a real enquiry is sitting in the database that nobody in the business knows

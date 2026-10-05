@@ -140,7 +140,7 @@ export default function DilapidationReportsPage() {
       </section>
 
       {/* Process (HowTo) */}
-      <section className="bg-ad-navy py-20 text-ad-on-dark lg:py-24">
+      <section id="methodology" className="scroll-mt-20 bg-ad-navy py-20 text-ad-on-dark lg:py-24">
         <Container>
           <div className="max-w-2xl">
             <Eyebrow className="text-ad-accent-2">How it&apos;s delivered</Eyebrow>

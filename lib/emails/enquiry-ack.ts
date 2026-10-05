@@ -80,25 +80,25 @@ function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Conte
     : `${siteUrl}${SAMPLES_PATH}`;
   const samples: Link = {
     title: "See a finished report",
-    body: "Sample dilapidation reports across residential, commercial and infrastructure jobs — so you know exactly what you'll receive.",
+    body: "Sample reports across residential, commercial and infrastructure jobs.",
     href: samplesHref,
     cta: "View sample reports",
   };
   const capability: Link = {
     title: "Capability statement",
-    body: "Who we are, our methodology, the Tier 1 projects we've worked on and the standards we report to.",
+    body: "Our methodology, team and Tier 1 project history.",
     href: `${siteUrl}${CAPABILITY_HREF}`,
     cta: "Download the PDF",
   };
   const faq: Link = {
     title: "Common questions",
-    body: "What a dilapidation report covers, who arranges it, how long an inspection takes and what happens if it finds something.",
+    body: "What's inspected, who arranges it, how long it takes.",
     href: `${siteUrl}/faq`,
     cta: "Read the FAQ",
   };
   const whatIs: Link = {
     title: "What a dilapidation report is",
-    body: "A plain-English explainer on what gets inspected, why it protects the people next to a construction site, and when it's needed.",
+    body: "A two-minute explainer on what gets inspected and why.",
     href: `${siteUrl}/insights/what-is-a-dilapidation-report`,
     cta: "Read the explainer",
   };
@@ -112,22 +112,13 @@ function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Conte
         headline: "Your quote request is in.",
         intro: [
           project.length > 0
-            ? `Thanks for sending through the details of <strong>${project.join(", ")}</strong>. One of our estimators will review the scope and come back to you with a quote.`
-            : "Thanks for sending through the details of your project. One of our estimators will review the scope and come back to you with a quote.",
+            ? `Thanks for the details on <strong>${project.join(", ")}</strong>. An estimator is reviewing the scope now.`
+            : "Thanks for the details. An estimator is reviewing the scope now.",
         ],
         steps: [
-          {
-            title: "Desktop review",
-            body: "We look at the site, the adjoining properties and any DA conditions or contract clauses you've mentioned, and define the scope.",
-          },
-          {
-            title: "Itemised quote",
-            body: "A detailed quote with clear pricing, methodology and deliverables — so there's nothing to interpret.",
-          },
-          {
-            title: "Kick-off",
-            body: "Once you accept, a dedicated project coordinator confirms access logistics and scheduling, and we get on site.",
-          },
+          { title: "Desktop review", body: "Site, adjoining properties, DA conditions." },
+          { title: "Itemised quote", body: "Clear pricing, methodology and deliverables." },
+          { title: "Kick-off", body: "A project coordinator confirms access and scheduling." },
         ],
         primary: samples,
         links: [capability, faq],
@@ -136,28 +127,22 @@ function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Conte
     case "I Received An Access Letter":
       return {
         subject: "About your access letter — AusDilaps",
-        headline: "We've received your enquiry about your access letter.",
+        headline: "About your access letter.",
         intro: [
           d.contactAddress
-            ? `Thanks for getting in touch about <strong>${escapeHtml(d.contactAddress)}</strong>. Our projects team will be in touch to help with your questions and the next steps.`
-            : "Thanks for getting in touch. Our projects team will be in touch to help with your questions and the next steps.",
-          "In the meantime, here's what the letter is about. A construction project near you has engaged AusDilaps to record the current condition of nearby properties before work starts. The report is an independent, photographic baseline of your property — inside and out — so that if anything changes during the works, there's a clear record of what was there beforehand.",
+            ? `Thanks for getting in touch about <strong>${escapeHtml(d.contactAddress)}</strong>. Our projects team will be in touch shortly.`
+            : "Thanks for getting in touch. Our projects team will be in touch shortly.",
+          "In short: a construction project near you has engaged us to record the condition of nearby properties before work starts. The report is an independent photographic record of your property, so there's a clear baseline if anything changes during the works.",
         ],
         steps: [
           {
             title: "We arrange a time",
             body: d.contactMethod?.length
-              ? `We'll contact you by ${d.contactMethod.map((m) => CONTACT_WORD[m]).join(" or ")} to find a time that suits you.`
-              : "We'll contact you to find a time that suits you.",
+              ? `By ${d.contactMethod.map((m) => CONTACT_WORD[m]).join(" or ")}, at a time that suits you.`
+              : "At a time that suits you.",
           },
-          {
-            title: "The inspection",
-            body: "An inspector attends and photographs the interior and exterior, noting any existing cracks, settling or marks. A standard residential inspection typically takes two to four hours.",
-          },
-          {
-            title: "The record",
-            body: `The findings go into a report compliant with ${SITE.standard}, which becomes the reference point for the rest of the project.`,
-          },
+          { title: "The inspection", body: "Interior and exterior photos. A standard home takes two to four hours." },
+          { title: "The record", body: `A report to ${SITE.standard}, your baseline for the rest of the project.` },
         ],
         primary: whatIs,
         links: [faq, samples],
@@ -173,14 +158,10 @@ function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Conte
         headline: "We've received your report enquiry.",
         intro: [
           refs.length > 0
-            ? `Thanks for getting in touch about your report. You've given us ${refs.join(" and ")}, which lets us find it straight away. We'll come back to you shortly.`
-            : "Thanks for getting in touch about your report. We'll come back to you shortly. If you have a project or OPT number, or the document ID from the report, reply with it and we'll find it faster.",
+            ? `Thanks. With ${refs.join(" and ")} we can find your report straight away, and we'll come back to you shortly.`
+            : "Thanks, we'll come back to you shortly. If you have a project or OPT number, or the document ID from the report, reply with it and we'll find it faster.",
         ],
-        steps: [
-          { title: "We find the report", body: "Every report is filed against its project, so a reference gets us there in minutes." },
-          { title: "We read your question", body: "If it's about a finding, the inspector or engineer who signed it off is looped in." },
-          { title: "We reply", body: "By email, unless you've asked us to call." },
-        ],
+        steps: [],
         primary: faq,
         links: [samples, capability],
       };
@@ -191,7 +172,7 @@ function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Conte
       return {
         subject: "We've received your enquiry — AusDilaps",
         headline: "Thanks for getting in touch.",
-        intro: ["We've received your enquiry and the right person will come back to you shortly."],
+        intro: ["We've got your enquiry and the right person will come back to you shortly."],
         steps: [],
         primary: samples,
         links: [capability, faq],
@@ -216,21 +197,20 @@ export function enquiryAckEmail({ input, siteUrl, samplesCode }: AckInput): AckE
 ${c.steps
   .map(
     (s, i) => `<tr>
-  <td valign="top" style="width:36px;padding:0 0 14px;"><div style="width:26px;height:26px;border-radius:13px;background:${STEEL};color:#ffffff;font-size:13px;font-weight:700;line-height:26px;text-align:center;">${i + 1}</div></td>
-  <td valign="top" style="padding:2px 0 14px;"><p style="margin:0;font-size:15px;font-weight:700;color:${INK};">${s.title}</p><p style="margin:3px 0 0;font-size:14px;line-height:1.6;color:${MUTED};">${s.body}</p></td>
+  <td valign="top" style="width:36px;padding:0 0 12px;"><div style="width:26px;height:26px;border-radius:13px;background:${STEEL};color:#ffffff;font-size:13px;font-weight:700;line-height:26px;text-align:center;">${i + 1}</div></td>
+  <td valign="top" style="padding:3px 0 14px;font-size:15px;line-height:1.4;color:${INK};"><strong>${s.title}</strong> <span style="color:${MUTED};">— ${s.body}</span></td>
 </tr>`
   )
   .join("\n")}
 </table>`;
 
   const linkCard = (l: Link) => `<tr>
-  <td style="padding:0 0 10px;">
+  <td style="padding:0 0 8px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid ${BORDER};border-radius:6px;">
-      <tr><td style="padding:16px 18px;">
-        <p style="margin:0 0 4px;font-size:15px;font-weight:700;color:${INK};">${l.title}</p>
-        <p style="margin:0 0 10px;font-size:14px;line-height:1.55;color:${MUTED};">${l.body}</p>
-        <a href="${escapeHtml(l.href)}" style="font-size:14px;font-weight:700;color:${STEEL};text-decoration:none;">${l.cta} &rarr;</a>
-      </td></tr>
+      <tr>
+        <td style="padding:13px 18px;font-size:15px;font-weight:700;color:${INK};">${l.title}<span style="display:block;font-size:13px;font-weight:400;color:${MUTED};margin-top:2px;">${l.body}</span></td>
+        <td align="right" valign="middle" style="padding:13px 18px;white-space:nowrap;"><a href="${escapeHtml(l.href)}" style="font-size:14px;font-weight:700;color:${STEEL};text-decoration:none;">${l.cta} &rarr;</a></td>
+      </tr>
     </table>
   </td>
 </tr>`;
@@ -266,8 +246,7 @@ ${c.steps
   <!-- While you wait -->
   <tr><td style="background:${SURFACE};border-top:1px solid ${BORDER};padding:26px 36px 18px;">
     <p style="margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${STEEL};">While you wait</p>
-    <p style="margin:0 0 6px;font-size:17px;font-weight:700;color:${INK};">${c.primary.title}</p>
-    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${MUTED};">${c.primary.body}</p>
+    <p style="margin:0 0 14px;font-size:17px;font-weight:700;color:${INK};">${c.primary.title} <span style="font-weight:400;color:${MUTED};">· ${c.primary.body}</span></p>
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;">
       <tr><td style="background:${ORANGE};border-radius:4px;">
         <a href="${escapeHtml(c.primary.href)}" style="display:inline-block;padding:12px 22px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;">${c.primary.cta}</a>
@@ -286,7 +265,7 @@ ${c.steps
       <a href="mailto:${SITE.email}" style="color:#ffffff;text-decoration:none;">${SITE.email}</a> &nbsp;·&nbsp;
       <a href="${base}" style="color:#ffffff;text-decoration:none;">ausdilaps.com.au</a>
     </p>
-    <p style="margin:0;font-size:12px;line-height:1.6;color:#8a94a0;">${SITE.legalName} T/A ${SITE.name} · ABN ${SITE.abn} · ${SITE.address}<br>Reports compliant with ${SITE.standard}. You're receiving this because you contacted us through ausdilaps.com.au.</p>
+    <p style="margin:0;font-size:12px;line-height:1.6;color:#8a94a0;">${SITE.legalName} T/A ${SITE.name} · ABN ${SITE.abn} · ${SITE.address}</p>
   </td></tr>
 
 </table>

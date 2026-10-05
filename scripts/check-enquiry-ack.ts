@@ -63,7 +63,7 @@ assert.ok(quote.html.includes("/dilapidation-reports/samples\""), "no code → p
 
 const letter = enquiryAckEmail({ input: cases["I Received An Access Letter"], siteUrl: site });
 assert.ok(letter.html.includes("12 Craig Avenue, Vaucluse NSW 2030"), "letter echoes the address");
-assert.ok(letter.html.includes("by SMS or phone"), "letter uses the chosen contact method");
+assert.ok(letter.html.includes("By SMS or phone"), "letter uses the chosen contact method");
 assert.ok(letter.html.includes("two to four hours"), "letter sets expectations on the inspection");
 assert.ok(letter.html.includes("Hi Tom,"), "apostrophe in the surname doesn't break the greeting");
 

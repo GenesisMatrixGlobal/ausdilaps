@@ -149,9 +149,9 @@ function AddressFields({
 
 /**
  * `variant="full"` is the /quote page: every field, branched by enquiry type.
- * `variant="compact"` is the homepage hero card: the five fields the team needs to
- * call someone back (what / who / phone / email / where), plus the one branch field
- * the full form REQUIRES for an access-letter enquiry (tenant or owner). Same API,
+ * `variant="compact"` is the homepage hero card: contact details and the relevant
+ * project or enquiry fields, including asset count for quotes and the required
+ * property role for an access-letter enquiry. Same API,
  * same validation, same routing — the compact form is a shorter way into the same
  * `/api/quote`, never a second lead path.
  */
@@ -492,6 +492,24 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
               {errors.contactAddress && (
                 <p className="mt-1 text-xs text-ad-orange">{errors.contactAddress.message}</p>
               )}
+            </div>
+          )}
+
+          {isNewQuote && (
+            <div>
+              <label className={labelCls} htmlFor="assetCount">
+                Approx. assets requiring inspection
+              </label>
+              <select id="assetCount" className={inputCls} defaultValue="" {...register("assetCount")}>
+                <option value="" disabled>
+                  Please choose
+                </option>
+                {ASSET_COUNT_RANGES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 

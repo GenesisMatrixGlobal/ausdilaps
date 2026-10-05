@@ -332,7 +332,9 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
   }
 
   const honeypot = (
-    <div aria-hidden="true" className="absolute left-[-9999px] top-[-9999px]" tabIndex={-1}>
+    // Keep it out of browser autofill as well as the visual layout. Off-screen
+    // text fields can still be autofilled and silently reject a real enquiry.
+    <div hidden aria-hidden="true" tabIndex={-1}>
       <label>
         Company website
         <input type="text" tabIndex={-1} autoComplete="off" {...register("company_website")} />

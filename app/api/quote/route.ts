@@ -200,7 +200,10 @@ export async function POST(req: NextRequest) {
   const d = parsed.data;
 
   // Honeypot — silently accept and drop bots.
-  if (d.company_website) return NextResponse.json({ ok: true });
+  if (d.company_website) {
+    console.info("[quote] submission rejected by honeypot");
+    return NextResponse.json({ ok: true });
+  }
 
   // Turnstile. Enforced whenever the widget is on the form (site key set) — and then a
   // missing secret FAILS CLOSED rather than quietly waving every submission through, which

@@ -86,8 +86,8 @@ function Hero() {
         <div className="lg:col-start-1 lg:row-start-2 lg:self-start">
           <ul className="flex max-w-xl flex-wrap gap-2.5">
             {proof.map((p) => (
-              <li key={p} className="inline-flex max-w-full items-center gap-2 rounded-full bg-ad-sky px-4 py-2 text-sm font-normal leading-snug text-ad-ink">
-                <Check className="h-3.5 w-3.5 shrink-0 text-ad-steel-dark" aria-hidden="true" />
+              <li key={p} className="inline-flex max-w-full items-center gap-2 rounded-full border border-[#d4dee7] bg-[#f8fafc] px-4 py-2 text-sm font-normal leading-snug text-ad-ink">
+                <Check className="h-3.5 w-3.5 shrink-0 text-ad-steel" aria-hidden="true" />
                 <span className="min-w-0">{p}</span>
               </li>
             ))}

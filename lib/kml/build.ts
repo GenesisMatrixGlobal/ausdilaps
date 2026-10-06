@@ -3,7 +3,7 @@ import type { KmlPathInput } from "./types";
 /** Brand orange #e8642a in KML's aabbggrr colour order. */
 const LINE_COLOR = "ff2a64e8";
 
-function escapeXml(value: string): string {
+export function escapeXml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

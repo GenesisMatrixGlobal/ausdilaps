@@ -16,7 +16,6 @@
 // it would cost more than the hundred lines here.
 
 import {
-  BoxConfigError,
   ensureSharedLink,
   findChildFolder,
   getAccessToken as getBoxToken,
@@ -25,8 +24,12 @@ import {
   sanitiseBoxFilename,
   uploadFileAutoRenamed,
 } from "@/lib/box";
-import { SalesforceConfigError, soqlQuery, updateRecord } from "@/lib/salesforce";
-import { SF_ID, soqlEscape } from "@/lib/salesforce-links";
+import { boxFolderField, isConfigError } from "@/lib/markup-sync";
+import { soqlQuery, updateRecord } from "@/lib/salesforce";
+import { parseSalesforceRecord, soqlEscape } from "@/lib/salesforce-links";
+
+// Re-exported so the cover-photo routes keep importing it from here — one copy, in markup-sync.
+export { isConfigError };
 
 /** Folder naming convention inside an Opportunity's Box folder. Constants rather than config:
  *  when the convention has drifted the operator pastes a folder link instead, which is cheaper
@@ -49,9 +52,6 @@ function surveyOpportunityField(): string {
 function surveyOpportunityRelationship(): string {
   return surveyOpportunityField().replace(/__c$/, "__r");
 }
-function boxFolderField(): string {
-  return process.env.SF_OPPORTUNITY_BOX_FOLDER_FIELD ?? "Link_to_Box_Files__c";
-}
 
 /** Survey__c's key prefix — fixed per object in Salesforce, so it identifies a bare pasted
  *  Id. Confirmed from EntityDefinition. */
@@ -59,17 +59,13 @@ const SURVEY_PREFIX = "a4F";
 
 export class CoverPhotoSyncError extends Error {}
 
-/** True when the failure is missing configuration rather than a bad request. */
-export function isConfigError(e: unknown): boolean {
-  return e instanceof SalesforceConfigError || e instanceof BoxConfigError;
-}
-
 /**
  * The Survey Id out of whatever was pasted: a Lightning/Classic record URL or a bare 15- or
  * 18-character Id.
  *
- * URLs are searched by PATHNAME only — a host like `ausdilaps--dev.lightning.force.com`
- * contains alphanumeric runs that would otherwise look like record Ids.
+ * The reading itself is parseSalesforceRecord's (pathname-only, so a host like
+ * `ausdilaps--dev.lightning.force.com` can't pass for an Id); what is left here is the Survey
+ * rules and the operator-facing messages.
  *
  * Unlike the markup's parseQuoteLookup there is no "or a record number" branch: a Survey has
  * no human-facing number to paste, so anything that isn't a URL or an Id is rejected here
@@ -79,46 +75,40 @@ export function parseSurveyLookup(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) throw new CoverPhotoSyncError("Paste the Salesforce Survey URL.");
 
-  if (/^https?:\/\//i.test(trimmed)) {
-    let path: string;
+  const isUrl = /^https?:\/\//i.test(trimmed);
+  const ref = parseSalesforceRecord(trimmed);
+
+  if (!ref) {
+    if (!isUrl) throw new CoverPhotoSyncError("Paste the Salesforce Survey URL, or its record Id.");
+    // parseSalesforceRecord answers null for a URL that won't parse AND for one with no Id in
+    // it; the operator is told which.
     try {
-      path = new URL(trimmed).pathname;
+      new URL(trimmed);
     } catch {
       throw new CoverPhotoSyncError("That doesn't look like a valid URL.");
     }
-
-    // Lightning: /lightning/r/Survey__c/a4FOl00000wZyT4MAK/view
-    const lightning = path.match(/\/r\/([^/]+)\/([a-zA-Z0-9]{15,18})/);
-    if (lightning) {
-      const [, object, id] = lightning;
-      // The object name in a Lightning URL is authoritative. Saying so beats letting a pasted
-      // Quote URL run on and fail with "no Survey found for 0Q0...", which reads like the
-      // record is missing rather than like the wrong link was copied.
-      if (object !== "Survey__c") {
-        throw new CoverPhotoSyncError(
-          `That link points at a ${object} record, not a Survey. Open the Survey and copy its URL.`
-        );
-      }
-      return id;
-    }
-
-    // Classic and anything else: the last path segment shaped like a record Id.
-    const candidates = path.split("/").filter((seg) => SF_ID.test(seg));
-    if (candidates.length > 0) return candidates[candidates.length - 1];
-
     throw new CoverPhotoSyncError("Couldn't find a Salesforce record Id in that URL.");
   }
 
-  if (SF_ID.test(trimmed)) {
-    if (!trimmed.startsWith(SURVEY_PREFIX)) {
+  if (isUrl) {
+    // The object name in a Lightning URL is authoritative. Saying so beats letting a pasted
+    // Quote URL run on and fail with "no Survey found for 0Q0...", which reads like the
+    // record is missing rather than like the wrong link was copied. A classic URL names no
+    // object, so its Id is taken as is.
+    if (ref.stated && ref.object !== "Survey__c") {
       throw new CoverPhotoSyncError(
-        `"${trimmed}" isn't a Survey Id — a Survey's Id starts with ${SURVEY_PREFIX}.`
+        `That link points at a ${ref.object} record, not a Survey. Open the Survey and copy its URL.`
       );
     }
-    return trimmed;
+    return ref.id;
   }
 
-  throw new CoverPhotoSyncError("Paste the Salesforce Survey URL, or its record Id.");
+  if (!ref.id.startsWith(SURVEY_PREFIX)) {
+    throw new CoverPhotoSyncError(
+      `"${ref.id}" isn't a Survey Id — a Survey's Id starts with ${SURVEY_PREFIX}.`
+    );
+  }
+  return ref.id;
 }
 
 export interface ResolvedSurvey {

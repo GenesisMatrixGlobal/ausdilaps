@@ -299,8 +299,6 @@ export const backdropSchema = z.preprocess((value) => {
   frame: frameSchema.optional(),
 }));
 
-export type Backdrop = z.infer<typeof backdropSchema>;
-
 const floorPlanObject = z.object({
   address: z.string(),
   backdrop: backdropSchema.optional(),

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { LatLng } from "@/lib/kml/types";
+import { readPath, samePath } from "@/components/tools/shared/map-path";
 import { centroidOf } from "@/lib/kml/standard-markup/geometry";
 import {
   MIN_POINTS,
@@ -167,20 +168,6 @@ function mapOptions(maps: typeof google.maps): google.maps.MapOptions {
     // Turning them off properly would need a cloud-styled `mapId`, which brings vector
     // rendering, tilt/heading, and no OverlayView-based labels. Not worth it to hide pins.
   };
-}
-
-/** Exact equality, not a tolerance: these are the same doubles Google handed us, round
- *  tripped through lat()/lng(). A tolerance would only mask a bug. */
-function samePath(a: LatLng[], b: LatLng[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((p, i) => p.lat === b[i].lat && p.lng === b[i].lng);
-}
-
-function readPath(overlay: google.maps.Polygon | google.maps.Polyline): LatLng[] {
-  return overlay
-    .getPath()
-    .getArray()
-    .map((ll) => ({ lat: ll.lat(), lng: ll.lng() }));
 }
 
 export function MeasureMap({

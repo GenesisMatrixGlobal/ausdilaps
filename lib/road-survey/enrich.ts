@@ -16,7 +16,7 @@
 //     it changes the scope conversation — Glenburnie Road is gravel and Barry Road is
 //     mostly `highway=track`, which is not a video-survey road at all.
 
-import { runPool } from "@/lib/concurrency";
+import { mapPool } from "@/lib/util/map-pool";
 import { haversineKm } from "@/lib/kml/road-segments/geo";
 import {
   fetchRoadTagsByNames,
@@ -270,7 +270,7 @@ export async function enrichSegments(segments: RoadSegment[]): Promise<Enrichmen
   const geocodable = segments.filter((s) => s.midpoint);
   let geocoded = 0;
   let geocodeFailures = 0;
-  await runPool(geocodable, GEOCODE_CONCURRENCY, async (segment) => {
+  await mapPool(geocodable, GEOCODE_CONCURRENCY, async (segment) => {
     try {
       const place = await reverseGeocode(segment.midpoint!);
       enrichment[segment.id] = { ...enrichment[segment.id], ...place };

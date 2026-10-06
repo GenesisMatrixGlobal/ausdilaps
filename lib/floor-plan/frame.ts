@@ -68,18 +68,6 @@ export function frameForBounds(bounds: Bounds): Frame {
   };
 }
 
-/** A frame centred on a point at a given zoom, shaped to `aspect` (width / height). Used to
- *  open the picker somewhere sensible before the operator has framed anything. */
-export function frameAt(centre: LatLng, zoom: number, aspect: number): Frame {
-  const height = MAX_SIDE;
-  return {
-    centre,
-    zoom: Math.max(0, Math.min(MAX_ZOOM, Math.round(zoom))),
-    width: Math.max(1, Math.min(MAX_SIDE, Math.round(height * aspect))),
-    height,
-  };
-}
-
 /** What a frame actually covers, which is what the picker reopens on. */
 export function boundsOfFrame(f: Frame): Bounds {
   const scale = TILE * 2 ** f.zoom;

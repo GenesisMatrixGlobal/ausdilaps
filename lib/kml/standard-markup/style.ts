@@ -34,8 +34,6 @@ export const NEIGHBOUR_FILL = "1d4ed8";
  *  rather than a second hardcoded value that could drift. */
 export const SHAPE_COLORS = { orange: "e8642a", blue: NEIGHBOUR_FILL, red: SITE_RED } as const;
 
-export type ShapeColorKey = keyof typeof SHAPE_COLORS;
-
 /** Inspected green, for the Closeout Markup — a lot there is coloured by how its work orders
  *  went, not by whether it is the project site. */
 export const INSPECTED_GREEN = "16a34a";

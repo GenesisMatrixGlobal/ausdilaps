@@ -13,6 +13,7 @@
 
 import type { LatLng } from "@/lib/kml/types";
 import { recordApiCall } from "@/lib/api-usage";
+import { fetchJson } from "@/lib/fetch-json";
 
 const GOOGLE_REVERSE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 
@@ -65,20 +66,10 @@ export async function reverseGeocode(point: LatLng, timeoutMs = 8000): Promise<R
     key,
   });
 
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  let resp: GoogleReverseResp;
-  try {
-    const res = await fetch(`${GOOGLE_REVERSE_GEOCODE_URL}?${params.toString()}`, {
-      signal: ctrl.signal,
-      headers: { Accept: "application/json" },
-    });
-    void recordApiCall({ provider: "google", api: "geocoding" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    resp = (await res.json()) as GoogleReverseResp;
-  } finally {
-    clearTimeout(t);
-  }
+  // Recorded BEFORE the call, as google-geocode.ts does: a failed request may still be billed,
+  // and /admin/usage is a ceiling.
+  void recordApiCall({ provider: "google", api: "geocoding" });
+  const resp = await fetchJson<GoogleReverseResp>(GOOGLE_REVERSE_GEOCODE_URL, { params, timeoutMs });
 
   // A midpoint in the middle of nowhere legitimately returns nothing. That is a blank
   // cell in the CSV, not an error worth failing the whole enrichment run over.

@@ -6,18 +6,8 @@ import { buttonVariants } from "@/components/ui/button";
 import type { ColorSwatch, PagePreview, Rgb, SitePlanResult } from "@/lib/property-sizing/site-plan/types";
 import { scaleRatioFromReference, type LatLng, type PixelPoint } from "@/lib/property-sizing/site-plan/georeference";
 import { downloadBlob, tsv } from "@/components/tools/shared/download";
-
-async function fileToBase64(file: File): Promise<{ data: string; mediaType: string }> {
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-  const [prefix, data] = dataUrl.split(",", 2);
-  const mediaType = prefix.match(/data:(.*);base64/)?.[1] ?? file.type ?? "application/pdf";
-  return { data, mediaType };
-}
+import { fileToBase64 } from "@/components/tools/shared/file-to-base64";
+import { csvCell } from "@/lib/csv";
 
 function parseHexColor(input: string): Rgb | null {
   const hex = input.trim().replace(/^#/, "");
@@ -40,10 +30,6 @@ function parseLatLng(input: string): LatLng | null {
   const lng = Number(m[2]);
   if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
   return { lat, lng };
-}
-
-function csvField(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 
 interface RefPoint {
@@ -351,7 +337,7 @@ export function SitePlanTab() {
     const header = "Code,Page,Area (m2),Status,External check,Notes";
     const lines = results.map((r) =>
       [r.code, String(r.page), r.areaSqm.toFixed(1), CONFIDENCE_LABEL[r.confidence], externalCheckText(r), r.flags.join("; ")]
-        .map(csvField)
+        .map(csvCell)
         .join(",")
     );
     const name = (file?.name ?? "site-plan").replace(/\.pdf$/i, "");

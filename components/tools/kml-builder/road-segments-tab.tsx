@@ -8,6 +8,8 @@ import { buildKml } from "@/lib/kml/build";
 import type { KmlPathInput } from "@/lib/kml/types";
 import type { RoadSegmentInput, RoadTraceResult, MapsLinkResult } from "@/lib/kml/road-segments/types";
 import { downloadBlob } from "@/components/tools/shared/download";
+import { fileToBase64 } from "@/components/tools/shared/file-to-base64";
+import { csvCell } from "@/lib/csv";
 
 interface Row {
   id: number;
@@ -50,18 +52,6 @@ function rowToInput(row: Row): RoadSegmentInput {
 
 const slugify = (value: string) => fileSlug(value, "road-paths");
 
-async function fileToBase64(file: File): Promise<{ data: string; mediaType: string }> {
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-  const [prefix, data] = dataUrl.split(",", 2);
-  const mediaType = prefix.match(/data:(.*);base64/)?.[1] ?? file.type ?? "image/png";
-  return { data, mediaType };
-}
-
 const STATUS_LABEL: Record<RoadTraceResult["status"], string> = {
   ok: "Traced",
   geocode_failed: "Couldn't locate",
@@ -74,10 +64,6 @@ const MAPS_STATUS_LABEL: Record<MapsLinkResult["status"], string> = {
   not_found: "Couldn't locate",
   error: "Error",
 };
-
-function csvField(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-}
 
 export function RoadSegmentsTab() {
   const [documentName, setDocumentName] = useState("AusDilaps Road Paths");
@@ -229,7 +215,7 @@ export function RoadSegmentsTab() {
     const header = "Zone,Location,Road Name,From,To,Google Maps Link";
     const lines = linkedRows.map((row) =>
       [row.zone, row.location, row.roadName, row.fromDesc, row.toDesc, mapsResults[row.id].mapsUrl ?? ""]
-        .map(csvField)
+        .map(csvCell)
         .join(",")
     );
     downloadBlob([header, ...lines].join("\n"), `${slugify(documentName)}-maps-links.csv`, "text/csv");

@@ -96,7 +96,3 @@ export const SOURCES: SourceDefinition[] = [
 export function enabledSources(): SourceDefinition[] {
   return SOURCES.filter((s) => s.configured());
 }
-
-export function getSource(slug: string): SourceDefinition | undefined {
-  return SOURCES.find((s) => s.slug === slug);
-}

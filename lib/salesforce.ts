@@ -1,14 +1,10 @@
 // Salesforce client — OAuth 2.0 client-credentials flow (no user login; requests run as
 // the Connected App's configured run-as user).
 //
-// Two callers with deliberately different error contracts:
-//   - `syncLeadToSalesforce` is best-effort and gated behind SF_SYNC_ENABLED. It never
-//     throws; a failed sync must not stop a website lead being saved.
-//   - `soqlQuery` / `updateRecord` throw with Salesforce's own error text. They back the
-//     operator-initiated Sync To Salesforce button, where whoever clicked needs to see
-//     exactly what went wrong.
-
-import type { LeadTier } from "@/lib/leads";
+// Every call throws with Salesforce's own error text (SalesforceConfigError when credentials
+// are absent). Most back operator-initiated actions — Sync To Salesforce, the line-item
+// create — where whoever clicked needs to see exactly what went wrong; a caller that must
+// not fail catches it itself.
 
 export class SalesforceConfigError extends Error {}
 
@@ -247,77 +243,5 @@ export async function deleteRecords(sobject: string, ids: string[]): Promise<voi
   if (failed.length > 0) {
     const detail = failed.map((r) => `${r.id ?? "?"}: ${(r.errors ?? []).map((e) => [e.statusCode, e.message].filter(Boolean).join(" ")).join("; ")}`).join(" · ");
     throw new Error(`Salesforce delete of ${sobject} failed — nothing was deleted. ${detail}`);
-  }
-}
-
-export type SalesforceLead = {
-  name: string;
-  email: string;
-  phone?: string | null;
-  company?: string | null;
-  role?: string | null;
-  projectName?: string | null;
-  projectLocation?: string | null;
-  notes?: string | null;
-  tier: LeadTier;
-  inquiryType?: string | null;
-  propertyRole?: string | null;
-  projectNumber?: string | null;
-  documentId?: string | null;
-  contactAddress?: string | null;
-  contactMethod?: string[] | null;
-};
-
-export async function syncLeadToSalesforce(
-  lead: SalesforceLead
-): Promise<{ id?: string; error?: string }> {
-  // Everything inside the try, so a config or token failure comes back as {error} rather
-  // than propagating — this path must never block a lead from being saved.
-  try {
-    const { token, instanceUrl, apiVersion } = await getAccessToken();
-
-    const parts = lead.name.trim().split(/\s+/);
-    const lastName = parts.length > 1 ? parts.slice(1).join(" ") : lead.name;
-    const firstName = parts.length > 1 ? parts[0] : undefined;
-
-    const res = await fetch(
-      `${instanceUrl}/services/data/${apiVersion}/sobjects/Lead`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...(firstName && { FirstName: firstName }),
-          LastName: lastName,
-          Company: lead.company || "Residential enquiry",
-          Email: lead.email,
-          ...(lead.phone && { Phone: lead.phone }),
-          ...(lead.role && { Title: lead.role }),
-          LeadSource: "Website — Quote form",
-          Rating: lead.tier === "tier1" ? "Hot" : lead.tier === "tier2" ? "Warm" : "Cold",
-          Description: [
-            lead.inquiryType && `Inquiry type: ${lead.inquiryType}`,
-            lead.projectName && `Project: ${lead.projectName}`,
-            lead.projectLocation && `Location: ${lead.projectLocation}`,
-            lead.propertyRole && `Property role: ${lead.propertyRole}`,
-            lead.projectNumber && `Project/OPT number: ${lead.projectNumber}`,
-            lead.documentId && `Document ID: ${lead.documentId}`,
-            lead.contactAddress && `Address: ${lead.contactAddress}`,
-            lead.contactMethod?.length && `Preferred contact: ${lead.contactMethod.join(", ")}`,
-            `Tier: ${lead.tier}`,
-            lead.notes && `Notes: ${lead.notes}`,
-          ]
-            .filter(Boolean)
-            .join("\n"),
-        }),
-      }
-    );
-    const data = (await res.json()) as { id?: string };
-    if (!res.ok) return { error: `SF lead ${res.status}` };
-    return { id: data.id };
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : String(e) };
   }
 }

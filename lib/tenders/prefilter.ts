@@ -73,6 +73,3 @@ export function prefilter(item: { title: string; excerpt?: string | null }): boo
 
   return KEYWORDS.some((keyword) => haystack.includes(keyword));
 }
-
-/** Exposed for the fixture tests, so a keyword change is reviewable. */
-export const PREFILTER_KEYWORDS = KEYWORDS;

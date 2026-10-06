@@ -54,7 +54,7 @@ Tools are department-agnostic components behind a registry. The contract:
 > and nothing else — no `<main>`, no `<h1>`.
 
 1. Write the component under `components/tools/<slug>/index.tsx`, exporting a named component.
-2. Add an entry to `TOOLS` in [`lib/tools/registry.ts`](../lib/tools/registry.ts):
+2. Add an entry to `TOOLS` in [`lib/tools/registry.ts`](../lib/tools/registry.ts) (metadata only — no component):
 
 ```ts
 {
@@ -62,13 +62,17 @@ Tools are department-agnostic components behind a registry. The contract:
   title: "My Tool",
   description: "One line, shown on the card and as the page subtitle.",
   departments: ["estimators", "projects"],
-  Component: dynamic(() => import("@/components/tools/my-tool").then((m) => m.MyTool)),
 }
 ```
 
-That's it. It appears at `/staff/estimators/tools/my-tool` and
+3. Add `"my-tool": dynamic(() => import("@/components/tools/my-tool").then((m) => m.MyTool)),`
+   to the map in [`components/tools/tool-components.tsx`](../components/tools/tool-components.tsx).
+   Keeping components OUT of the registry is what stops every page that lists tools from
+   shipping every tool's code. `npm run check:registry` fails if the two disagree.
+
+That's it — two lines across two files. It appears at `/staff/estimators/tools/my-tool` and
 `/staff/projects/tools/my-tool`, served by the one generic
-`app/staff/[department]/tools/[tool]/page.tsx`.
+`app/staff/[department]/@tools/tools/[tool]/page.tsx`.
 
 **To surface an existing tool to another department, add that department's slug to its
 `departments` array.** One line, no new route, no duplicated component.
@@ -84,9 +88,10 @@ A game is a registry entry with **`kind: "game"`** and **no `departments` field 
   kind: "game",
   title: "My Game",
   description: "One line, shown on the card.",
-  Component: dynamic(() => import("@/components/tools/my-game").then((m) => m.MyGame)),
 }
 ```
+
+…and its line in `components/tools/tool-components.tsx`, exactly as for a tool.
 
 It then appears under a **Games & Activities** heading beneath the tools on *every*
 department page, with a `GAME` badge, and opens at `/staff/<any-department>/tools/my-game`.

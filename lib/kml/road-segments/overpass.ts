@@ -73,8 +73,10 @@ const SUFFIXES: [string, string][] = [
   ["St", "Street"],
   ["Ave", "Avenue"],
   ["Dr", "Drive"],
+  ["Dve", "Drive"],
   ["Cres", "Crescent"],
   ["Ct", "Court"],
+  ["Crt", "Court"],
   ["Pde", "Parade"],
   ["Hwy", "Highway"],
   ["Cl", "Close"],
@@ -85,7 +87,7 @@ const SUFFIXES: [string, string][] = [
   ["Esp", "Esplanade"],
   ["Cct", "Circuit"],
   ["Grn", "Green"],
-  ["Hwy", "Highway"],
+  ["Gr", "Grove"],
 ];
 
 /** Builds the set of plausible full/abbreviated spellings of a road name for a fuzzy OSM name match. */

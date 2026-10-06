@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { adminClientConfigured } from "@/lib/supabase/env";
 import { MAX_LIST_ROWS, WINDOW_DAYS } from "@/lib/tenders/config";
 import { groupItems } from "@/lib/tenders/group";
 
@@ -38,10 +39,7 @@ const EMPTY = (unavailable: string | null): TenderReview => ({
 export async function loadTenderReview(): Promise<TenderReview> {
   // Feature-detected like loadDashboard: an unconfigured environment must render the page
   // with a dash, never a 500. Tender Watch is one tile on a dashboard about six other things.
-  if (
-    !(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY) ||
-    !(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)
-  ) {
+  if (!adminClientConfigured()) {
     return EMPTY("Supabase isn't configured in this environment.");
   }
 

@@ -571,8 +571,6 @@ export function stairGeometry(stair: Stair): StairGeometry {
   };
 }
 
-export type Cell = { x: number; y: number };
-
 const key = (x: number, y: number) => `${x},${y}`;
 
 /** Every cell a room owns. */

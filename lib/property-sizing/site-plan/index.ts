@@ -3,7 +3,7 @@ import { loadRaw, detectSidebarBoundary, findBlobs, type Blob } from "./segment"
 import { detectSwatches } from "./colors";
 import { sqmPerPixel } from "./calibrate";
 import { readBlobLabels } from "./label-vision";
-import { runPool } from "@/lib/concurrency";
+import { mapPool } from "@/lib/util/map-pool";
 import { splitByNearestLabel } from "./voronoi";
 import { buildTransform, pixelToLatLng, type GeoTransform } from "./georeference";
 import { checkExternalFootprint, type ExternalCheck } from "./external-check";
@@ -77,7 +77,7 @@ function blobCentroid(blob: Blob): { x: number; y: number } {
 
 async function checkBlobsExternally(blobs: Blob[], transform: GeoTransform | null): Promise<(ExternalCheck | null)[]> {
   if (!transform) return blobs.map(() => null);
-  return runPool(blobs, EXTERNAL_CHECK_CONCURRENCY, (blob) =>
+  return mapPool(blobs, EXTERNAL_CHECK_CONCURRENCY, (blob) =>
     checkExternalFootprint(pixelToLatLng(transform, blobCentroid(blob)))
   );
 }

@@ -75,7 +75,9 @@ const STREET_TYPES: Record<string, string> = {
   cres: "Crescent",
   cr: "Crescent",
   ct: "Court",
+  crt: "Court",
   dr: "Drive",
+  dve: "Drive",
   pl: "Place",
   pde: "Parade",
   tce: "Terrace",
@@ -87,6 +89,7 @@ const STREET_TYPES: Record<string, string> = {
   cct: "Circuit",
   esp: "Esplanade",
   gr: "Grove",
+  sq: "Square",
   wy: "Way",
 };
 

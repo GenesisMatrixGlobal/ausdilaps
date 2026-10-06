@@ -31,6 +31,7 @@
     "check:shared": "tsx scripts/check-shared-houses.ts",
     "check:cbd": "tsx scripts/check-cbd.ts",
     "check:safe-next": "tsx scripts/check-safe-next.ts",
+    "check:registry": "tsx scripts/check-tool-registry.ts",
     "check:ack": "tsx scripts/check-enquiry-ack.ts",
     "send:ack": "node --env-file=.env.local node_modules/.bin/tsx scripts/send-enquiry-ack-tests.ts",
     "repair:tender-contacts": "tsx scripts/repair-tender-contacts.ts",
@@ -60,7 +61,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/google.maps": "^3.66.2",
     "@types/node": "^20",

@@ -42,6 +42,3 @@ export const coverRenderRequestSchema = z.object({
     .union([z.literal(COVER_SCALES[0]), z.literal(COVER_SCALES[1]), z.literal(COVER_SCALES[2])])
     .default(DEFAULT_COVER_SCALE),
 });
-
-export type CoverParcelRequest = z.infer<typeof coverParcelRequestSchema>;
-export type CoverRenderRequest = z.infer<typeof coverRenderRequestSchema>;

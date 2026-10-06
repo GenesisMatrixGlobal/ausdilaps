@@ -274,8 +274,3 @@ export function displayTitle(item: {
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1).trimEnd()}…`;
 }
-
-/** Every id in the selected groups — what the send route marks, not just the leads. */
-export function memberIds<T extends Groupable>(groups: readonly ItemGroup<T>[]): string[] {
-  return groups.flatMap((g) => g.members.map((m) => m.id));
-}

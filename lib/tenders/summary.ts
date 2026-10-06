@@ -1,4 +1,5 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { adminClientConfigured } from "@/lib/supabase/env";
 import { MAX_LIST_ROWS, STALLED_RUN_MS, WINDOW_DAYS } from "./config";
 import { MIN_LEAD_TIME_MS, isActionable } from "./actionable";
 import { displayTitle, groupItems, type ItemGroup } from "./group";
@@ -20,19 +21,6 @@ import { mailboxConfigured } from "./sources/mailbox";
 const DAY = 86_400_000;
 
 export type TenderSummary = Awaited<ReturnType<typeof loadTenderSummary>>;
-
-/**
- * Feature-detected the same way app/api/quote/route.ts checks before its insert, so an
- * unconfigured environment renders an explanatory panel instead of a 500. createAdminClient()
- * throws on missing env vars, and a staff tool that white-screens is a worse failure than
- * one that says what is missing.
- */
-function supabaseConfigured(): boolean {
-  return !!(
-    (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY) &&
-    (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)
-  );
-}
 
 function emptySummary(isAdmin: boolean, unavailable: string | null) {
   return {
@@ -156,13 +144,24 @@ type RunView = {
   error: string | null;
 };
 
-export async function loadTenderSummary(isAdmin: boolean) {
-  if (!supabaseConfigured()) {
+/**
+ * `db` is for the check scripts, which pass their own client (scripts/_db.ts). The app passes
+ * nothing and gets the service-role client — imported DYNAMICALLY, because
+ * lib/supabase/admin.ts opens with `import "server-only"`, which does not resolve under tsx;
+ * a static import here crashed check:summary and check:sources before they did anything.
+ *
+ * Feature-detected the same way app/api/quote/route.ts checks before its insert, so an
+ * unconfigured environment renders an explanatory panel instead of a 500. createAdminClient()
+ * throws on missing env vars, and a staff tool that white-screens is a worse failure than
+ * one that says what is missing.
+ */
+export async function loadTenderSummary(isAdmin: boolean, db?: SupabaseClient) {
+  if (!adminClientConfigured()) {
     return emptySummary(isAdmin, "Supabase isn't configured in this environment.");
   }
 
   try {
-    return await query(isAdmin);
+    return await query(isAdmin, db ?? (await import("@/lib/supabase/admin")).createAdminClient());
   } catch (e) {
     const message = (e as Error).message;
     console.error("[tenders] summary query failed:", message);
@@ -171,8 +170,7 @@ export async function loadTenderSummary(isAdmin: boolean) {
   }
 }
 
-async function query(isAdmin: boolean) {
-  const db = createAdminClient();
+async function query(isAdmin: boolean, db: SupabaseClient) {
   const now = Date.now();
   const since = new Date(now - WINDOW_DAYS * DAY).toISOString();
 

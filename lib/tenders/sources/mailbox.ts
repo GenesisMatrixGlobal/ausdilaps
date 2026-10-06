@@ -27,8 +27,8 @@ import type { FetchResult, RawItem, SourceDefinition } from "../types";
  *   New-ApplicationAccessPolicy -AppId <app-id> `
  *     -PolicyScopeGroupId tenders@ausdilaps.com.au -AccessRight RestrictAccess
  *
- * assertMailboxScoped() below exists to prove that has been done, and should be run once
- * against the deployed environment before this is trusted. Do not take it on faith.
+ * `npm run check:graph` (scripts/check-graph-access.ts) exists to prove that has been done,
+ * and should be run once before this is trusted. Do not take it on faith.
  */
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
@@ -425,24 +425,6 @@ export async function fetchMailboxSource(source: EmailSource, sinceIso: string):
     },
     items: parseMessages(messages, source),
   };
-}
-
-/**
- * Proves the app registration is scoped to the one mailbox.
- *
- * Returns the status for a mailbox that is NOT ours. Anything other than 403 means
- * New-ApplicationAccessPolicy has not been applied and the app can read the whole
- * company's mail. Call this from a script against the deployed environment before
- * trusting the adapter; it is not wired into the scan, because a nightly probe of someone
- * else's mailbox is itself a bad idea.
- */
-export async function assertMailboxScoped(otherMailbox: string): Promise<{ status: number; scoped: boolean }> {
-  const token = await getGraphToken();
-  const res = await fetch(
-    `${GRAPH}/users/${encodeURIComponent(otherMailbox)}/messages?$top=1&$select=id`,
-    { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), cache: "no-store" }
-  );
-  return { status: res.status, scoped: res.status === 403 };
 }
 
 // ── Discovery ──────────────────────────────────────────────────────────────────

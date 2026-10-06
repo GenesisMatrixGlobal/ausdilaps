@@ -15,5 +15,3 @@ export const kmlRequestSchema = z.object({
   documentName: z.string().trim().optional().default("AusDilaps Survey Paths"),
   paths: z.array(kmlPathSchema).min(1, "Add at least one path").max(500),
 });
-
-export type KmlRequest = z.infer<typeof kmlRequestSchema>;

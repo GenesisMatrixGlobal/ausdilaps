@@ -769,11 +769,6 @@ export function positionVerdict(
     : { factor, code: "too_far", reason: "too far back — move in" };
 }
 
-/** Just the number, for the renderer's per-frame tint. */
-export function positionFactor(roomId: string, side: Side, x: number, y: number): number {
-  return positionVerdict(roomId, side, x, y).factor;
-}
-
 /** What the camera's steadiness is worth right now, 0.2 to 1.0. */
 export function focusFactor(focus: number): number {
   return FOCUS_FLOOR + (1 - FOCUS_FLOOR) * Math.max(0, Math.min(1, focus));

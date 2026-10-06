@@ -7,20 +7,18 @@
 //
 // Deliberately NOT built on markup-sync.ts. That module is Quote-shaped: five numbered slots,
 // a line-item branch, and a "which slot is free" rule that has no meaning here. This is one
-// field. When the cover-photo tool lands there will be three callers doing "upload to Box, write
-// the link to one field", and THAT is the point to extract a shared helper — with three real
-// shapes to generalise over rather than two and a guess.
+// field. Only the small helpers are shared (boxFolderField, isConfigError from markup-sync.ts);
+// the upload-and-link flow stays per tool until a third caller of THIS shape exists.
 
 import {
-  BoxConfigError,
   ensureSharedLink,
   getAccessToken as getBoxToken,
   parseBoxFolderId,
   sanitiseBoxFilename,
   uploadFileAutoRenamed,
 } from "@/lib/box";
-import { MarkupSyncError } from "@/lib/markup-sync";
-import { SalesforceConfigError, updateRecord } from "@/lib/salesforce";
+import { isConfigError, MarkupSyncError } from "@/lib/markup-sync";
+import { updateRecord } from "@/lib/salesforce";
 import { CLOSEOUT_MARKUP_FIELD } from "./opportunity";
 
 export interface CloseoutUploadResult {
@@ -34,15 +32,8 @@ export interface CloseoutUploadResult {
   sidecarError?: string;
 }
 
-export function isCloseoutConfigError(e: unknown): boolean {
-  return e instanceof BoxConfigError || e instanceof SalesforceConfigError;
-}
-
-/** A filename that sorts and reads well in Box beside the closeout letter. */
-export function suggestCloseoutFilename(opportunityName: string): string {
-  const stamp = new Date().toISOString().slice(0, 10);
-  return sanitiseBoxFilename(`${opportunityName} - Overview Markup ${stamp}.png`);
-}
+/** markup-sync's isConfigError under the name the upload route imports — one copy, not two. */
+export const isCloseoutConfigError = isConfigError;
 
 export async function uploadCloseoutMarkup(opts: {
   opportunityId: string;

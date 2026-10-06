@@ -68,5 +68,3 @@ export const siteMarkupRequestSchema = z.preprocess(
       : value,
   z.discriminatedUnion("mode", [crossStreetsSchema, coordinatesSchema, routeUrlSchema])
 );
-
-export type SiteMarkupRequest = z.infer<typeof siteMarkupRequestSchema>;

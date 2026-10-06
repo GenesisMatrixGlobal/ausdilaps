@@ -1,5 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { adminClientConfigured } from "@/lib/supabase/env";
 import { loadToolUsage } from "@/lib/tools/usage";
 import { loadSamplesStats, type SamplesStats } from "@/lib/page-views";
 import { emptyDevice, loadWebVitals, type WebVitals } from "@/lib/web-vitals";
@@ -22,13 +23,6 @@ import { ASSET_COUNT_RANGES } from "@/lib/leads";
 const DAY = 86_400_000;
 const WEEK = 7 * DAY;
 
-function supabaseConfigured(): boolean {
-  return !!(
-    (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY) &&
-    (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)
-  );
-}
-
 export type Alert = {
   /**
    * Ordering only — /admin renders every alert in the same amber.
@@ -44,8 +38,6 @@ export type Alert = {
 };
 
 export type Breakdown = { label: string; count: number };
-
-export type DashboardData = Awaited<ReturnType<typeof loadDashboard>>;
 
 type LeadRow = {
   created_at: string;
@@ -81,7 +73,7 @@ function tally(
 export async function loadDashboard(origin: string) {
   const now = Date.now();
 
-  if (!supabaseConfigured()) {
+  if (!adminClientConfigured()) {
     return empty("Supabase isn't configured in this environment.", now);
   }
 

@@ -5,13 +5,16 @@
 // coordinates). The real-world distance between them vs the pixel distance on the page yields
 // an independent scale, expressed the same way as the printed one so it drops straight into
 // the existing 1:N calibration pipeline.
+import type { LatLng } from "@/lib/kml/types";
+import { projectToLocalMetres, unprojectFromLocalMetres } from "@/lib/kml/standard-markup/geometry";
+
+// The flat-earth projection is shared with the markup tools; re-exported here so this
+// subsystem's own importers (external-check.ts, the site-plan tab) keep one import path.
+export type { LatLng };
+export { projectToLocalMetres };
+
 const EARTH_RADIUS_M = 6371000;
 const MM_PER_POINT = 25.4 / 72;
-
-export interface LatLng {
-  lat: number;
-  lng: number;
-}
 
 export interface PixelPoint {
   x: number;
@@ -51,32 +54,6 @@ export function scaleRatioFromReference(
   const metresPerPixel = realMetres / pxDist;
   const metresPerPoint = metresPerPixel * (pixelWidth / pointWidth);
   return (metresPerPoint * 1000) / MM_PER_POINT;
-}
-
-const METRES_PER_DEG_LAT = 111320; // good enough at site-plan/building scale
-
-function metresPerDegLng(atLat: number): number {
-  return METRES_PER_DEG_LAT * Math.cos((atLat * Math.PI) / 180);
-}
-
-export interface LocalMetres {
-  east: number;
-  north: number;
-}
-
-/** Flat-earth local projection around `origin` — accurate to well under a metre at this scale. */
-export function projectToLocalMetres(origin: LatLng, point: LatLng): LocalMetres {
-  return {
-    east: (point.lng - origin.lng) * metresPerDegLng(origin.lat),
-    north: (point.lat - origin.lat) * METRES_PER_DEG_LAT,
-  };
-}
-
-export function unprojectFromLocalMetres(origin: LatLng, offset: LocalMetres): LatLng {
-  return {
-    lat: origin.lat + offset.north / METRES_PER_DEG_LAT,
-    lng: origin.lng + offset.east / metresPerDegLng(origin.lat),
-  };
 }
 
 /**

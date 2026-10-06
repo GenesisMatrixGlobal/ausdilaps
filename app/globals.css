@@ -39,7 +39,6 @@
   --color-ad-accent-2: #6d90b4;      /* secondary steel highlight */
   --color-ad-orange: #e8642a;        /* conversion accent (energy) — from Capability Statement */
   --color-ad-orange-dark: #cf5423;
-  --color-ad-blue: #46688a;          /* alias kept for components */
 
   /* Status amber. Deliberately NOT ad-orange: orange is the conversion accent (CTAs only),
      and at #e8642a it reads as an error. Amber says "look at this", not "something broke". */

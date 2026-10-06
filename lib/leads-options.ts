@@ -13,13 +13,11 @@ export const INQUIRY_TYPES = [
 export type InquiryType = (typeof INQUIRY_TYPES)[number];
 
 export const PROPERTY_ROLES = ["Tenant", "Property Owner", "Property Agent", "Other"] as const;
-export type PropertyRole = (typeof PROPERTY_ROLES)[number];
 
 export const CONTACT_METHODS = ["SMS", "Call", "Email"] as const;
 export type ContactMethod = (typeof CONTACT_METHODS)[number];
 
 export const AU_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"] as const;
-export type AuState = (typeof AU_STATES)[number];
 
 export const ASSET_COUNT_RANGES = ["<10", "10-100", "100+"] as const;
 export type AssetCountRange = (typeof ASSET_COUNT_RANGES)[number];

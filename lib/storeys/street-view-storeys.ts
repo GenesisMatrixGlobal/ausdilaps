@@ -145,11 +145,6 @@ export async function findStreetCameras(target: LatLng, parcel: LatLng[] | null,
   return found.sort((a, b) => a.edgeDistanceM - b.edgeDistanceM).slice(0, max);
 }
 
-/** The single nearest camera — what the trial and the Street View link want. */
-export async function findStreetCamera(target: LatLng, parcel: LatLng[] | null, key: string): Promise<Camera | null> {
-  return (await findStreetCameras(target, parcel, key, 1))[0] ?? null;
-}
-
 /** The one billed call: a 640x480 frame from the camera, aimed at the property. */
 export async function streetViewImage(cam: Camera, key: string): Promise<Buffer> {
   const params = new URLSearchParams({

@@ -3,7 +3,7 @@
 // Read-only. The one write this tool ever makes is Closeout_Markup__c, and that lives in
 // ./sync.ts so this module can be reasoned about as a pure read.
 
-import { MarkupSyncError } from "@/lib/markup-sync";
+import { boxFolderField, MarkupSyncError } from "@/lib/markup-sync";
 import { lightningUrl } from "@/lib/quote-lines/resolve";
 import { soqlQuery, soqlQueryAll } from "@/lib/salesforce";
 import { parseSalesforceRecord, soqlEscape } from "@/lib/salesforce-links";
@@ -17,12 +17,6 @@ import type {
   UnmappedWorkOrder,
   WorkOrderRow,
 } from "./types";
-
-/** The Opportunity field holding the Box folder — shared with the markup sync, which reads the
- *  same env var, so a renamed field is fixed in one place. */
-function boxFolderField(): string {
-  return process.env.SF_OPPORTUNITY_BOX_FOLDER_FIELD ?? "Link_to_Box_Files__c";
-}
 
 /** Where a finished closeout markup is filed. A URL field on Opportunity, beside
  *  Closeout_Letter_Link__c — this drawing goes out with the closeout letter. */

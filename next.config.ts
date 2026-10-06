@@ -11,12 +11,6 @@ const nextConfig: NextConfig = {
     // Optimised images are immutable per (src, size, quality); 30 days spares a returning
     // visitor a revalidation round-trip on every picture.
     minimumCacheTTL: 2_592_000,
-    remotePatterns: [
-      // Supabase Storage (public assets) and Cloudflare R2 public hostnames.
-      // Fill in once the Supabase project + R2 bucket are provisioned, e.g.:
-      // { protocol: "https", hostname: "<project>.supabase.co", pathname: "/storage/v1/object/public/**" },
-      // { protocol: "https", hostname: "<account>.r2.cloudflarestorage.com" },
-    ],
   },
   experimental: {
     // Knowledge-base uploads go through a server action, and the default cap is 1MB —

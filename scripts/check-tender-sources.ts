@@ -42,7 +42,7 @@ async function main() {
         auto_discovered: true, alert_on_quiet: true,  is_trusted: true,  parse_mode: "digest", consecutive_empty: 6 },
     ], { onConflict: "slug" });
 
-    const s1 = await loadTenderSummary(true);
+    const s1 = await loadTenderSummary(true, db);
     const quiet  = s1.sources.find((s) => s.slug === QUIET)!;
     const portal = s1.sources.find((s) => s.slug === PORTAL)!;
 
@@ -55,13 +55,13 @@ async function main() {
 
     // Flipping the toggle is the whole point — it must change the verdict.
     await db.from("tender_sources").update({ alert_on_quiet: true }).eq("slug", QUIET);
-    const s2 = await loadTenderSummary(true);
+    const s2 = await loadTenderSummary(true, db);
     ok("turning the alert on makes the same row critical",
        s2.sources.find((s) => s.slug === QUIET)!.health === "critical");
 
     // Failures are never opt-in: a broken source is broken whoever owns it.
     await db.from("tender_sources").update({ alert_on_quiet: false, consecutive_failures: 2 }).eq("slug", QUIET);
-    const s3 = await loadTenderSummary(true);
+    const s3 = await loadTenderSummary(true, db);
     ok("a FAILING source still reports, alert opt-out or not",
        s3.sources.find((s) => s.slug === QUIET)!.health === "failing");
 

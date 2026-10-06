@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { adminClientConfigured } from "@/lib/supabase/env";
 import { quoteSchema, classifyTier, type QuoteInput, type LeadTier } from "@/lib/leads";
-import { syncLeadToSalesforce } from "@/lib/salesforce";
 import { SITE } from "@/lib/site";
 import { escapeHtml } from "@/lib/html";
 import { formatBrisbane } from "@/lib/dates";
@@ -237,10 +237,7 @@ export async function POST(req: NextRequest) {
   };
 
   // Persist (source of truth).
-  const hasSupabase = !!(
-    (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY) &&
-    (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)
-  );
+  const hasSupabase = adminClientConfigured();
   let leadId: string | null = null;
   if (hasSupabase) {
     try {
@@ -270,28 +267,6 @@ export async function POST(req: NextRequest) {
     console.error("[quote] email failed:", e);
   }
 
-  // Salesforce (best-effort, gated, skipped in test mode).
-  let sf: { id?: string; error?: string } | null = null;
-  if (!testMode && process.env.SF_SYNC_ENABLED === "true") {
-    sf = await syncLeadToSalesforce({
-      name: d.name,
-      email: d.email,
-      phone: d.phone,
-      company: d.company,
-      role: d.role,
-      projectName: d.projectName,
-      projectLocation: d.projectLocation,
-      notes: d.notes,
-      tier,
-      inquiryType: d.inquiryType,
-      propertyRole: d.propertyRole,
-      projectNumber: d.projectNumber,
-      documentId: d.documentId,
-      contactAddress: d.contactAddress,
-      contactMethod: d.contactMethod,
-    });
-  }
-
   // Record delivery outcomes (best-effort).
   // Unconditional once there is a row: the old guard skipped the update when BOTH emails
   // failed, so a total failure was recorded only by the column default happening to agree.
@@ -299,13 +274,7 @@ export async function POST(req: NextRequest) {
     try {
       await createAdminClient()
         .from("leads")
-        .update({
-          emailed,
-          ack_emailed: ackEmailed,
-          salesforce_id: sf?.id ?? null,
-          salesforce_synced: !!sf?.id,
-          sync_error: sf?.error ?? null,
-        })
+        .update({ emailed, ack_emailed: ackEmailed })
         .eq("id", leadId);
     } catch (e) {
       console.error("[quote] flag update failed:", e);

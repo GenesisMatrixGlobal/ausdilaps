@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { TabBar } from "@/components/ui/tab-bar";
 import { sameParty, senderOrigin } from "@/lib/tenders/display";
 import { EmptyState } from "@/components/staff/empty-state";
+import { Pill } from "@/components/staff/pill";
 import { StatTiles, type Stat } from "@/components/staff/stat-tiles";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -104,20 +105,6 @@ function hostOf(url: string): string | null {
   } catch {
     return null;
   }
-}
-
-function Pill({ tone, children }: { tone: "ok" | "warn" | "critical" | "muted"; children: React.ReactNode }) {
-  const styles = {
-    ok: "bg-ad-steel/10 text-ad-steel",
-    warn: "bg-ad-orange/10 text-ad-orange",
-    critical: "bg-ad-orange/15 text-ad-orange",
-    muted: "bg-ad-surface text-ad-muted",
-  } as const;
-  return (
-    <span className={cn("rounded px-2 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wide", styles[tone])}>
-      {children}
-    </span>
-  );
 }
 
 export function TenderWatchView({ initial }: { initial: TenderSummary }) {

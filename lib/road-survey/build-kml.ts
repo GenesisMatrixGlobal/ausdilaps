@@ -7,17 +7,9 @@
 // destroyed would make it unreadable against their own documents.
 
 import { zipSync, strToU8 } from "fflate";
+import { escapeXml } from "@/lib/kml/build";
 import type { MatchedSegment } from "./reconcile";
 import type { RoadSegment } from "./types";
-
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
 
 /** #rrggbb back to KML's aabbggrr, at full opacity. */
 function hexToKmlColour(hex: string): string {

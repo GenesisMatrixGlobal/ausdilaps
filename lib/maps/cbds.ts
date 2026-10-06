@@ -3,7 +3,11 @@
 // route adds the drive. Points are each city's centre (GPO / main street), not the LGA
 // centroid, because "km from the CBD" means from the middle of town.
 
+import { haversineKm } from "@/lib/kml/road-segments/geo";
 import type { LatLng } from "@/lib/kml/types";
+
+// Re-exported so check:cbd and any caller keep importing it from here.
+export { haversineKm };
 
 export interface Cbd {
   name: string;
@@ -28,16 +32,6 @@ export const CBDS: readonly Cbd[] = [
   { name: "Townsville", point: { lat: -19.259, lng: 146.8169 } },
   { name: "Cairns", point: { lat: -16.9186, lng: 145.7781 } },
 ];
-
-/** Great-circle distance in km. */
-export function haversineKm(a: LatLng, b: LatLng): number {
-  const R = 6371;
-  const rad = (d: number) => (d * Math.PI) / 180;
-  const dLat = rad(b.lat - a.lat);
-  const dLng = rad(b.lng - a.lng);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
 
 /** The nearest centre as the crow flies. Straight line is the right test for "which city is
  *  this job near" — the route then measures the actual drive from it. */

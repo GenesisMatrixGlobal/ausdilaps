@@ -22,6 +22,10 @@ export interface SalesforceRef {
   /** The object name when the URL stated one, else inferred from the key prefix, else null.
    *  Null means "an Id we can't type" — the caller decides whether that is usable. */
   object: string | null;
+  /** True when `object` was named by the URL itself (a Lightning link), false when it was
+   *  inferred from the key prefix. A caller that only trusts a stated object — the cover
+   *  photo's Survey check — needs to tell the two apart. */
+  stated: boolean;
   id: string;
 }
 
@@ -58,19 +62,19 @@ export function parseSalesforceRecord(input: string): SalesforceRef | null {
 
     // Lightning: /lightning/r/Opportunity/006.../view — the object name is authoritative.
     const lightning = path.match(/\/r\/([^/]+)\/([a-zA-Z0-9]{15,18})/);
-    if (lightning) return { object: lightning[1], id: lightning[2] };
+    if (lightning) return { object: lightning[1], stated: true, id: lightning[2] };
 
     // Classic and anything else: the LAST path segment shaped like a record Id. Last, because
     // a classic URL can carry a parent Id earlier in the path.
     const candidates = path.split("/").filter((seg) => SF_ID.test(seg));
     if (candidates.length > 0) {
       const id = candidates[candidates.length - 1];
-      return { object: objectForId(id), id };
+      return { object: objectForId(id), stated: false, id };
     }
     return null;
   }
 
-  if (SF_ID.test(trimmed)) return { object: objectForId(trimmed), id: trimmed };
+  if (SF_ID.test(trimmed)) return { object: objectForId(trimmed), stated: false, id: trimmed };
   return null;
 }
 

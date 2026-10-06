@@ -5,7 +5,7 @@
 import sharp from "sharp";
 import type { RawImage, Blob } from "./segment";
 import type { LabelAnchor } from "./voronoi";
-import { runPool } from "@/lib/concurrency";
+import { mapPool } from "@/lib/util/map-pool";
 import { anthropicConfigured, callAnthropic, imageBlock, parseJsonArray, textFrom } from "@/lib/anthropic";
 
 const VISION_MODEL = process.env.ANTHROPIC_OCR_MODEL ?? "claude-haiku-4-5-20251001";
@@ -104,7 +104,7 @@ export async function readBlobLabels(img: RawImage, blobs: Blob[]): Promise<Labe
   const batches: CropJob[][] = [];
   for (let i = 0; i < jobs.length; i += BATCH_SIZE) batches.push(jobs.slice(i, i + BATCH_SIZE));
 
-  const batchResults = await runPool(batches, CONCURRENCY, callVision);
+  const batchResults = await mapPool(batches, CONCURRENCY, callVision);
 
   const perBlob: LabelAnchor[][] = blobs.map(() => []);
   batchResults.forEach((rows, batchIdx) => {

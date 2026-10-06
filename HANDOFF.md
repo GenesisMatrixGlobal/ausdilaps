@@ -39,7 +39,7 @@ Stack: Next.js 16.2.4 (App Router, Turbopack) · React 19 · TS · Tailwind v4 �
 - "Download Capability Statement" CTAs → the committed PDF `/public/AusDilaps-Capability-Statement-FY25-26.pdf` (`CAPABILITY_HREF`), opens new tab. (Was wrongly → `/quote`; fixed.)
 - The brief's planned **capability-statement gated email-capture** form was **not** built — it's a direct download for now. (Optional future enhancement.)
 
-`/api/quote` flow: zod validate → honeypot → Turnstile (gated) → tier classify → **Supabase insert (source of truth)** → Resend admin+ack → Salesforce upsert (gated). Every destination is failure-isolated; `LEAD_TEST_MODE` routes both emails to `ADMIN_EMAIL` and skips Salesforce.
+`/api/quote` flow: zod validate → honeypot → Turnstile (gated) → tier classify → **Supabase insert (source of truth)** → Resend admin+ack. Every destination is failure-isolated; `LEAD_TEST_MODE` routes both emails to `ADMIN_EMAIL`. (No Salesforce sync — removed 2026-10-07.)
 
 ---
 

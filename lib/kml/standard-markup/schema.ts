@@ -13,11 +13,7 @@ export const standardMarkupRequestSchema = z.object({
   zoomAdjust: z.number().int().min(-3).max(3).default(0),
 });
 
-export type StandardMarkupRequest = z.infer<typeof standardMarkupRequestSchema>;
-
 const latLngSchema = z.object({ lat: z.number(), lng: z.number() });
-
-export const MARKUP_SHAPE_COLORS = ["orange", "blue", "red"] as const;
 
 const markupShapeSchema = z.object({
   // Must match MAX_SHAPE_POINTS in components/tools/site-markups/shapes.ts — the client cap
@@ -33,8 +29,6 @@ const markupShapeSchema = z.object({
   /** What the operator named it on the sheet — the legend uses this rather than "Shape". */
   name: z.string().max(200).default(""),
 });
-
-export type MarkupShapeInput = z.infer<typeof markupShapeSchema>;
 
 /** Re-render request: takes the already-resolved geometry straight from the client (no
  *  geocoding or cadastre work) so unchecking a lot and regenerating is a single fast
@@ -169,8 +163,6 @@ export const standardMarkupRenderRequestSchema = z.object({
     .max(MARKUP_COLOR_KEYS.length)
     .optional(),
 });
-
-export type StandardMarkupRenderRequest = z.infer<typeof standardMarkupRenderRequestSchema>;
 
 /** Cadastre lookup for a single parcel under a clicked point — the "Detect lot boundary"
  *  button. Deliberately separate from the address pipeline: no geocoding, just an

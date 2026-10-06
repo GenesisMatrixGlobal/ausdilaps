@@ -151,33 +151,6 @@ export async function loadApiUsage(monthKey?: string): Promise<ApiUsage> {
   }
 }
 
-export interface ToolUsage {
-  /** "September 2026" */
-  monthLabel: string;
-  calls: number;
-  costCents: number;
-  byApi: { provider: string; api: string; label: string; calls: number; units: number; unitLabel: string; costCents: number }[];
-}
-
-/**
- * One tool's month to date, for the counter inside the tool itself. The same rows /admin/usage
- * shows, filtered — so the figure on the tool and the figure on the dashboard are one figure.
- * Google's free allowance is applied account-wide first, exactly as the dashboard does it.
- */
-export async function loadToolUsage(slug: string): Promise<ToolUsage> {
-  const [y, m0] = brisbaneYearMonth();
-  const month = await loadMonth(monthStart(y, m0), monthStart(y, m0, 1));
-  const rows = month.rows.filter((r) => r.tool === slug);
-  return {
-    monthLabel: month.label,
-    calls: rows.reduce((s, r) => s + r.calls, 0),
-    costCents: rows.reduce((s, r) => s + r.costCents, 0),
-    byApi: rows
-      .map((r) => ({ provider: r.provider, api: r.api, label: apiLabel(r.provider, r.api), calls: r.calls, units: r.units, unitLabel: unitLabel(r.provider, r.api, r.units), costCents: r.costCents }))
-      .sort((a, b) => b.costCents - a.costCents),
-  };
-}
-
 /** Display name for a `tool` value — a registry slug, one of the named jobs, or nothing. */
 export function toolTitle(tool: string | null): string {
   if (!tool) return "Unattributed";

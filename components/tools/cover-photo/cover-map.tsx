@@ -11,6 +11,7 @@ import {
   onMapsAuthFailure,
 } from "@/lib/maps/loader";
 import { createVertexHandles, type VertexHandles } from "@/components/tools/shared/vertex-handles";
+import { readPath, samePath } from "@/components/tools/shared/map-path";
 import { MAX_DRAWN_POINTS } from "@/lib/cover-photo/schema";
 import {
   COVER_ASPECT,
@@ -163,20 +164,6 @@ function mapOptions(maps: typeof google.maps): google.maps.MapOptions {
     // (The SERVER render does pass styles to the Static Maps API, which is a different API
     // and unaffected — see lib/cover-photo/render.ts.)
   };
-}
-
-/** Exact equality, not a tolerance: these are the same doubles Google handed us, round
- *  tripped through lat()/lng(). A tolerance would only mask a bug. */
-function samePath(a: LatLng[], b: LatLng[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((p, i) => p.lat === b[i].lat && p.lng === b[i].lng);
-}
-
-function readPath(overlay: google.maps.Polygon): LatLng[] {
-  return overlay
-    .getPath()
-    .getArray()
-    .map((ll) => ({ lat: ll.lat(), lng: ll.lng() }));
 }
 
 export function CoverMap({

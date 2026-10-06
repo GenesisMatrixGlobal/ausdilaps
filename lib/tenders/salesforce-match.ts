@@ -1,8 +1,6 @@
 import { soqlQuery } from "@/lib/salesforce";
 import { soqlEscape } from "@/lib/salesforce-links";
 
-export { salesforceRecordUrl, salesforceSearchUrl } from "./salesforce-urls";
-
 /**
  * "Have we already quoted this?" — checked against Salesforce before anyone spends time on it.
  *

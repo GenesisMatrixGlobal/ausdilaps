@@ -1,7 +1,6 @@
 // Small, self-contained planar-geometry helpers for the Standard Mark Up tool.
-// No turf/GIS library in this repo — the same flat-earth approach is already
-// hand-rolled in lib/property-sizing/site-plan/georeference.ts; this is the
-// equivalent for standard-markup rather than coupling to that (unrelated) subsystem.
+// No turf/GIS library in this repo, so the flat-earth helpers are hand-rolled here;
+// lib/property-sizing/site-plan/georeference.ts imports its projection from this file.
 
 import type { LatLng } from "@/lib/kml/types";
 

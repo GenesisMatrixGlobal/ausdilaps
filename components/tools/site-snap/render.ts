@@ -378,11 +378,6 @@ function bakeStatic(): HTMLCanvasElement {
   return canvas;
 }
 
-/** Discards the baked house. Call if the layout or sprites ever change at runtime. */
-export function invalidateStatic(): void {
-  staticLayer = null;
-}
-
 // ── Live drawing ────────────────────────────────────────────────────────
 
 /** The strip just inside a room along one of its sides — where a wall's status is drawn. */

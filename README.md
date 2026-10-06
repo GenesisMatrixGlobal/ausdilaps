@@ -2,7 +2,7 @@
 
 Tier 1 dilapidation specialist — marketing site, qualified-lead engine, and secure client report portal.
 
-**Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 · shadcn/ui · Supabase (DB/auth/RLS) · Resend (email) · Cloudflare (R2 storage + Turnstile) · Salesforce (CRM, flagged) · Stripe (payments, deferred). Deploy: Vercel via GitHub.
+**Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 · shadcn/ui · Supabase (DB/auth/RLS) · Resend (email) · Cloudflare (Turnstile) · Salesforce (staff tools). Deploy: Vercel via GitHub.
 
 The build plan lives at `~/.claude/plans/i-am-going-to-polymorphic-pretzel.md`.
 

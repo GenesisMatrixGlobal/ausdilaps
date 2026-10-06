@@ -23,11 +23,16 @@
 // lives entirely in this file, and tool_usage stores a bare slug with no department
 // column (see the header of 0008_tool_usage.sql).
 //
-// Component references go through next/dynamic so these heavy client bundles
-// (site-markups alone is ~1,200 lines) only load on the route that renders them.
+// This file is METADATA ONLY — no component references, and keep it that way. It is imported
+// by a dozen server components that never render a tool (/admin, /admin/tools, /admin/staff,
+// /staff, the department tools list…), and a server component that imports a client
+// component ships its bundle as entry JS whether it renders it or not. next/dynamic does not
+// help here: it only code-splits from inside a CLIENT component. With the components in this
+// file every one of those pages carried every tool, ~890KB. The components are mapped by
+// slug in components/tools/tool-components.tsx (a client module, imported by the tool page
+// only), and Tender Watch — a server component — is rendered directly by the tool page.
+// Adding a tool is an entry here AND a line there.
 
-import dynamic from "next/dynamic";
-import type { ComponentType } from "react";
 import { DEPARTMENT_SLUGS, type DepartmentSlug } from "@/lib/departments";
 import { TRANSCRIPTION_DEPARTMENTS } from "@/lib/transcription/config";
 import { COVER_PHOTO_DEPARTMENTS, MARKUP_SYNC_DEPARTMENTS } from "@/lib/sync-departments";
@@ -43,8 +48,6 @@ import { COVER_PHOTO_DEPARTMENTS, MARKUP_SYNC_DEPARTMENTS } from "@/lib/sync-dep
  *    property-sizing       -> "Bulk Property Sizing"
  *    road-survey-estimator -> "KMZ Analyser"
  *    floor-plan            -> "Floor Plan Generator" */
-export type ToolKind = "tool" | "game";
-
 type Common = {
   slug: string;
   /** Short reference code (SMK, PSZ, ...) so a tool can be named in a message
@@ -55,11 +58,10 @@ type Common = {
   title: string;
   /** One line — shown on the tool card and as the page subtitle. */
   description: string;
-  Component: ComponentType<ToolProps>;
 };
 
-/** What the tool page hands every tool. Optional throughout, so a tool that wants none of it
- *  declares no props at all. */
+/** What the tool page hands every client tool (components/tools/tool-components.tsx).
+ *  Optional throughout, so a tool that wants none of it declares no props at all. */
 export type ToolProps = {
   /** Company admin — gates experimental surfaces such as Markup and Measure's *DEV* tab. */
   isAdmin?: boolean;
@@ -99,9 +101,6 @@ export const TOOLS: ToolDefinition[] = [
       "Turn an address, a list of addresses or a road route into a marked-up aerial and priced Quote Line Items, synced straight to Salesforce.",
     // Unassigned from projects 2026-09-16 (Rhys) — Closeout Markup is what that department uses.
     departments: [...MARKUP_SYNC_DEPARTMENTS],
-    Component: dynamic(() =>
-      import("@/components/tools/site-markups").then((m) => m.SiteMarkupsTool)
-    ),
   },
   {
     slug: "property-sizing",
@@ -114,9 +113,6 @@ export const TOOLS: ToolDefinition[] = [
     // pipeline (lib/property-sizing/*) is what every markup lookup runs on and is NOT retired.
     departments: ["estimators"],
     archived: true,
-    Component: dynamic(() =>
-      import("@/components/tools/property-sizing").then((m) => m.PropertySizingTool)
-    ),
   },
   {
     slug: "tender-watch",
@@ -127,9 +123,6 @@ export const TOOLS: ToolDefinition[] = [
     // Must stay in step with TENDER_WATCH_DEPARTMENTS in lib/tenders/config.ts, which the API
     // routes read. Diverge and a department sees the tool card but its data calls 401.
     departments: ["accounts"],
-    Component: dynamic(() =>
-      import("@/components/tools/tender-watch").then((m) => m.TenderWatchTool)
-    ),
   },
   {
     slug: "road-survey-estimator",
@@ -138,9 +131,6 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "Turn a client's road-network .kmz into a per-segment quoting sheet, and turn their edited sheet back into a map for Google Earth.",
     departments: ["estimators", "inspectors"],
-    Component: dynamic(() =>
-      import("@/components/tools/road-survey-estimator").then((m) => m.RoadSurveyEstimatorTool)
-    ),
   },
   {
     slug: "floor-plan",
@@ -149,9 +139,6 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "Turn a photo of the inspector's hand sketch into a clean A4 floor plan .png for the report.",
     departments: ["reports"],
-    Component: dynamic(() =>
-      import("@/components/tools/floor-plan").then((m) => m.FloorPlanTool)
-    ),
   },
   {
     slug: "cover-photo",
@@ -160,9 +147,6 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "Aerial of the property with its boundary in green, sized for the front of a report and filed straight onto the Survey.",
     departments: [...COVER_PHOTO_DEPARTMENTS],
-    Component: dynamic(() =>
-      import("@/components/tools/cover-photo").then((m) => m.CoverPhotoTool)
-    ),
   },
   {
     slug: "closeout-markup",
@@ -171,9 +155,6 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "Paste an opportunity: every property its work orders name, coloured by whether it was inspected, and filed onto the opportunity's Closeout Markup field.",
     departments: ["projects", "reports"],
-    Component: dynamic(() =>
-      import("@/components/tools/closeout-markup").then((m) => m.CloseoutMarkupTool)
-    ),
   },
   {
     slug: "transcription-buddy",
@@ -184,9 +165,6 @@ export const TOOLS: ToolDefinition[] = [
     // Shared with the API routes via lib/transcription/config.ts so a card and its data calls
     // cannot disagree about who has access.
     departments: [...TRANSCRIPTION_DEPARTMENTS],
-    Component: dynamic(() =>
-      import("@/components/tools/transcription-buddy").then((m) => m.TranscriptionBuddyTool)
-    ),
   },
   {
     slug: "kml-builder",
@@ -195,9 +173,6 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "Build survey path .kml files from lat/lng coordinates or by tracing the real road between two cross-streets.",
     departments: ["inspectors"],
-    Component: dynamic(() =>
-      import("@/components/tools/kml-builder").then((m) => m.KmlBuilderTool)
-    ),
   },
   {
     slug: "site-snap",
@@ -206,9 +181,6 @@ export const TOOLS: ToolDefinition[] = [
     title: "Site Snap",
     description:
       "A two-minute pixel photo survey \u2014 walk the house, frame every wall from in front of it, beat the clock without wrecking the quality.",
-    Component: dynamic(() =>
-      import("@/components/tools/site-snap").then((m) => m.SiteSnapTool)
-    ),
   },
   {
     slug: "crack-blast",
@@ -217,19 +189,11 @@ export const TOOLS: ToolDefinition[] = [
     title: "CrackBlast",
     description:
       "An AusDilaps Challenge \u2014 drag blocks onto the grid, finish a row or column and watch it crack. Staff-wide leaderboard.",
-    Component: dynamic(() =>
-      import("@/components/tools/crack-blast").then((m) => m.CrackBlastTool)
-    ),
   },
 ];
 
 export function getTool(slug: string): ToolDefinition | undefined {
   return TOOLS.find((t) => t.slug === slug);
-}
-
-export function getToolByCode(code: string): ToolDefinition | undefined {
-  const upper = code.toUpperCase();
-  return TOOLS.find((t) => t.code === upper);
 }
 
 export function isGame(tool: ToolDefinition): tool is GameTool {
@@ -239,11 +203,6 @@ export function isGame(tool: ToolDefinition): tool is GameTool {
 /** Retired. Still in the registry and still openable — just not offered anywhere. */
 export function isArchived(tool: ToolDefinition): boolean {
   return !isGame(tool) && tool.archived === true;
-}
-
-/** Every retired tool, for the archive section on /admin/tools. */
-export function archivedTools(): ToolDefinition[] {
-  return TOOLS.filter(isArchived);
 }
 
 /** Every department a thing shows under. Games are everywhere, by definition. */

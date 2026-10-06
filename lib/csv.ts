@@ -13,5 +13,5 @@ export function csvCell(value: string | number | null | undefined): string {
 export function csvDocument(header: readonly (string | number | null)[], rows: (string | number | null | undefined)[][]): string {
   const lines = [header.map(csvCell).join(",")];
   for (const row of rows) lines.push(row.map(csvCell).join(","));
-  return `﻿${lines.join("\r\n")}\r\n`;
+  return `\uFEFF${lines.join("\r\n")}\r\n`;
 }

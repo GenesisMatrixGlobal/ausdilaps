@@ -30,8 +30,11 @@ const SITE_MARKUP_FOLDER = "Site Markup";
 
 /** Custom field API names differ per org, so they're configurable — a wrong guess is then a
  *  Vercel change rather than a redeploy. Salesforce's own INVALID_FIELD error names the bad
- *  field, and we quote it verbatim, so a mismatch is self-diagnosing. */
-function boxFolderField(): string {
+ *  field, and we quote it verbatim, so a mismatch is self-diagnosing.
+ *
+ *  Exported because the Cover Photo sync and the Overview Markup resolver read the same Opportunity field —
+ *  one copy, so a renamed field is fixed in one place. */
+export function boxFolderField(): string {
   return process.env.SF_OPPORTUNITY_BOX_FOLDER_FIELD ?? "Link_to_Box_Files__c";
 }
 /**
@@ -75,7 +78,8 @@ function firstFreeSlot(quote: QuoteSlots): number | null {
 
 export class MarkupSyncError extends Error {}
 
-/** True when the failure is missing configuration rather than a bad request. */
+/** True when the failure is missing configuration rather than a bad request. The Cover Photo
+ *  and Overview Markup syncs re-export this one rather than keeping copies. */
 export function isConfigError(e: unknown): boolean {
   return e instanceof SalesforceConfigError || e instanceof BoxConfigError;
 }

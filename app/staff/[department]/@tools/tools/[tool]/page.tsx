@@ -3,10 +3,13 @@ import { notFound } from "next/navigation";
 import { isDepartmentSlug } from "@/lib/departments";
 import { canOpenInDepartment, getTool } from "@/lib/tools/registry";
 import { ToolFrame } from "@/components/staff/tool-frame";
+import { ClientTool } from "@/components/tools/tool-components";
+import { TenderWatchTool } from "@/components/tools/tender-watch";
 import { getStaffUser, isAdmin } from "@/lib/auth/session";
 
-/** One page file serves every tool, present and future — the tool itself comes
- *  from the registry. */
+/** One page file serves every tool, present and future — the tool's metadata comes from the
+ *  registry, its component from components/tools/tool-components.tsx (Tender Watch, the one
+ *  server tool, is imported here directly). */
 export async function generateMetadata({ params }: { params: Promise<{ tool: string }> }) {
   const { tool } = await params;
   const def = getTool(tool);
@@ -30,7 +33,6 @@ export default async function ToolPage({
   // Games pass for every department; canOpenInDepartment() owns that rule.
   if (!tool || !canOpenInDepartment(tool, department)) notFound();
 
-  const { Component } = tool;
   const user = await getStaffUser();
   const admin = user ? isAdmin(user) : false;
 
@@ -44,7 +46,13 @@ export default async function ToolPage({
       </Link>
       <div className="mt-4">
         <ToolFrame title={tool.title} code={tool.code}>
-          <Component isAdmin={admin} />
+          {/* Tender Watch is the one SERVER tool — it loads its own data — so it is rendered
+              here directly; every other tool is a client component picked by slug. */}
+          {tool.slug === "tender-watch" ? (
+            <TenderWatchTool />
+          ) : (
+            <ClientTool slug={tool.slug} isAdmin={admin} />
+          )}
         </ToolFrame>
       </div>
     </div>

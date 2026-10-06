@@ -31,13 +31,13 @@ const ok = (pass: boolean, label: string, detail = "") => {
 };
 
 async function main() {
-  const summary = await loadTenderSummary(true);
+  const db = scriptDb();
+  const summary = await loadTenderSummary(true, db);
   if (summary.unavailable) {
     console.error(`Cannot reach the tender tables: ${summary.unavailable}`);
     process.exit(1);
   }
 
-  const db = scriptDb();
   const since = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString();
 
   /* eslint-disable @typescript-eslint/no-explicit-any */

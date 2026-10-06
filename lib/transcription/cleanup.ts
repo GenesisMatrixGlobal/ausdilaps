@@ -8,6 +8,7 @@
 
 import { anthropicCostCents } from "@/lib/api-usage";
 import { anthropicConfigured, callAnthropic, textFrom } from "@/lib/anthropic";
+import { mapPool } from "@/lib/util/map-pool";
 import { CLEANUP_MODEL } from "./config";
 import { chunkBody, splitHeader, timestampLines } from "./format";
 import { DICTATION_KEYTERMS, keytermsFor } from "./keyterms";
@@ -42,16 +43,8 @@ export async function cleanTranscript(input: { raw: string; filename: string }):
 
   const { header, body } = splitHeader(input.raw);
   const chunks = chunkBody(body, CLEANUP_CHUNK_PAIRS);
-  const results: ChunkResult[] = new Array(chunks.length);
-  let next = 0;
-  const worker = async () => {
-    for (;;) {
-      const i = next++;
-      if (i >= chunks.length) return;
-      results[i] = await cleanChunk(chunks[i], input.filename);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(CLEANUP_CONCURRENCY, chunks.length) }, worker));
+  // mapPool returns results in chunk order, which is what lets them be joined back up below.
+  const results = await mapPool(chunks, CLEANUP_CONCURRENCY, (chunk) => cleanChunk(chunk, input.filename));
 
   const text = results.map((r) => r.text).join("\n");
   const costCents = results.reduce((s, r) => s + r.costCents, 0);

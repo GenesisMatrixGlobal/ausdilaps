@@ -107,8 +107,8 @@ If the second says True, the Entra grant from step 2 is still in place.
 Stored as `MS_GRAPH_TENANT_ID`, `MS_GRAPH_CLIENT_ID` and `MS_GRAPH_CLIENT_SECRET` in Vercel's
 encrypted environment variables, server-side only — never sent to a browser.
 
-Before trusting it we run our own independent check (`assertMailboxScoped()` in
-`lib/tenders/sources/mailbox.ts`) that requests a *different* mailbox and confirms it gets a
+Before trusting it we run our own independent check (`npm run check:graph`, in
+`scripts/check-graph-access.ts`) that requests a *different* mailbox and confirms it gets a
 **403**. If it doesn't, we stop and come back to you.
 
 The app only ever reads. It cannot send, delete, or modify anything.

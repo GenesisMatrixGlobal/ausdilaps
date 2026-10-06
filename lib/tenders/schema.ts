@@ -41,10 +41,3 @@ export const classificationSchema = z.object({
   reasoning: z.string().trim().min(1).max(800),
   injection_suspected: z.boolean().catch(false),
 });
-
-export type ClassificationPayload = z.infer<typeof classificationSchema>;
-
-/** Body for the manual "Run scan now" button and the summary read. */
-export const summaryRequestSchema = z.object({
-  days: z.number().int().min(1).max(90).catch(30),
-});

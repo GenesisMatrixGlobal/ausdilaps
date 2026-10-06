@@ -43,15 +43,6 @@ export function buildRoadGraph(ways: OsmWay[]): Graph {
   return { nodes, edges };
 }
 
-export function nearestNode(graph: Graph, point: LatLng): { key: string; distanceKm: number } | null {
-  let best: { key: string; distanceKm: number } | null = null;
-  for (const [key, node] of graph.nodes) {
-    const d = haversineKm(point, node);
-    if (!best || d < best.distanceKm) best = { key, distanceKm: d };
-  }
-  return best;
-}
-
 /**
  * Finds the node in `graph` closest to any node across `otherWays` — i.e. where the
  * target road physically meets a cross-street, without relying on geocoding at all.

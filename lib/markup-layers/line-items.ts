@@ -36,19 +36,6 @@ export interface LineItemDraft {
   levels: string;
 }
 
-export const LINE_ITEM_FIELDS: readonly (keyof LineItemDraft)[] = [
-  "street",
-  "suburb",
-  "product",
-  "assetType",
-  "internalMetres",
-  "externalMetres",
-  "internalRate",
-  "externalRate",
-  "quantity",
-  "levels",
-];
-
 /** Sparse: an absent key, or an absent field, means "still on the default". That is what lets
  *  a re-measured layer pick up its new area while keeping a rate the operator overrode. */
 export type LineItemDrafts = Record<string, Partial<LineItemDraft>>;

@@ -281,7 +281,7 @@ function FieldVitals({ v }: { v: WebVitals }) {
             ? v.unavailable
             : v.samples === 0
               ? "no page views recorded yet"
-              : `${v.samples} page view${v.samples === 1 ? "" : "s"}, 75th percentile`}
+              : `${v.samples} page view${v.samples === 1 ? "" : "s"}, 75th percentile${v.unpainted ? ` · ${v.unpainted} never shown, ignored` : ""}`}
         </p>
       </div>
 
@@ -310,9 +310,15 @@ function FieldVitals({ v }: { v: WebVitals }) {
               const n = v.byDevice[d].p75[key];
               const r = v.unavailable ? "none" : rate(key, n);
               return (
-                <p key={d} className={`text-base font-semibold tabular-nums ${TONE[r]}`}>
-                  {fmt(key, n)}
-                </p>
+                <div key={d}>
+                  <p className={`text-base font-semibold tabular-nums ${TONE[r]}`}>{fmt(key, n)}</p>
+                  {/* What the figure stands on — Safari reports no CLS, so mobile's is Android. */}
+                  {!v.unavailable && n != null && (
+                    <p className="text-[0.6rem] tabular-nums text-ad-muted/70">
+                      from {v.byDevice[d].n[key]}
+                    </p>
+                  )}
+                </div>
               );
             })}
           </Fragment>

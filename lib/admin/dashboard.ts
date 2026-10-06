@@ -288,6 +288,7 @@ function empty(unavailable: string, now: number) {
     } as SamplesStats,
     vitals: {
       samples: 0,
+      unpainted: 0,
       byDevice: { mobile: emptyDevice(), desktop: emptyDevice() },
       slowest: [],
       unavailable,

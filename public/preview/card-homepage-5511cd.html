@@ -1,0 +1,1626 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Design mockup shared for review. Not linked from the site and kept out of search. -->
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>AusDilaps Card Homepage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: full-screen rounded cards that snap one per screen, a fixed numbered dot rail in the left gutter,
+   copy left / evidence right on every card. Two audiences (homeowner, building project) share one page;
+   blocks marked data-aud show for one of them. Deliberately light-only: it mirrors the live site. */
+:root {
+  --page: #ffffff;
+  --ink: #2f343a;
+  --ink-deep: #1d2125;
+  --muted: #5b6570;
+  --border: #dde2e7;
+  --surface: #f3f4f5;
+  --steel: #46688a;
+  --steel-dark: #35516d;
+  --steel-light: #6d90b4;
+  --steel-tint: #dbe5ef;
+  --steel-on-dark: #a9c3dc;
+  --charcoal: #2e3338;
+  --charcoal-deep: #23272b;
+  --orange: #e8642a;
+  --orange-dark: #cf5320;
+  --orange-wash: rgba(232, 100, 42, 0.2);
+  --green: #2c7a4b;
+  --green-tint: #e1f0e6;
+  --tint-hero: #edf2f7;
+  --tint-case: #e2eaf2;
+  --tint-quote: #f9ece4;
+
+  --font-display: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --header: 76px;
+  --gap: 20px;
+  --gutter: 16px;
+  --radius: 32px;
+  --max: 1280px;
+  color-scheme: light;
+}
+@media (min-width: 720px) { :root { --gutter: 28px; } }
+@media (min-width: 1100px) { :root { --gutter: 64px; } }
+@media (max-width: 559px) { :root { --header: 64px; } }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { background: var(--page); scroll-behavior: smooth; }
+/* Every card is exactly one screen here (fitCards), so snap firmly and never let a flick skip a card. */
+@media (min-width: 960px) and (min-height: 660px) {
+  html { scroll-snap-type: y mandatory; }
+  .card { scroll-snap-stop: always; }
+}
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 400 16px/1.55 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  padding-inline: var(--gutter);
+  padding-block: 0;
+}
+img { max-width: 100%; display: block; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--steel); outline-offset: 3px; border-radius: 6px; }
+h1, h2, h3 { font-family: var(--font-display); color: var(--ink-deep); margin: 0; text-wrap: balance; }
+p { margin: 0; text-wrap: pretty; }
+li, small, label, summary { text-wrap: pretty; }
+.nw { white-space: nowrap; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.short { display: none; }
+@media (max-width: 559px) { .long { display: none; } .short { display: inline; } }
+
+/* ── Header ─────────────────────────────────────────── */
+.site-header {
+  position: fixed; inset: 0 0 auto 0; z-index: 50;
+  padding-top: env(safe-area-inset-top, 0px);
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: saturate(1.4) blur(12px);
+  -webkit-backdrop-filter: saturate(1.4) blur(12px);
+}
+.header-inner {
+  width: min(var(--max), calc(100% - 2 * var(--gutter)));
+  height: var(--header); margin-inline: auto;
+  display: flex; align-items: center; gap: 24px;
+}
+.brand { flex: none; }
+.brand img { height: 42px; width: auto; }
+.header-nav { display: none; gap: 22px; }
+.header-nav a { text-decoration: none; font-size: 14px; font-weight: 500; color: var(--muted); white-space: nowrap; transition: color .15s; }
+.header-nav a:hover { color: var(--ink-deep); }
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+.header-phone { display: none; font: 500 14px var(--font-mono); color: var(--ink); letter-spacing: .01em; user-select: all; white-space: nowrap; }
+@media (min-width: 960px) { .header-nav { display: flex; } }
+@media (min-width: 1240px) { .header-phone { display: block; } }
+@media (max-width: 559px) {
+  .header-inner { gap: 10px; }
+  .brand img { height: 34px; }
+  .header-right { gap: 8px; }
+}
+@media (max-width: 359px) {
+  .brand img { height: 30px; }
+  .header-inner { gap: 8px; }
+  .header-right { gap: 6px; }
+  .btn-sm { padding: 0 10px; }
+}
+/* Bigger hit area for the header button without changing its look. */
+.header-right .btn-sm { position: relative; }
+.header-right .btn-sm::after { content: ""; position: absolute; inset: -4px 0; }
+
+/* ── Buttons ────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  height: 50px; padding: 0 22px; border-radius: 12px; border: 0; white-space: nowrap;
+  font: 600 15.5px/1 var(--font-body); text-decoration: none; cursor: pointer;
+  transition: background-color .15s, transform .15s, box-shadow .15s, color .15s;
+}
+.btn svg { width: 18px; height: 18px; flex: none; }
+.btn:active { transform: translateY(1px); }
+.btn-orange { background: var(--orange); color: #fff; box-shadow: 0 10px 22px -12px rgba(232, 100, 42, .9); }
+.btn-orange:hover { background: var(--orange-dark); }
+.btn-sm { height: 42px; padding: 0 16px; font-size: 14.5px; border-radius: 10px; }
+@media (max-width: 559px) { .btn-sm { height: 38px; padding: 0 12px; font-size: 13.5px; } }
+.btn-steel { background: var(--steel); color: #fff; box-shadow: 0 10px 22px -14px rgba(53, 81, 109, .9); }
+.btn-steel:hover { background: var(--steel-dark); }
+.btn-dark { background: var(--charcoal); color: #fff; }
+.btn-dark:hover { background: var(--charcoal-deep); }
+.btn-ghost-light { background: #fff; color: var(--ink-deep); }
+.btn-ghost-light:hover { background: var(--steel-tint); }
+.btn-ghost-light small { font: 500 11px var(--font-mono); color: var(--muted); }
+.text-link {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px;
+  font-weight: 600; font-size: 15px; color: var(--steel-dark); text-decoration: none; white-space: nowrap;
+}
+.text-link span { border-bottom: 1.5px solid rgba(70, 104, 138, .35); padding-bottom: 1px; transition: border-color .15s; }
+.text-link:hover span { border-color: var(--steel-dark); }
+.text-link svg { width: 16px; height: 16px; }
+
+/* ── Dot rail with position counter ─────────────────── */
+.rail {
+  position: fixed; z-index: 40; top: calc(50% + var(--header) / 2); transform: translateY(-50%);
+  left: calc(max(var(--gutter), (100vw - var(--max)) / 2) - 58px);
+  display: none; flex-direction: column; align-items: center; gap: 6px;
+}
+@media (min-width: 1100px) { .rail { display: flex; } }
+.rail a { position: relative; display: grid; place-items: center; width: 24px; height: 24px; text-decoration: none; }
+.rail .dot {
+  width: 9px; height: 9px; border-radius: 50%; background: #c4ccd4;
+  transition: background-color .2s, transform .2s, box-shadow .2s;
+}
+.rail a:hover .dot { background: var(--steel-light); }
+.rail a.active .dot { background: var(--steel); transform: scale(1.25); box-shadow: 0 0 0 5px rgba(70, 104, 138, .16); }
+.rail .label {
+  position: absolute; left: 30px; top: 50%; transform: translate(-4px, -50%);
+  white-space: nowrap; pointer-events: none; opacity: 0;
+  background: var(--ink-deep); color: #fff; font-size: 12.5px; font-weight: 500;
+  padding: 6px 10px; border-radius: 8px; transition: opacity .15s, transform .15s;
+}
+.rail a:hover .label, .rail a:focus-visible .label { opacity: 1; transform: translate(0, -50%); }
+.rail-count {
+  margin-top: 10px; white-space: nowrap;
+  font: 500 11px/1 var(--font-mono); color: #9aa4ae; font-variant-numeric: tabular-nums;
+}
+.rail-count b { font-weight: 600; color: var(--ink-deep); }
+
+/* ── Cards ──────────────────────────────────────────── */
+main {
+  padding-top: calc(var(--header) + var(--gap) / 2 + env(safe-area-inset-top, 0px));
+  display: flex; flex-direction: column; gap: var(--gap);
+}
+.card {
+  position: relative; overflow: hidden;
+  width: 100%; max-width: var(--max); margin-inline: auto;
+  border-radius: var(--radius);
+  padding: clamp(20px, 4.4vw, 64px);
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; align-items: center;
+  scroll-snap-align: start;
+  scroll-margin-top: calc(var(--header) + var(--gap) / 2 + env(safe-area-inset-top, 0px));
+}
+@media (min-width: 960px) {
+  .card { grid-template-columns: minmax(0, 1fr) minmax(0, 1.04fr); gap: clamp(32px, 4.5vw, 72px); }
+}
+@media (min-width: 960px) and (min-height: 660px) {
+  .card { min-height: calc(100dvh - var(--header) - var(--gap) - env(safe-area-inset-top, 0px)); }
+}
+@media (max-width: 719px) { .card { border-radius: 24px; gap: 32px; } }
+
+.copy { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 10px;
+  font: 600 12.5px/1 var(--font-body); letter-spacing: .14em; text-transform: uppercase; color: var(--steel-dark);
+}
+.eyebrow .marker { flex: none; width: 8px; height: 8px; background: var(--steel); transform: rotate(45deg); border-radius: 1px; }
+h1 {
+  margin-top: 22px;
+  font-size: clamp(2.6rem, min(6.1vw, 9.2vh), 5rem);
+  line-height: .98; letter-spacing: -0.035em; font-weight: 700;
+}
+h2 {
+  margin-top: 18px;
+  font-size: clamp(2.1rem, min(4.3vw, 7vh), 3.85rem);
+  line-height: 1.01; letter-spacing: -0.032em; font-weight: 700;
+}
+h1 .accent, h2 .accent { color: var(--steel); display: inline-block; text-wrap: balance; }
+.lede { margin-top: 22px; max-width: 34em; font-size: clamp(1.02rem, 1.2vw, 1.16rem); line-height: 1.6; color: var(--ink); }
+.sub { margin-top: 12px; color: var(--muted); font-size: 15px; }
+mark { background: linear-gradient(transparent 52%, var(--orange-wash) 52%); color: inherit; padding: 0 2px; font-weight: 600; white-space: nowrap; }
+.actions { margin-top: 30px; display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px; }
+
+/* ── 1. Hero ────────────────────────────────────────── */
+.hero { background: var(--tint-hero); }
+.proof-row { list-style: none; padding: 0; margin: 28px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.proof-row li {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  background: rgba(255, 255, 255, .7); border: 1px solid #d3dde7; border-radius: 999px;
+  padding: 6px 11px; font-size: 12.5px; color: var(--ink);
+}
+.proof-row svg { width: 12px; height: 12px; color: var(--steel); flex: none; }
+
+.stage { position: relative; display: grid; place-items: center; min-width: 0; padding: 34px 6px 40px; }
+.report {
+  position: relative; width: min(100%, 540px);
+  background: #fff; border-radius: 22px; padding: 20px 20px 18px;
+  box-shadow: 0 0 0 1px rgba(47, 52, 58, .06), 0 2px 2px rgba(47, 52, 58, .03), 0 36px 70px -34px rgba(35, 39, 43, .45);
+}
+.report-top { display: flex; align-items: center; gap: 10px; font-size: 13px; line-height: 1.3; color: var(--muted); }
+.report-top .mark { width: 26px; height: 26px; flex: none; border-radius: 7px; background: var(--steel); display: grid; place-items: center; }
+.report-top .mark svg { width: 15px; height: 15px; color: #fff; }
+.report-top b { color: var(--ink-deep); font-weight: 600; }
+.pill-example { margin-left: auto; flex: none; font: 500 11px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--surface); padding: 6px 8px; border-radius: 6px; }
+.report-title { margin-top: 14px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.report-title h3 { font-size: 1.22rem; line-height: 1.2; letter-spacing: -0.015em; }
+.report-title span { flex: none; font: 500 11.5px/1 var(--font-mono); color: var(--steel-dark); }
+
+.segmented { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; background: var(--surface); padding: 4px; border-radius: 11px; gap: 4px; }
+.segmented button {
+  border: 0; background: transparent; border-radius: 8px; padding: 8px 10px; cursor: pointer; white-space: nowrap;
+  font: 600 13.5px/1.2 var(--font-body); color: var(--muted); transition: background-color .15s, color .15s, box-shadow .15s;
+}
+.segmented button small { display: block; margin-top: 2px; font: 500 11px/1 var(--font-mono); color: inherit; opacity: .8; }
+.segmented button[aria-pressed="true"] { background: #fff; color: var(--ink-deep); box-shadow: 0 1px 2px rgba(35, 39, 43, .12), 0 0 0 1px rgba(35, 39, 43, .05); }
+
+.figure { position: relative; margin: 12px 0 0; border-radius: 14px; overflow: hidden; background: #e6e0d6; }
+.figure svg { display: block; width: 100%; height: auto; }
+.fig-chip {
+  position: absolute; bottom: 10px; padding: 5px 8px; border-radius: 6px; white-space: nowrap;
+  background: rgba(29, 33, 37, .74); color: #fff; font: 500 10.5px/1 var(--font-mono); letter-spacing: .03em;
+}
+.fig-chip.stamp { left: 10px; }
+.fig-chip.coords { right: 10px; display: inline-flex; align-items: center; gap: 5px; }
+.fig-chip.coords svg { width: 11px; height: 11px; }
+.claim {
+  position: absolute; left: 12px; bottom: 40px; max-width: 58%;
+  background: #fff; color: var(--ink-deep); border-radius: 12px 12px 12px 3px;
+  padding: 8px 11px; font-size: 12.5px; line-height: 1.35; box-shadow: 0 10px 24px -12px rgba(29, 33, 37, .5);
+  transition: opacity .25s, transform .25s;
+}
+.claim small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+.finding { margin-top: 12px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; min-height: 40px; }
+.finding .chip { font: 600 12px/1 var(--font-body); padding: 7px 10px; border-radius: 999px; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+.finding .chip svg { width: 13px; height: 13px; }
+.chip-base { background: var(--steel-tint); color: var(--steel-dark); }
+.chip-ok { background: var(--green-tint); color: var(--green); }
+.finding p { font-size: 13.5px; line-height: 1.45; color: var(--ink); }
+.finding b { font-family: var(--font-mono); font-weight: 500; font-size: 12.5px; color: var(--ink-deep); white-space: nowrap; }
+
+.report[data-state="pre"] .post-only, .report[data-state="post"] .pre-only { display: none; }
+.report[data-state="pre"] .claim { opacity: 0; transform: translateY(6px); pointer-events: none; }
+
+.sticky {
+  position: absolute; z-index: 2; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  padding: 10px 14px; border-radius: 12px; font-size: 13.5px; font-weight: 600;
+  box-shadow: 0 14px 28px -16px rgba(29, 33, 37, .45);
+}
+.sticky svg { width: 16px; height: 16px; flex: none; }
+.sticky-a { top: 0; right: -4px; background: var(--steel-tint); color: var(--steel-dark); transform: rotate(3deg); }
+.sticky-b { bottom: -2px; left: -6px; background: #fff; color: var(--ink-deep); transform: rotate(-2deg); border: 1px solid var(--border); }
+.sticky-b svg { color: var(--orange); }
+
+/* ── 2. Services ────────────────────────────────────── */
+.services { background: var(--surface); }
+@media (min-width: 960px) { .services { grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr); } }
+@media (min-width: 960px) and (max-width: 1320px) { .services { grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); } }
+@media (min-width: 960px) and (max-width: 1199px) {
+  .services { grid-template-columns: minmax(0, .62fr) minmax(0, 1.38fr); }
+  .services .svc-flag { grid-template-columns: minmax(0, 1fr); }
+  .services .timeline { display: none; }
+  .services .svc { padding: 16px; }
+  .services .svc-sm { row-gap: 8px; }
+  .services .svc p { font-size: 13.5px; line-height: 1.45; }
+  .services .svc-flag { padding: 20px; }
+  .services .svc-flag h3 { font-size: 1.4rem; }
+  .services .svc-grid, .services .svc-col { gap: 12px; }
+  .services .lede { font-size: 1rem; }
+}
+@media (min-width: 960px) and (max-width: 1320px) { .services h2, #proj-h { font-size: clamp(2.1rem, min(3.6vw, 7vh), 3.85rem); } }
+@media (min-width: 960px) and (max-width: 1340px) { h1 { font-size: clamp(2.6rem, min(5.2vw, 9.2vh), 5rem); } }
+.svc-col { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.svc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 719px) { .svc-grid { grid-template-columns: minmax(0, 1fr); } }
+.svc {
+  position: relative; min-width: 0;
+  background: #fff; border: 1px solid var(--border); border-radius: 20px; padding: 20px;
+  text-decoration: none; transition: border-color .15s, transform .15s, box-shadow .15s;
+}
+.svc:hover { border-color: #b9c8d7; transform: translateY(-2px); box-shadow: 0 18px 30px -24px rgba(35, 39, 43, .5); }
+.svc-plain:hover { border-color: var(--border); transform: none; box-shadow: none; }
+.svc-sm { display: grid; grid-row: span 4; grid-template-rows: subgrid; row-gap: 10px; align-content: start; padding-inline: 18px; }
+.svc-sm.svc-plain { grid-row: span 3; }
+.svc .tag { justify-self: start; align-self: start; font: 600 11.5px/1 var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--steel-dark); background: var(--steel-tint); padding: 6px 8px; border-radius: 6px; }
+.svc h3 { font-size: clamp(1rem, 1.25vw, 1.1rem); letter-spacing: -0.01em; line-height: 1.2; }
+.svc p { font-size: 14px; line-height: 1.5; color: var(--muted); }
+.svc-sm p { text-wrap: balance; }
+.svc .go { align-self: end; display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--steel-dark); }
+.svc .go svg { width: 15px; height: 15px; transition: transform .15s; }
+.svc:hover .go svg { transform: translateX(3px); }
+.svc-flag {
+  grid-column: 1 / -1; background: var(--steel); border-color: var(--steel); color: #fff;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; padding: 24px;
+}
+@media (min-width: 720px) { .svc-flag { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: end; } }
+.svc-flag:hover { border-color: var(--steel-dark); }
+.svc-flag .tag { display: inline-block; background: rgba(255, 255, 255, .16); color: #fff; }
+.svc-flag h3 { color: #fff; font-size: 1.6rem; margin-top: 10px; }
+.svc-flag p { color: rgba(255, 255, 255, .86); margin-top: 8px; }
+.svc-flag .go { display: block; width: fit-content; margin-top: 14px; color: #fff; text-wrap: balance; }
+.svc-flag .go svg { display: inline-block; vertical-align: -3px; margin-left: 6px; }
+.timeline { display: grid; gap: 8px; }
+.tl-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, .1); font-size: 13.5px; }
+.tl-row b { font-weight: 600; white-space: nowrap; }
+.tl-row span { font: 500 11px/1 var(--font-mono); color: rgba(255, 255, 255, .78); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+@media (max-width: 1400px) { .tl-row span { font-size: 10px; letter-spacing: .02em; } }
+.also { display: grid; gap: 8px; }
+.also > p { font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.also-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.also a { display: inline-flex; align-items: center; text-decoration: none; white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--ink); background: #fff; border: 1px solid var(--border); border-radius: 999px; padding: 7px 12px; transition: border-color .15s, color .15s; }
+.also a:hover { border-color: var(--steel); color: var(--steel-dark); }
+
+/* ── 3. Case study / common questions ───────────────── */
+.case { background: var(--tint-case); }
+.tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; width: min(100%, 460px); background: rgba(255, 255, 255, .6); padding: 4px; border-radius: 12px; }
+.tabs button {
+  border: 0; background: transparent; cursor: pointer; border-radius: 9px; padding: 6px 8px; min-height: 44px;
+  font: 600 13.5px/1.2 var(--font-body); color: var(--muted); text-align: center; text-wrap: balance;
+  transition: background-color .15s, color .15s;
+}
+.tabs button:hover { color: var(--ink-deep); }
+.tabs button[aria-pressed="true"] { background: var(--steel); color: #fff; }
+.case-meta { margin-top: 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; color: var(--muted); letter-spacing: .02em; }
+.case-meta .pill { flex: none; background: var(--steel-dark); color: #fff; font: 600 11.5px/1 var(--font-body); letter-spacing: .1em; text-transform: uppercase; padding: 7px 10px; border-radius: 7px; }
+#case-meta { text-wrap: balance; }
+@media (max-width: 409px) { .cm-sep { display: none; } .cm-client { display: block; } }
+@media (max-width: 1365px) { .case-meta { font-size: 12px; letter-spacing: 0; gap: 8px 10px; } }
+.case h2 { margin-top: 14px; }
+.case .lede { margin-top: 16px; font-size: 1rem; }
+.checks { list-style: none; padding: 0; margin: 20px 0 0; display: grid; gap: 10px; }
+.checks li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 15px; }
+.checks .tick { width: 22px; height: 22px; border-radius: 50%; background: var(--steel); display: grid; place-items: center; margin-top: 1px; }
+.checks .tick svg { width: 12px; height: 12px; color: #fff; }
+.checks b { font-weight: 700; color: var(--ink-deep); font-variant-numeric: tabular-nums; }
+.case .actions { margin-top: 26px; }
+
+.case-stage { position: relative; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+.bubble {
+  position: relative; width: min(100%, 400px); padding: 34px 28px 30px; text-align: center;
+  background: #fff; border-radius: 999px / 70%;
+  box-shadow: 0 0 0 10px rgba(255, 255, 255, .45), 0 40px 70px -40px rgba(35, 39, 43, .55);
+}
+.bubble strong { display: block; font: 700 clamp(3rem, min(6vw, 9vh), 4.6rem)/1 var(--font-display); letter-spacing: -0.04em; color: var(--steel-dark); font-variant-numeric: tabular-nums; }
+.bubble span { display: block; margin-top: 10px; font-size: 15px; font-weight: 500; color: var(--ink); text-wrap: balance; }
+.bubble .value { position: absolute; top: -12px; right: 18%; margin: 0; background: var(--charcoal); color: #fff; font: 600 13px/1 var(--font-mono); padding: 8px 11px; border-radius: 8px; transform: rotate(5deg); }
+.methods { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; max-width: 520px; }
+.methods li {
+  white-space: nowrap; font-size: 13.5px; font-weight: 500; padding: 8px 13px; border-radius: 10px;
+  background: rgba(255, 255, 255, .78); color: var(--muted); border: 1px solid rgba(53, 81, 109, .12);
+  transition: background-color .25s, color .25s, border-color .25s;
+}
+.methods li:nth-child(odd) { transform: rotate(-2.5deg); }
+.methods li:nth-child(3n) { transform: rotate(3deg) translateY(4px); }
+.methods li.used { background: var(--steel); color: #fff; border-color: var(--steel); }
+@media (max-width: 559px) {
+  .methods { gap: 8px; }
+  .methods li { font-size: 12.5px; padding: 7px 10px; }
+}
+.case-bar {
+  width: min(100%, 520px); display: flex; align-items: center; gap: 14px;
+  background: var(--steel-dark); color: #fff; border-radius: 16px; padding: 14px 18px;
+}
+.case-bar .ico { width: 38px; height: 38px; flex: none; border-radius: 10px; background: rgba(255, 255, 255, .14); display: grid; place-items: center; }
+.case-bar .ico svg { width: 20px; height: 20px; }
+.case-bar b { display: block; font-weight: 600; font-size: 15px; text-wrap: balance; }
+.case-bar small { display: block; font-size: 13px; color: rgba(255, 255, 255, .78); text-wrap: balance; }
+.case-bar .phone { font-family: var(--font-mono); font-weight: 500; color: #fff; text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .4); text-underline-offset: 3px; }
+
+.faq-wrap { min-width: 0; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; gap: 16px; }
+.faq-wrap .case-bar { width: min(100%, 540px); }
+.faq {
+  width: min(100%, 540px); background: #fff; border-radius: 22px; padding: 6px 20px;
+  box-shadow: 0 0 0 1px rgba(47, 52, 58, .05), 0 36px 70px -36px rgba(35, 39, 43, .45);
+}
+.faq details { border-bottom: 1px solid var(--border); }
+.faq details:last-child { border-bottom: 0; }
+.faq summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 15px 0; min-height: 44px; font: 600 15.5px/1.35 var(--font-display); letter-spacing: -0.005em; color: var(--ink-deep);
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary .pm { width: 28px; height: 28px; flex: none; border-radius: 8px; background: var(--steel-tint); color: var(--steel-dark); display: grid; place-items: center; transition: background-color .2s, color .2s; }
+.faq summary .pm svg { width: 14px; height: 14px; transition: transform .2s; }
+.faq details[open] summary .pm { background: var(--steel); color: #fff; }
+.faq details[open] summary .pm svg { transform: rotate(45deg); }
+.faq details p { padding: 0 42px 16px 0; font-size: 14.5px; line-height: 1.55; color: var(--muted); }
+
+/* ── 4. Tier 1 projects ─────────────────────────────── */
+.card.projects { background: var(--charcoal-deep); color: #fff; padding: 0; display: block; }
+.proj-media { position: absolute; inset: 0; }
+.proj-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .6s ease; }
+.proj-media img.active { opacity: 1; }
+.proj-media::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, rgba(29, 33, 37, .92) 0%, rgba(29, 33, 37, .8) 45%, rgba(29, 33, 37, .45) 78%, rgba(29, 33, 37, .35) 100%),
+              linear-gradient(0deg, rgba(29, 33, 37, .7) 0%, rgba(29, 33, 37, 0) 35%);
+}
+@media (max-width: 959px) {
+  .proj-media::after { background: linear-gradient(180deg, rgba(29, 33, 37, .9) 0%, rgba(29, 33, 37, .78) 50%, rgba(29, 33, 37, .7) 100%); }
+}
+.proj-inner {
+  position: relative; height: 100%; min-height: inherit;
+  display: grid; grid-template-rows: 1fr auto; gap: 28px;
+  padding: clamp(20px, 4.4vw, 64px);
+}
+.proj-top { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; align-items: center; }
+@media (min-width: 960px) { .proj-top { grid-template-columns: minmax(0, 1fr) minmax(0, 360px); } }
+.projects .eyebrow { color: var(--steel-on-dark); }
+.projects .eyebrow .marker { background: var(--steel-on-dark); }
+.projects h2 { color: #fff; }
+.projects h2 .accent { color: var(--steel-on-dark); }
+.stats { margin-top: 30px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 32px; max-width: 520px; }
+@media (max-width: 719px) { .stats { column-gap: 20px; } }
+.stats div { border-top: 1px solid rgba(255, 255, 255, .22); padding-top: 12px; }
+.stats strong { display: block; font: 700 clamp(1.8rem, 2.8vw, 2.5rem)/1 var(--font-display); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.stats span { display: block; margin-top: 6px; font-size: 13.5px; color: rgba(255, 255, 255, .8); text-wrap: balance; }
+.proj-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; justify-self: stretch; }
+@media (min-width: 960px) { .proj-list { justify-self: end; width: 100%; } }
+.proj-list button {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 13px 16px; border-radius: 14px; cursor: pointer; text-align: left;
+  background: rgba(29, 33, 37, .38); color: #fff; border: 1px solid rgba(255, 255, 255, .16);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  font: 600 15px/1.2 var(--font-body); transition: background-color .2s, color .2s, border-color .2s;
+}
+.proj-list button span { font: 500 11px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; opacity: .85; }
+.proj-list button:hover { background: rgba(29, 33, 37, .6); }
+.proj-list button[aria-pressed="true"] { background: #fff; color: var(--ink-deep); border-color: #fff; }
+.logos {
+  display: flex; flex-wrap: nowrap; align-items: center; gap: 28px; overflow: hidden;
+  background: #fff; border-radius: 22px; padding: 16px 26px; min-height: 70px;
+}
+.logos > p { flex: none; white-space: nowrap; font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.logo-row { flex: 1; min-width: 0; display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 24px; }
+.logo-row img { flex: none; height: 24px; width: auto; filter: grayscale(1); opacity: .62; transition: filter .2s, opacity .2s; }
+.logo-row img:hover { filter: none; opacity: 1; }
+.logo-row img[data-h="20"] { height: 20px; }
+.logo-row img[data-h="28"] { height: 28px; }
+.logo-row img[data-h="34"] { height: 34px; }
+.logo-row img[data-h="38"] { height: 38px; }
+@media (max-width: 719px) {
+  .logos { flex-direction: column; align-items: stretch; gap: 12px; padding: 16px 20px; }
+  .logo-row { gap: 18px; }
+  .logo-row img { height: 20px; }
+  .logo-row img[data-h="20"] { height: 17px; }
+  .logo-row img[data-h="28"] { height: 23px; }
+  .logo-row img[data-h="34"] { height: 28px; }
+  .logo-row img[data-h="38"] { height: 31px; }
+}
+
+/* ── 5. Process ─────────────────────────────────────── */
+.process {
+  background-color: var(--charcoal);
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .045) 1px, transparent 1px);
+  background-size: 32px 32px;
+  color: #fff;
+}
+@media (min-width: 960px) and (max-width: 1320px) { .process { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); } }
+.process .eyebrow { color: var(--steel-on-dark); }
+.process .eyebrow .marker { background: var(--steel-on-dark); }
+.process h2 { color: #fff; }
+.process h2 .accent { color: var(--steel-on-dark); }
+.process .lede { color: rgba(255, 255, 255, .88); }
+.process .sub { color: rgba(255, 255, 255, .72); }
+.process .sub mark { background: linear-gradient(transparent 52%, rgba(169, 195, 220, .28) 52%); color: #fff; }
+.steps-wrap { position: relative; min-width: 0; padding: 36px 8px 8px; display: grid; place-items: center; }
+.steps {
+  width: min(100%, 520px); background: #fff; color: var(--ink); border-radius: 22px; padding: 20px 20px 10px;
+  box-shadow: 0 40px 70px -36px rgba(0, 0, 0, .6);
+}
+.steps-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 4px 12px; border-bottom: 1px solid var(--border); }
+.steps-head p { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.steps-head h3 { font-size: 1.35rem; line-height: 1.15; letter-spacing: -0.015em; margin-top: 6px; }
+.steps-head span { font: 500 11.5px/1 var(--font-mono); color: var(--steel-dark); white-space: nowrap; }
+.steps ol { list-style: none; margin: 0; padding: 0; }
+.steps li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--border); }
+.steps li:last-child { border-bottom: 0; }
+.steps .n { width: 34px; height: 34px; border-radius: 10px; background: var(--steel-tint); color: var(--steel-dark); display: grid; place-items: center; font: 600 13px/1 var(--font-mono); }
+.steps b { display: block; font-size: 14.5px; font-weight: 600; color: var(--ink-deep); }
+.steps small { display: block; font-size: 13px; line-height: 1.4; color: var(--muted); text-wrap: balance; }
+.sticky-c { top: 0; right: 0; background: var(--steel-tint); color: var(--steel-dark); transform: rotate(3deg); font-size: 14px; }
+
+/* ── 6. Quote / get in touch ────────────────────────── */
+.quote { background: var(--tint-quote); }
+.contact { margin-top: 28px; display: grid; gap: 10px; width: 100%; max-width: 420px; }
+.contact a { display: flex; align-items: center; gap: 12px; min-height: 44px; background: rgba(255, 255, 255, .65); border-radius: 14px; padding: 12px 14px; text-decoration: none; color: inherit; transition: background-color .15s; }
+.contact a:hover { background: #fff; }
+.contact .ico { width: 36px; height: 36px; flex: none; border-radius: 10px; background: #fff; display: grid; place-items: center; color: var(--orange); }
+.contact .ico svg { width: 18px; height: 18px; }
+.contact small { display: block; font-size: 12px; color: var(--muted); }
+.contact b { font-family: var(--font-mono); font-weight: 500; font-size: 14.5px; color: var(--ink-deep); }
+.form-note a { color: var(--steel-dark); }
+.form-card {
+  width: min(100%, 560px); justify-self: center; background: #fff; border-radius: 22px; padding: 22px;
+  box-shadow: 0 0 0 1px rgba(47, 52, 58, .05), 0 36px 70px -36px rgba(35, 39, 43, .45);
+}
+.form-intro { font: 600 15px/1.4 var(--font-display); color: var(--ink-deep); text-wrap: balance; }
+.form-grid { margin-top: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 519px) { .form-grid { grid-template-columns: minmax(0, 1fr); } }
+.field { display: grid; gap: 5px; min-width: 0; align-content: start; }
+.field.full { grid-column: 1 / -1; }
+.field label { font-size: 12.5px; font-weight: 600; color: var(--ink); text-wrap: balance; }
+.field input, .field select, .field textarea {
+  width: 100%; min-width: 0; font: 400 14.5px/1.3 var(--font-body); color: var(--ink-deep);
+  background-color: #fbfbfc; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; height: 42px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.field select {
+  appearance: none; -webkit-appearance: none; padding-right: 36px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6' fill='none' stroke='%235b6570' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 14px;
+}
+.field textarea { height: 56px; resize: vertical; }
+.field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--steel); box-shadow: 0 0 0 3px rgba(70, 104, 138, .18); }
+.form-card .btn { width: 100%; margin-top: 16px; }
+.form-note { margin-top: 10px; font-size: 12.5px; color: var(--muted); text-align: center; min-height: 1.4em; }
+.form-note.sent { color: var(--green); font-weight: 600; }
+.opts { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.opts-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.enq { margin-top: 14px; }
+.opts label { position: relative; display: block; cursor: pointer; }
+.opts input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.opts span {
+  display: grid; place-items: center; height: 100%; min-height: 40px; padding: 6px; border-radius: 10px; text-align: center;
+  border: 1px solid var(--border); background: #fbfbfc; font-size: 13px; font-weight: 600; line-height: 1.2; color: var(--muted);
+  transition: background-color .15s, color .15s, border-color .15s;
+}
+.opts input:checked + span { background: var(--steel); border-color: var(--steel); color: #fff; }
+.opts input:focus-visible + span { outline: 2px solid var(--steel); outline-offset: 2px; }
+.flabel { font-size: 12.5px; font-weight: 600; color: var(--ink); text-wrap: balance; }
+.field.pref { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); align-items: center; column-gap: 12px; }
+@media (max-width: 419px) { .field.pref { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── Audience pop-up ─────────────────────────────────── */
+.audience {
+  position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
+  padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
+  background: rgba(29, 33, 37, .56); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  animation: aud-fade .25s ease both;
+}
+.aud-panel {
+  position: relative; width: min(100%, 780px); max-height: 100%; overflow: auto;
+  background: #fff; border-radius: 28px; padding: clamp(24px, 4.4vw, 44px);
+  box-shadow: 0 50px 90px -40px rgba(0, 0, 0, .55);
+  animation: aud-rise .3s cubic-bezier(.2, .8, .2, 1) both;
+}
+.aud-panel:focus { outline: none; }
+.aud-logo { height: 38px; width: auto; }
+.aud-panel h2 { margin-top: 22px; font-size: clamp(1.7rem, 3.4vw, 2.4rem); line-height: 1.08; }
+.aud-panel > p { margin-top: 10px; color: var(--muted); font-size: 15.5px; }
+.aud-choices { margin-top: 24px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.aud-choice {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 12px; text-align: left;
+  padding: 22px; border-radius: 20px; border: 1.5px solid transparent; cursor: pointer;
+  font: inherit; color: inherit; transition: border-color .15s, transform .15s, box-shadow .15s;
+}
+.aud-choice[data-audience-choice="home"] { background: var(--tint-quote); }
+.aud-choice[data-audience-choice="project"] { background: var(--tint-hero); }
+.aud-choice:hover { border-color: var(--steel); transform: translateY(-2px); box-shadow: 0 20px 34px -24px rgba(35, 39, 43, .55); }
+.aud-ico { width: 48px; height: 48px; flex: none; border-radius: 14px; background: #fff; color: var(--steel-dark); display: grid; place-items: center; }
+.aud-ico svg { width: 24px; height: 24px; }
+.aud-text { display: grid; gap: 6px; }
+.aud-choice b { font: 700 1.22rem/1.2 var(--font-display); letter-spacing: -0.012em; color: var(--ink-deep); text-wrap: balance; }
+.aud-choice small { font-size: 14px; line-height: 1.45; color: var(--muted); }
+.aud-go { margin-top: auto; padding-top: 4px; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--steel-dark); }
+.aud-go svg { width: 16px; height: 16px; transition: transform .15s; }
+.aud-choice:hover .aud-go svg { transform: translateX(3px); }
+.aud-skip {
+  display: block; margin: 18px auto 0; border: 0; background: none; cursor: pointer; min-height: 44px; padding: 0 12px;
+  font: 500 14px var(--font-body); color: var(--muted); text-decoration: underline; text-underline-offset: 4px; text-decoration-color: #c4ccd4;
+}
+.aud-skip:hover { color: var(--ink-deep); }
+@keyframes aud-fade { from { opacity: 0; } }
+@keyframes aud-rise { from { opacity: 0; transform: translateY(14px) scale(.98); } }
+@keyframes aud-sheet { from { opacity: 0; transform: translateY(48px); } }
+html.aud-open { overflow: hidden; }
+/* Phones (and landscape phones): a bottom sheet rather than a full-screen interstitial. */
+@media (max-width: 599px), (max-height: 520px) {
+  .audience { place-items: end stretch; padding: 0; background: rgba(29, 33, 37, .42); }
+  .aud-panel { width: 100%; border-radius: 24px 24px 0 0; padding: 22px 18px calc(10px + env(safe-area-inset-bottom, 0px)); animation-name: aud-sheet; }
+  .aud-logo { display: none; }
+  .aud-panel h2 { margin-top: 0; font-size: 1.4rem; }
+  .aud-panel > p { margin-top: 6px; font-size: 14px; }
+  .aud-choices { margin-top: 16px; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .aud-choice { flex-direction: row; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 16px; }
+  .aud-ico { width: 40px; height: 40px; border-radius: 12px; }
+  .aud-ico svg { width: 20px; height: 20px; }
+  .aud-text { flex: 1; min-width: 0; gap: 3px; }
+  .aud-choice b { font-size: 1.02rem; }
+  .aud-choice small { font-size: 13px; }
+  .aud-go { margin: 0; padding: 0; }
+  .aud-go .t { display: none; }
+  .aud-skip { margin-top: 6px; }
+}
+
+/* ── Footer ─────────────────────────────────────────── */
+.site-footer {
+  scroll-snap-align: end;
+  width: min(var(--max), 100%); margin: 0 auto; padding-block: 26px 34px;
+  display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between;
+  font-size: 13px; color: var(--muted);
+}
+.footer-nav { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 22px; padding-bottom: 14px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.footer-nav a { display: inline-flex; align-items: center; min-height: 36px; font-size: 14px; font-weight: 500; color: var(--ink); text-decoration: none; }
+.footer-nav a:hover { color: var(--steel-dark); }
+
+/* ── Tablet: stacked cards keep one left edge ───────── */
+@media (min-width: 720px) and (max-width: 959px) {
+  .stage, .steps-wrap { justify-self: start; width: min(100%, 552px); padding-left: 0; }
+  .form-card, .faq-wrap { justify-self: start; }
+  .faq-wrap { align-items: flex-start; width: 100%; }
+  .case-stage { justify-self: start; width: min(100%, 520px); }
+  .steps-wrap { place-items: start; }
+}
+@media (min-width: 960px) and (max-width: 1109px) { .rt-sep { display: none; } .rt-sub { display: block; } }
+
+/* ── Short desktop screens: everything fits one snap ── */
+@media (min-width: 960px) and (max-height: 820px) {
+  .card { padding-block: 36px; }
+  .proj-inner { padding-block: 36px; }
+  h1 { margin-top: 16px; }
+  .lede { margin-top: 16px; }
+  .actions { margin-top: 22px; }
+  .proof-row { margin-top: 20px; }
+  .stage { padding-block: 30px 34px; }
+  .form-card { padding: 20px; }
+  .form-grid { gap: 10px; }
+  .svc { padding: 16px; }
+  .svc-flag { padding: 20px; }
+  .svc-col { gap: 12px; }
+  .steps li { padding-block: 8px; }
+  .steps-wrap { padding-top: 30px; }
+  .case .lede { margin-top: 12px; }
+  .checks { margin-top: 14px; }
+  .case .actions { margin-top: 20px; }
+  .case-meta { margin-top: 18px; }
+  .bubble { padding: 26px 24px 24px; }
+  .case-stage { gap: 18px; }
+  .faq summary { padding-block: 12px; }
+}
+
+@media (min-width: 960px) and (max-height: 740px), (min-width: 960px) and (max-width: 1199px) and (max-height: 820px) {
+  .svc { padding: 14px; }
+  .svc-sm { row-gap: 8px; }
+  .svc p { font-size: 13.5px; line-height: 1.45; }
+  .svc-flag { gap: 14px; }
+  .svc-flag h3 { margin-top: 6px; font-size: 1.45rem; }
+  .svc-flag p { margin-top: 6px; }
+  .svc-flag .go { margin-top: 10px; }
+  .timeline { gap: 6px; }
+  .tl-row { padding-block: 8px; }
+  .svc-grid, .svc-col { gap: 10px; }
+  .also a { padding-block: 6px; }
+  .form-card { padding: 18px; }
+  .form-grid { margin-top: 12px; gap: 8px; }
+  .field { gap: 4px; }
+  .field input, .field select { height: 40px; }
+  .field textarea { height: 54px; }
+  .enq { margin-top: 12px; }
+  .enq span { min-height: 36px; }
+  .form-card .btn { margin-top: 12px; height: 46px; }
+  .form-note { margin-top: 8px; }
+}
+
+/* ── Phones ─────────────────────────────────────────── */
+@media (max-width: 519px) {
+  .stage { padding-inline: 0; }
+  .report { padding: 16px 14px 14px; }
+  .segmented button { padding: 8px 4px; }
+  .fig-chip.coords { display: none; }
+  .rt-sep { display: none; }
+  .rt-sub { display: block; }
+  .hero .actions { align-self: stretch; flex-direction: column; align-items: stretch; gap: 8px; }
+  .hero .actions .btn { width: 100%; }
+  .hero .actions .text-link { justify-content: center; }
+  .faq { padding-inline: 16px; }
+  .faq details p { padding-right: 0; }
+  .steps-wrap { padding-inline: 0; }
+  .bubble { width: calc(100% - 20px); }
+}
+@media (max-width: 379px) { .svc-flag .go { font-size: 12.5px; letter-spacing: -0.01em; } }
+@media (max-width: 359px) {
+  .methods { gap: 6px; }
+  .methods li { padding: 6px 8px; font-size: 12px; }
+  .proof-row li { padding: 6px 9px; font-size: 12px; }
+}
+/* Touch screens: 44px targets. */
+@media (pointer: coarse) {
+  .also a, .opts span { min-height: 44px; }
+  .field input, .field select { height: 46px; }
+}
+@media (max-width: 419px) {
+  h2 { font-size: clamp(1.7rem, 7.6vw, 2.1rem); }
+}
+@media (max-width: 719px) {
+  .br-wide { display: none; }
+  #proj-h .accent { display: inline; }
+}
+@media (max-width: 389px) {
+  .steps { padding-inline: 14px; }
+  .steps li { grid-template-columns: 30px minmax(0, 1fr); gap: 10px; }
+  .steps .n { width: 30px; height: 30px; }
+  .eyebrow { font-size: 11.5px; letter-spacing: .1em; }
+  .segmented button { font-size: 12px; }
+  .rt-sub { font-size: 12px; }
+  .tabs button { padding: 6px; font-size: 12.5px; }
+  .svc-flag { padding: 20px; }
+  .tl-row { padding: 10px; }
+  .tl-row span { font-size: 10px; }
+}
+@media (max-width: 719px) {
+  .field input, .field select, .field textarea { font-size: 16px; height: 46px; }
+  .field textarea { height: 84px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.4" fill="currentColor"/></symbol>
+  <symbol id="i-hat" viewBox="0 0 24 24"><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5M14 6a6 6 0 0 1 6 6v3M4 15v-3a6 6 0 0 1 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="2" y="15" width="20" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="i-towers" viewBox="0 0 24 24"><path d="M4 21V9l4-3v15M10 21V4l5 3v14M17 21v-9l3 2v7M2.5 21h19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7M5.5 9.5V20h13V9.5M10 20v-5.5h4V20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7l-4-4zM14 3v4h4M12 11v6M9 14l3 3 3-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-letter" viewBox="0 0 24 24"><path d="M3 6h18v12H3zM3 7l9 6 9-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><path d="M4 6h16v14H4zM4 10h16M8 3v5M16 3v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6l8-3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a class="brand" href="#top" data-scroll="top"><img src="/preview/card-homepage-5511cd/img/ad-logo.png" alt="AusDilaps, Specialist Building Inspections" width="114" height="42"></a>
+    <nav class="header-nav" aria-label="Main">
+      <a href="https://ausdilaps.com.au/dilapidation-reports" target="_blank" rel="noopener">Dilapidation Reports</a>
+      <a href="https://ausdilaps.com.au/our-services" target="_blank" rel="noopener">Services</a>
+      <a href="https://ausdilaps.com.au/portfolio" target="_blank" rel="noopener">Portfolio</a>
+      <a href="https://ausdilaps.com.au/insights" target="_blank" rel="noopener">Insights</a>
+      <a href="https://ausdilaps.com.au/faq" target="_blank" rel="noopener">FAQ</a>
+    </nav>
+    <div class="header-right">
+      <span class="header-phone">1800 345 277</span>
+      <a class="btn btn-orange btn-sm" href="#quote" data-scroll="quote">
+        <span data-aud="project"><span class="long">Request a quote</span><span class="short">Quote</span></span>
+        <span data-aud="home" hidden><span class="long">Get in touch</span><span class="short">Contact</span></span>
+      </a>
+    </div>
+  </div>
+</header>
+
+<nav class="rail" aria-label="Page sections">
+  <a href="#top" data-scroll="top" class="active"><span class="dot"></span><span class="label"><span data-aud="project">Defensible reports</span><span data-aud="home" hidden>Your home, on record</span></span></a>
+  <a href="#services" data-scroll="services"><span class="dot"></span><span class="label">What we inspect</span></a>
+  <a href="#case-study" data-scroll="case-study"><span class="dot"></span><span class="label"><span data-aud="project">Case studies</span><span data-aud="home" hidden>Common questions</span></span></a>
+  <a href="#projects" data-scroll="projects"><span class="dot"></span><span class="label">Tier 1 projects</span></a>
+  <a href="#process" data-scroll="process"><span class="dot"></span><span class="label"><span data-aud="project">How it works</span><span data-aud="home" hidden>Your inspection</span></span></a>
+  <a href="#quote" data-scroll="quote"><span class="dot"></span><span class="label"><span data-aud="project">Request a quote</span><span data-aud="home" hidden>Get in touch</span></span></a>
+  <span class="rail-count" aria-hidden="true"><b id="rail-n">1</b>/6</span>
+</nav>
+
+<main>
+  <!-- 1 · HERO ─────────────────────────────────────────── -->
+  <section class="card hero" id="top" aria-label="Introduction">
+    <div class="copy" data-aud="project">
+      <p class="eyebrow"><span class="marker"></span>Specialist building inspections</p>
+      <h1>Defensible.<br><span class="accent">Not just delivered.</span></h1>
+      <p class="lede">Pre and post-construction dilapidation reports for Australia's most scrutinised projects. When a damage claim lands, <mark>your report has to defend it.</mark></p>
+      <p class="sub">Reports compliant with Australian Standard AS&nbsp;4349.0.</p>
+      <div class="actions">
+        <a class="btn btn-orange" href="#quote" data-scroll="quote">Request a quote <svg><use href="#i-arrow"/></svg></a>
+        <a class="text-link" href="#services" data-scroll="services"><span>See what we inspect</span><svg><use href="#i-down"/></svg></a>
+      </div>
+      <ul class="proof-row" data-balance>
+        <li><svg><use href="#i-check"/></svg>15 years</li>
+        <li><svg><use href="#i-check"/></svg>Family-owned</li>
+        <li><svg><use href="#i-check"/></svg>Engineer-led</li>
+        <li><svg><use href="#i-check"/></svg>Australia-wide</li>
+      </ul>
+    </div>
+    <div class="copy" data-aud="home" hidden>
+      <p class="eyebrow"><span class="marker"></span>Residential dilapidation reports</p>
+      <h1>Your home.<br><span class="accent">On the record.</span></h1>
+      <p class="lede">Works planned near your home? A dilapidation report is an independent photographic record of your property's condition, so there's <mark>a clear baseline</mark> if anything changes.</p>
+      <p class="sub">Independent inspections. Reports compliant with AS&nbsp;4349.0.</p>
+      <div class="actions">
+        <a class="btn btn-orange" href="#quote" data-scroll="quote">Get in touch <svg><use href="#i-arrow"/></svg></a>
+        <a class="text-link" href="#quote" data-scroll="quote" data-letter><span>I've had a letter</span><svg><use href="#i-down"/></svg></a>
+      </div>
+      <ul class="proof-row" data-balance>
+        <li><svg><use href="#i-check"/></svg>15 years</li>
+        <li><svg><use href="#i-check"/></svg>Family-owned</li>
+        <li><svg><use href="#i-check"/></svg>Short visits</li>
+        <li><svg><use href="#i-check"/></svg>Flexible booking</li>
+      </ul>
+    </div>
+
+    <div class="stage">
+      <div class="report" id="report" data-state="pre">
+        <div class="report-top">
+          <span class="mark"><svg><use href="#i-towers"/></svg></span>
+          <span><b>Dilapidation report</b><span class="rt-sep"> · </span><span class="rt-sub">Adjoining property&nbsp;07</span></span>
+          <span class="pill-example">Example</span>
+        </div>
+        <div class="report-title">
+          <h3>Fig. 14 · Bedroom&nbsp;2, north wall</h3>
+          <span>AS 4349.0</span>
+        </div>
+        <div class="segmented" role="group" aria-label="Inspection">
+          <button type="button" id="tab-pre" aria-pressed="true" data-state="pre">Pre-construction<small>12 Mar 2025</small></button>
+          <button type="button" id="tab-post" aria-pressed="false" data-state="post">Post-construction<small>28 Nov 2025</small></button>
+        </div>
+        <figure class="figure">
+          <svg viewBox="0 0 480 270" role="img" aria-label="Illustration of a stepped hairline crack running from a window head to the cornice, with a crack-width gauge reading 0.3 millimetres">
+            <defs>
+              <linearGradient id="wallG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eeeae3"/><stop offset="1" stop-color="#ded7cb"/></linearGradient>
+              <radialGradient id="lightG" cx=".2" cy=".55" r=".65"><stop offset="0" stop-color="#ffffff" stop-opacity=".55"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+              <linearGradient id="glassG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c3d3e0"/><stop offset=".55" stop-color="#e7eef3"/><stop offset="1" stop-color="#cbd8e2"/></linearGradient>
+              <filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 .35  0 0 0 0 .31  0 0 0 0 .27  0 0 0 .1 0"/></filter>
+              <clipPath id="lensClip"><circle cx="382" cy="132" r="60"/></clipPath>
+            </defs>
+            <rect width="480" height="270" fill="url(#wallG)"/>
+            <rect width="480" height="270" fill="url(#lightG)"/>
+            <rect width="480" height="270" fill="#000" filter="url(#grain)"/>
+            <rect width="480" height="17" fill="#f4f1ec"/>
+            <path d="M0 17.5H480M0 21H480" stroke="#cfc6b8" stroke-width="1"/>
+            <rect x="40" y="80" width="130" height="150" rx="2" fill="#f7f5f1" stroke="#c3baac"/>
+            <rect x="50" y="90" width="110" height="130" fill="url(#glassG)"/>
+            <path d="M105 90V220M50 155H160" stroke="#f7f5f1" stroke-width="5"/>
+            <rect x="32" y="230" width="146" height="8" rx="1.5" fill="#f4f1ec" stroke="#c3baac"/>
+            <rect y="252" width="480" height="18" fill="#f2efe9"/>
+            <path d="M0 252.5H480" stroke="#cfc6b8"/>
+            <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M170 80L175 74L180 75L186 66L192 65L197 58L204 57L209 50L217 48L222 42L230 40L236 35L245 33L251 29L260 28L266 24L276 23L283 21" stroke="#ffffff" stroke-opacity=".7" stroke-width="2.4" transform="translate(.8 .9)"/>
+              <path d="M170 80L175 74L180 75L186 66L192 65L197 58L204 57L209 50L217 48L222 42L230 40L236 35L245 33L251 29L260 28L266 24L276 23L283 21" stroke="#4b433b" stroke-width="1.5"/>
+              <path d="M209 50L213 54L220 55" stroke="#4b433b" stroke-width=".9"/>
+            </g>
+            <path d="M238 37L332 99" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+            <path d="M238 37L332 99" stroke="#46688a" stroke-width="1.2" stroke-dasharray="3 3"/>
+            <circle cx="238" cy="37" r="3.2" fill="#46688a" stroke="#ffffff" stroke-width="1.5"/>
+            <g transform="translate(189 44) rotate(-28)">
+              <rect x="-20" y="-9" width="40" height="17" rx="8.5" fill="#ffffff" fill-opacity=".94"/>
+              <text y="3.2" text-anchor="middle" font-size="9.5" font-family="IBM Plex Mono, monospace" fill="#35516d">1.1 m</text>
+            </g>
+            <circle cx="196" cy="88" r="11" fill="#46688a" stroke="#ffffff" stroke-width="2"/>
+            <text x="196" y="92" text-anchor="middle" font-size="11" font-weight="700" font-family="Space Grotesk, Arial, sans-serif" fill="#ffffff">14</text>
+            <circle cx="382" cy="132" r="64" fill="#ffffff"/>
+            <g clip-path="url(#lensClip)">
+              <rect x="320" y="70" width="124" height="124" fill="#e5dfd5"/>
+              <rect x="320" y="70" width="124" height="124" fill="#000" filter="url(#grain)"/>
+              <path d="M322 146L336 138L348 140L360 122L374 120L386 104L400 102L412 86L428 82L442 70" fill="none" stroke="#ffffff" stroke-opacity=".6" stroke-width="5" stroke-linejoin="round" transform="translate(1.2 1.4)"/>
+              <path d="M322 146L336 138L348 140L360 122L374 120L386 104L400 102L412 86L428 82L442 70" fill="none" stroke="#4b433b" stroke-width="3.2" stroke-linejoin="round"/>
+              <g transform="translate(348 149) scale(.9)">
+                <rect width="76" height="28" rx="3" fill="#ffffff" fill-opacity=".95" stroke="#b9b0a2" stroke-width=".8"/>
+                <path d="M12 4V15" stroke="#2f343a" stroke-width=".8"/>
+                <path d="M29 4V15" stroke="#2f343a" stroke-width="1.6"/>
+                <path d="M46 4V15" stroke="#2f343a" stroke-width="2.6"/>
+                <path d="M63 4V15" stroke="#2f343a" stroke-width="4"/>
+                <g font-size="7.5" font-family="IBM Plex Mono, monospace" fill="#5b6570" text-anchor="middle">
+                  <text x="12" y="24">0.1</text><text x="29" y="24">0.2</text><text x="46" y="24" fill="#35516d" font-weight="700">0.3</text><text x="63" y="24">0.5</text>
+                </g>
+                <rect x="41" y="2" width="10" height="15" rx="2" fill="none" stroke="#46688a" stroke-width="1.4"/>
+              </g>
+            </g>
+            <circle cx="382" cy="132" r="60" fill="none" stroke="#46688a" stroke-width="1.5"/>
+          </svg>
+          <div class="claim" aria-hidden="true">
+            <span data-aud="project">“This crack appeared during excavation.”<small>Neighbour's claim, Dec 2025</small></span>
+            <span data-aud="home" hidden>“Is this crack new?”<small>Your question, Dec 2025</small></span>
+          </div>
+          <span class="fig-chip stamp"><span class="pre-only">PRE · 12 MAR 2025 · 09:42</span><span class="post-only">POST · 28 NOV 2025 · 10:15</span></span>
+          <span class="fig-chip coords"><svg><use href="#i-pin"/></svg>−27.4698, 153.0251</span>
+        </figure>
+        <div class="finding" aria-live="polite">
+          <span class="chip chip-base pre-only">Baseline</span>
+          <p class="pre-only">Stepped hairline crack, window head to cornice. <b>0.3&nbsp;mm</b> wide, <b>1.1&nbsp;m</b> long. Recorded before works began.</p>
+          <span class="chip chip-ok post-only"><svg><use href="#i-check"/></svg>No change</span>
+          <p class="post-only" data-aud="project">Same crack, still <b>0.3&nbsp;mm</b> wide and <b>1.1&nbsp;m</b> long. It was on record nine months before the claim.</p>
+          <p class="post-only" data-aud="home" hidden>Same crack, same size: <b>0.3&nbsp;mm</b> wide, <b>1.1&nbsp;m</b> long. Recorded before works began.</p>
+        </div>
+      </div>
+      <span class="sticky sticky-a" data-aud="project"><svg><use href="#i-hat"/></svg>Engineer on site</span>
+      <span class="sticky sticky-a" data-aud="home" hidden><svg><use href="#i-shield"/></svg>Independent record</span>
+      <span class="sticky sticky-b"><svg><use href="#i-pin"/></svg>Location&#8209;referenced photos</span>
+    </div>
+  </section>
+
+  <!-- 2 · SERVICES ─────────────────────────────────────── -->
+  <section class="card services" id="services" aria-label="What we inspect">
+    <div class="copy" data-aud="project">
+      <p class="eyebrow"><span class="marker"></span>What we inspect</p>
+      <h2>One record.<br><span class="accent">Every stage of&nbsp;the&nbsp;build.</span></h2>
+      <p class="lede">We document a property's condition before works start, so any later claim is measured against evidence, not memory.</p>
+      <div class="actions">
+        <a class="btn btn-dark" href="https://ausdilaps.com.au/our-services" target="_blank" rel="noopener">All services <svg><use href="#i-arrow"/></svg></a>
+      </div>
+    </div>
+    <div class="svc-col" data-aud="project">
+      <div class="svc-grid">
+        <a class="svc svc-flag" href="https://ausdilaps.com.au/dilapidation-reports" target="_blank" rel="noopener">
+          <div>
+            <span class="tag">Flagship</span>
+            <h3>Dilapidation Reports</h3>
+            <p>Pre and post-construction condition reports for residential, commercial and infrastructure assets. A defensible baseline for every adjoining property.</p>
+            <span class="go">Commercial&nbsp;· Residential&nbsp;· Industrial<svg><use href="#i-arrow"/></svg></span>
+          </div>
+          <div class="timeline" aria-hidden="true">
+            <div class="tl-row"><b>Before works</b><span>Pre-construction</span></div>
+            <div class="tl-row"><b>After works</b><span>Post-construction</span></div>
+            <div class="tl-row"><b>If it changed</b><span>Comparison</span></div>
+          </div>
+        </a>
+        <a class="svc svc-sm" href="https://ausdilaps.com.au/our-services/structural-integrity-assessments" target="_blank" rel="noopener">
+          <span class="tag">SIA</span>
+          <h3>Structural Integrity Assessments</h3>
+          <p>Evaluate an asset's structural performance and stability, and catch weaknesses before they fail.</p>
+          <span class="go">Learn more <svg><use href="#i-arrow"/></svg></span>
+        </a>
+        <a class="svc svc-sm" href="https://ausdilaps.com.au/our-services/defect-origin-assessments-doa" target="_blank" rel="noopener">
+          <span class="tag">DOA</span>
+          <h3>Defect Origin Assessments</h3>
+          <p>Find the root cause of a defect, with evidence that supports remediation and liability.</p>
+          <span class="go">Learn more <svg><use href="#i-arrow"/></svg></span>
+        </a>
+        <a class="svc svc-sm" href="https://ausdilaps.com.au/our-services/defect-comparison-assessments" target="_blank" rel="noopener">
+          <span class="tag">DCA</span>
+          <h3>Defect Comparison Assessments</h3>
+          <p>Compare pre and post&#8209;construction conditions to show exactly what changed, and what didn't.</p>
+          <span class="go">Learn more <svg><use href="#i-arrow"/></svg></span>
+        </a>
+      </div>
+      <div class="also">
+        <p>Also from AusDilaps</p>
+        <div class="also-list" data-balance>
+          <a href="https://ausdilaps.com.au/our-services/structural-engineering" target="_blank" rel="noopener"><span class="long">Structural engineering</span><span class="short">Engineering</span></a>
+          <a href="https://ausdilaps.com.au/our-services/aerial-drone-surveys" target="_blank" rel="noopener"><span class="long">Aerial drone surveys</span><span class="short">Drone surveys</span></a>
+          <a href="https://ausdilaps.com.au/our-services/noise-and-vibration-monitoring-services" target="_blank" rel="noopener">Noise &amp; vibration</a>
+          <a href="https://ausdilaps.com.au/our-services/highways-roads" target="_blank" rel="noopener">Highways &amp; roads</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="copy" data-aud="home" hidden>
+      <p class="eyebrow"><span class="marker"></span>What we inspect</p>
+      <h2>One record.<br><span class="accent">Before and after the&nbsp;works.</span></h2>
+      <p class="lede">We record your property's existing condition before nearby works start, so any later change is measured against evidence, not memory.</p>
+      <div class="actions">
+        <a class="btn btn-dark" href="https://ausdilaps.com.au/our-services/residential-dilapidation-reports" target="_blank" rel="noopener">Residential reports <svg><use href="#i-arrow"/></svg></a>
+      </div>
+    </div>
+    <div class="svc-col" data-aud="home" hidden>
+      <div class="svc-grid">
+        <a class="svc svc-flag" href="https://ausdilaps.com.au/our-services/residential-dilapidation-reports" target="_blank" rel="noopener">
+          <div>
+            <span class="tag">Residential</span>
+            <h3>Dilapidation Reports</h3>
+            <p>A photographic record of your home's existing condition before nearby works start. The baseline any later change is measured against.</p>
+            <span class="go">About residential reports<svg><use href="#i-arrow"/></svg></span>
+          </div>
+          <div class="timeline" aria-hidden="true">
+            <div class="tl-row"><b>Before works</b><span>Pre-construction</span></div>
+            <div class="tl-row"><b>After works</b><span>Post-construction</span></div>
+            <div class="tl-row"><b>If it changed</b><span>Comparison</span></div>
+          </div>
+        </a>
+        <div class="svc svc-sm svc-plain">
+          <span class="tag">Buildings</span>
+          <h3>Your home</h3>
+          <p>Your house and adjoining structures, with any existing issues or damage recorded.</p>
+        </div>
+        <div class="svc svc-sm svc-plain">
+          <span class="tag">Boundaries</span>
+          <h3>Fences &amp; walls</h3>
+          <p>Retaining walls and fences, documented as they stand before works start.</p>
+        </div>
+        <div class="svc svc-sm svc-plain">
+          <span class="tag">Outdoors</span>
+          <h3>Driveways &amp; pools</h3>
+          <p>Driveways and kerbing, pools and landscaping, so outdoor areas are on the record too.</p>
+        </div>
+      </div>
+      <div class="also">
+        <p>Also from AusDilaps</p>
+        <div class="also-list" data-balance>
+          <a href="https://ausdilaps.com.au/our-services/structural-engineering" target="_blank" rel="noopener"><span class="long">Structural engineering</span><span class="short">Engineering</span></a>
+          <a href="https://ausdilaps.com.au/our-services/aerial-drone-surveys" target="_blank" rel="noopener"><span class="long">Aerial drone surveys</span><span class="short">Drone surveys</span></a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · CASE STUDY / COMMON QUESTIONS ───────────────── -->
+  <section class="card case" id="case-study" aria-label="Case studies and common questions">
+    <div class="copy" data-aud="project">
+      <div class="tabs" role="group" aria-label="Case studies">
+        <button type="button" aria-pressed="true" data-case="msr">Main South&nbsp;Road</button>
+        <button type="button" aria-pressed="false" data-case="ipswich">Ipswich Hospital</button>
+        <button type="button" aria-pressed="false" data-case="glenrowan">Glenrowan Solar</button>
+      </div>
+      <p class="case-meta"><span class="pill">Case study</span><span id="case-meta"><span class="cm-client" id="cm-client">Fleurieu Connections Alliance</span><span class="cm-sep"> · </span><span id="cm-where">South&nbsp;Australia&nbsp;· 2021–2026</span></span></p>
+      <h2><span id="case-name">Main&nbsp;South&nbsp;Road Duplication.</span><br><span class="accent" id="case-value">$1.1bn project.</span></h2>
+      <p class="lede" id="case-body">Engineers ran 16 weeks of site visits and captured 50km+ of roadway condition on video as high&#8209;precision georeferenced data. A shared tracking system kept the client's community team and our bookings team in step.</p>
+      <ul class="checks" id="case-stats">
+        <li><span class="tick"><svg><use href="#i-check"/></svg></span><span><b>175</b> properties inspected</span></li>
+        <li><span class="tick"><svg><use href="#i-check"/></svg></span><span><b>50km+</b> of road assessed by <span class="nw">vehicle-mounted</span> video</span></li>
+      </ul>
+      <div class="actions">
+        <a class="btn btn-steel" id="case-link" href="https://ausdilaps.com.au/portfolio/main-south-road-duplication" target="_blank" rel="noopener">Read the case study <svg><use href="#i-arrow"/></svg></a>
+      </div>
+    </div>
+    <div class="case-stage" data-aud="project">
+      <div class="bubble">
+        <p class="value" id="bubble-value">$1.1bn</p>
+        <strong id="bubble-num">40,000+</strong>
+        <span id="bubble-label">photos captured, pre &amp; post</span>
+      </div>
+      <ul data-balance class="methods" id="methods" aria-label="Capture methods">
+        <li data-m="photo" class="used">Hi-res photography</li>
+        <li data-m="video" class="used">Roadway video</li>
+        <li data-m="lidar">LiDAR</li>
+        <li data-m="drone">Drone survey</li>
+        <li data-m="pipe">Culvert &amp; pipe</li>
+        <li data-m="cloud">Point cloud / 3D</li>
+        <li data-m="gps" class="used">GPS-tagged imagery</li>
+      </ul>
+      <div class="case-bar">
+        <span class="ico"><svg><use href="#i-layers"/></svg></span>
+        <span><b>Seven capture methods. One defensible record.</b><small>Highlighted: used on this project.</small></span>
+      </div>
+    </div>
+
+    <div class="copy" data-aud="home" hidden>
+      <p class="eyebrow"><span class="marker"></span>Common questions</p>
+      <h2>Your questions,<br><span class="accent">answered.</span></h2>
+      <p class="lede">Had a letter from us, or works are starting near you? These are the questions people ask first.</p>
+      <div class="actions">
+        <a class="btn btn-steel" href="https://ausdilaps.com.au/faq" target="_blank" rel="noopener">Read all FAQs <svg><use href="#i-arrow"/></svg></a>
+      </div>
+    </div>
+    <div class="faq-wrap" data-aud="home" hidden>
+      <div class="faq">
+        <details name="faq" open>
+          <summary>I've had a letter from AusDilaps. What is it?<span class="pm"><svg><use href="#i-plus"/></svg></span></summary>
+          <p>A construction project near you has engaged us to record the condition of nearby properties before work starts. The report is an independent photographic record of your property, so there's a clear baseline if anything changes.</p>
+        </details>
+        <details name="faq">
+          <summary>Who is responsible for getting the report?<span class="pm"><svg><use href="#i-plus"/></svg></span></summary>
+          <p>Usually whoever is carrying out the works (the builder, developer or owner of the site being developed) arranges and pays for it, and councils may require it as an approval condition. If you've had a letter from us, the project near you has engaged us.</p>
+        </details>
+        <details name="faq">
+          <summary>How long does the inspection take?<span class="pm"><svg><use href="#i-plus"/></svg></span></summary>
+          <p>A standard residential inspection typically takes 15 to 45 minutes. Writing the report can then take several days to weeks, depending on complexity.</p>
+        </details>
+        <details name="faq">
+          <summary>What happens if the report finds issues?<span class="pm"><svg><use href="#i-plus"/></svg></span></summary>
+          <p>The report sets out each problem and its severity, with recommendations such as crack repair. It then becomes the reference point for any new damage during the works.</p>
+        </details>
+        <details name="faq">
+          <summary>Can I get a copy of my report?<span class="pm"><svg><use href="#i-plus"/></svg></span></summary>
+          <p>Property owners can ask us for a copy of their inspection report.</p>
+        </details>
+      </div>
+      <div class="case-bar">
+        <span class="ico"><svg><use href="#i-phone"/></svg></span>
+        <span><b>Can't see your question?</b><small>Call us on <a class="phone" href="tel:1800345277">1800 345 277</a>.</small></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 · TIER 1 PROJECTS ──────────────────────────────── -->
+  <section class="card projects" id="projects" aria-labelledby="proj-h">
+    <div class="proj-media">
+      <img src="/preview/card-homepage-5511cd/img/queens-wharf.jpg" alt="Queen's Wharf, Brisbane" class="active" data-p="0">
+      <img src="/preview/card-homepage-5511cd/img/northconnex.jpg" alt="NorthConnex tunnel works" data-p="1" loading="lazy">
+      <img src="/preview/card-homepage-5511cd/img/brisbane-airport.jpg" alt="Brisbane Airport" data-p="2" loading="lazy">
+      <img src="/preview/card-homepage-5511cd/img/north-west-rail-link.jpg" alt="North West Rail Link" data-p="3" loading="lazy">
+      <img src="/preview/card-homepage-5511cd/img/barangaroo.jpg" alt="Barangaroo South" data-p="4" loading="lazy">
+    </div>
+    <div class="proj-inner">
+      <div class="proj-top">
+        <div class="copy">
+          <p class="eyebrow"><span class="marker"></span>Tier 1 projects</p>
+          <h2 id="proj-h">Trusted on Australia's<br class="br-wide"> <span class="accent">most scrutinised builds.</span></h2>
+          <div class="stats">
+            <div><strong>1,000+</strong><span>Surveys delivered per quarter</span></div>
+            <div><strong>1M+</strong><span>Photos captured each year</span></div>
+            <div><strong>1,300+</strong><span>On-site hours per month</span></div>
+            <div><strong>600+</strong><span>Work orders dispatched per month</span></div>
+          </div>
+        </div>
+        <ul class="proj-list" aria-label="Projects">
+          <li><button type="button" aria-pressed="true" data-p="0">Queen's Wharf <span>Commercial</span></button></li>
+          <li><button type="button" aria-pressed="false" data-p="1">NorthConnex <span>Infrastructure</span></button></li>
+          <li><button type="button" aria-pressed="false" data-p="2">Brisbane Airport <span>Aviation</span></button></li>
+          <li><button type="button" aria-pressed="false" data-p="3">North West Rail Link <span>Rail</span></button></li>
+          <li><button type="button" aria-pressed="false" data-p="4">Barangaroo <span>Commercial</span></button></li>
+        </ul>
+      </div>
+      <div class="logos">
+        <p>Trusted by</p>
+        <div class="logo-row" id="logo-row">
+          <img src="/preview/card-homepage-5511cd/logos/lendlease.svg" alt="Lendlease" data-h="28">
+          <img src="/preview/card-homepage-5511cd/logos/cpb-contractors.png" alt="CPB Contractors">
+          <img src="/preview/card-homepage-5511cd/logos/acciona.svg" alt="Acciona" data-h="34">
+          <img src="/preview/card-homepage-5511cd/logos/downer.svg" alt="Downer">
+          <img src="/preview/card-homepage-5511cd/logos/transurban.svg" alt="Transurban" data-h="20">
+          <img src="/preview/card-homepage-5511cd/logos/ugl.png" alt="UGL">
+          <img src="/preview/card-homepage-5511cd/logos/transport-for-nsw.png" alt="Transport for NSW" data-h="38">
+          <img src="/preview/card-homepage-5511cd/logos/hutchinson-builders.svg" alt="Hutchinson Builders">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · PROCESS ──────────────────────────────────────── -->
+  <section class="card process" id="process" aria-label="How it works">
+    <div class="copy" data-aud="project">
+      <p class="eyebrow"><span class="marker"></span>How it works</p>
+      <h2>Kick-off to closeout.<br><span class="accent">One&nbsp;coordinator.</span></h2>
+      <p class="lede">A dedicated project coordinator books access, keeps residents informed and records every attempt, so your site team isn't chasing doors.</p>
+      <p class="sub">Every report categorised, <span class="nw">location-referenced</span> and <mark>professionally signed off.</mark></p>
+      <div class="actions">
+        <a class="btn btn-ghost-light" href="https://ausdilaps.com.au/AusDilaps-Capability-Statement-FY25-26.pdf" target="_blank" rel="noopener"><svg><use href="#i-file"/></svg>Capability statement <small>PDF</small></a>
+      </div>
+    </div>
+    <div class="steps-wrap" data-aud="project">
+      <div class="steps">
+        <div class="steps-head">
+          <div><p>Our methodology</p><h3>Six steps, every job.</h3></div>
+          <span>AS 4349.0</span>
+        </div>
+        <ol>
+          <li><span class="n">01</span><span><b>Services proposal</b><small>Desktop review and an itemised quote: pricing, method, deliverables.</small></span></li>
+          <li><span class="n">02</span><span><b>Project kick-off</b><small>A dedicated coordinator, confirmed access logistics and a booking schedule.</small></span></li>
+          <li><span class="n">03</span><span><b>Access arrangement</b><small>Doorknocks, SMS, letters, calls and emails. Every attempt recorded.</small></span></li>
+          <li><span class="n">04</span><span><b>Perform surveys</b><small>An engineer on site with wide and zoom lenses, GPS logging and crack gauges.</small></span></li>
+          <li><span class="n">05</span><span><b>Report delivery</b><small>Categorised defects, <span class="nw">location-referenced</span> imagery, professional <span class="nw">sign-off</span>.</small></span></li>
+          <li><span class="n">06</span><span><b>Project closeout</b><small>A PDF summary of inspection dates, access efforts and report links.</small></span></li>
+        </ol>
+      </div>
+      <span class="sticky sticky-c"><svg><use href="#i-check"/></svg>Every access attempt logged</span>
+    </div>
+
+    <div class="copy" data-aud="home" hidden>
+      <p class="eyebrow"><span class="marker"></span>Your inspection</p>
+      <h2>A short visit.<br><span class="accent">Usually under an hour.</span></h2>
+      <p class="lede">If a project near you has engaged us, here's what happens, from the letter to the finished report.</p>
+      <p class="sub">Tell the inspector anything you'd prefer we didn't photograph.</p>
+      <div class="actions">
+        <a class="btn btn-ghost-light" href="#quote" data-scroll="quote" data-letter><svg><use href="#i-letter"/></svg>I've had a letter</a>
+      </div>
+    </div>
+    <div class="steps-wrap" data-aud="home" hidden>
+      <div class="steps">
+        <div class="steps-head">
+          <div><p>What to expect</p><h3>From letter to report.</h3></div>
+          <span>AS 4349.0</span>
+        </div>
+        <ol>
+          <li><span class="n">01</span><span><b>The letter</b><small>Works nearby? We record your home before they start.</small></span></li>
+          <li><span class="n">02</span><span><b>Booking</b><small>We book a time that suits you, by SMS, phone or email.</small></span></li>
+          <li><span class="n">03</span><span><b>The inspection</b><small>15 to 45 minutes for a standard home, photographed in detail.</small></span></li>
+          <li><span class="n">04</span><span><b>The report</b><small>Defects categorised, <span class="nw">location-referenced</span> and signed off.</small></span></li>
+          <li><span class="n">05</span><span><b>After the works</b><small>If the project includes it, a second visit shows any change.</small></span></li>
+          <li><span class="n">06</span><span><b>Your copy</b><small>Property owners can ask us for a copy of their report.</small></span></li>
+        </ol>
+      </div>
+      <span class="sticky sticky-c"><svg><use href="#i-calendar"/></svg>Booked when it suits you</span>
+    </div>
+  </section>
+
+  <!-- 6 · QUOTE / GET IN TOUCH ────────────────────────── -->
+  <section class="card quote" id="quote" aria-label="Contact">
+    <div class="copy" data-aud="project">
+      <p class="eyebrow"><span class="marker"></span>Request a quote</p>
+      <h2>Tell us about<br><span class="accent">the project.</span></h2>
+      <p class="lede">You'll get an itemised quote covering pricing, methodology and deliverables. Staff in NSW, QLD, VIC and SA. Inspections <span class="nw">Australia-wide</span>.</p>
+      <div class="contact">
+        <a href="tel:1800345277"><span class="ico"><svg><use href="#i-phone"/></svg></span><span><small>Call</small><b>1800 345 277</b></span></a>
+        <a href="mailto:info@ausdilaps.com.au"><span class="ico"><svg><use href="#i-letter"/></svg></span><span><small>Email</small><b>info@ausdilaps.com.au</b></span></a>
+      </div>
+    </div>
+    <form class="form-card" data-aud="project" novalidate>
+      <p class="form-intro">An estimator will be assigned shortly to scope it and prepare an itemised quote.</p>
+      <div class="form-grid">
+        <div class="field"><label for="q-name">Name</label><input id="q-name" name="name" autocomplete="name"></div>
+        <div class="field"><label for="q-company">Company</label><input id="q-company" name="company" autocomplete="organization"></div>
+        <div class="field"><label for="q-role">Role</label>
+          <select id="q-role" name="role">
+            <option>Project manager</option>
+            <option>Contracts administrator</option>
+            <option>Council or government</option>
+            <option>Engineer</option>
+            <option>Property owner</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="field"><label for="q-email">Email</label><input id="q-email" name="email" type="email" autocomplete="email"></div>
+        <div class="field"><label for="q-phone">Phone</label><input id="q-phone" name="phone" type="tel" autocomplete="tel"></div>
+        <div class="field"><label for="q-location">Project location</label><input id="q-location" name="location" placeholder="Suburb, state"></div>
+        <div class="field"><label for="q-assets">Assets to inspect (approx.)</label>
+          <select id="q-assets" name="assetCount">
+            <option>&lt;10</option>
+            <option>10–100</option>
+            <option>100+</option>
+          </select>
+        </div>
+        <div class="field"><label for="q-start">Required start</label><input id="q-start" name="start" placeholder="Month, year"></div>
+        <div class="field full"><label for="q-notes">DA condition, contract clause or notes</label><textarea id="q-notes" name="notes"></textarea></div>
+      </div>
+      <button class="btn btn-orange" type="submit">Request a quote <svg><use href="#i-arrow"/></svg></button>
+      <p class="form-note">We use your details to respond to your enquiry. See our <a href="https://ausdilaps.com.au/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+    </form>
+
+    <div class="copy" data-aud="home" hidden>
+      <p class="eyebrow"><span class="marker"></span>Get in touch</p>
+      <h2>Tell us about<br><span class="accent">your property.</span></h2>
+      <p class="lede">Had an access letter, a question about a report, or works planned near you? We'll route it straight to the right person.</p>
+      <div class="contact">
+        <a href="tel:1800345277"><span class="ico"><svg><use href="#i-phone"/></svg></span><span><small>Call</small><b>1800 345 277</b></span></a>
+        <a href="mailto:info@ausdilaps.com.au"><span class="ico"><svg><use href="#i-letter"/></svg></span><span><small>Email</small><b>info@ausdilaps.com.au</b></span></a>
+      </div>
+    </div>
+    <form class="form-card" data-aud="home" hidden novalidate>
+      <p class="form-intro">Received a letter? Share your address and any questions.</p>
+      <fieldset class="opts enq">
+        <legend class="sr-only">What is your enquiry about?</legend>
+        <label><input type="radio" name="h-enq" id="h-enq-letter" value="letter" checked><span>Letter</span></label>
+        <label><input type="radio" name="h-enq" value="quote"><span>Quote</span></label>
+        <label><input type="radio" name="h-enq" value="report"><span>Report</span></label>
+        <label><input type="radio" name="h-enq" value="other"><span>Other</span></label>
+      </fieldset>
+      <div class="form-grid">
+        <div class="field"><label for="h-name">Name</label><input id="h-name" name="name" autocomplete="name"></div>
+        <div class="field"><label for="h-phone">Phone</label><input id="h-phone" name="phone" type="tel" autocomplete="tel"></div>
+        <div class="field"><label for="h-email">Email</label><input id="h-email" name="email" type="email" autocomplete="email"></div>
+        <div class="field"><label for="h-conn">Your connection</label>
+          <select id="h-conn" name="connection">
+            <option>Property owner</option>
+            <option>Tenant</option>
+            <option>Property agent</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="field full"><label for="h-address">Your address</label><input id="h-address" name="address" autocomplete="street-address" placeholder="Street, suburb, state"></div>
+        <div class="field full pref"><span class="flabel" id="h-pref-l">How should we get in touch?</span>
+          <div class="opts opts-3" role="group" aria-labelledby="h-pref-l">
+            <label><input type="checkbox" name="pref" value="SMS" checked><span>SMS</span></label>
+            <label><input type="checkbox" name="pref" value="Call"><span>Call</span></label>
+            <label><input type="checkbox" name="pref" value="Email"><span>Email</span></label>
+          </div>
+        </div>
+        <div class="field full"><label for="h-notes">Message (optional)</label><textarea id="h-notes" name="notes" placeholder="Any questions or access details you'd like to share?"></textarea></div>
+      </div>
+      <button class="btn btn-orange" type="submit">Send enquiry <svg><use href="#i-arrow"/></svg></button>
+      <p class="form-note">We use your details to respond to your enquiry. See our <a href="https://ausdilaps.com.au/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+    </form>
+  </section>
+</main>
+
+<div class="audience" id="audience" role="dialog" aria-modal="true" aria-labelledby="aud-h" hidden>
+  <div class="aud-panel" tabindex="-1">
+    <img class="aud-logo" src="/preview/card-homepage-5511cd/img/ad-logo.png" alt="AusDilaps" width="103" height="38">
+    <h2 id="aud-h">Is this about your property, or a building project?</h2>
+    <p>Pick one and we'll show you what's relevant. You can switch at any time.</p>
+    <div class="aud-choices">
+      <button type="button" class="aud-choice" data-audience-choice="home">
+        <span class="aud-ico"><svg><use href="#i-home"/></svg></span>
+        <span class="aud-text"><b>I've received an access letter</b><small>AusDilaps has asked to inspect my property, or works are planned nearby.</small></span>
+        <span class="aud-go"><span class="t">Show me</span><svg><use href="#i-arrow"/></svg></span>
+      </button>
+      <button type="button" class="aud-choice" data-audience-choice="project">
+        <span class="aud-ico"><svg><use href="#i-towers"/></svg></span>
+        <span class="aud-text"><b>I need reports for a building project</b><small>I'm building, renovating or managing works and need reports on nearby properties.</small></span>
+        <span class="aud-go"><span class="t">Show me</span><svg><use href="#i-arrow"/></svg></span>
+      </button>
+    </div>
+    <button type="button" class="aud-skip" data-audience-skip>Skip for now</button>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <nav class="footer-nav" aria-label="Site" data-balance>
+    <a href="https://ausdilaps.com.au/dilapidation-reports" target="_blank" rel="noopener">Dilapidation Reports</a>
+    <a href="https://ausdilaps.com.au/our-services" target="_blank" rel="noopener">Services</a>
+    <a href="https://ausdilaps.com.au/portfolio" target="_blank" rel="noopener">Portfolio</a>
+    <a href="https://ausdilaps.com.au/insights" target="_blank" rel="noopener">Insights</a>
+    <a href="https://ausdilaps.com.au/faq" target="_blank" rel="noopener">FAQ</a>
+  </nav>
+  <span>© 2026 Urban Pulse Strategies Pty Ltd T/A AusDilaps · ABN 82 650 700 226</span>
+  <span>PO Box 3270, Rouse Hill NSW 2155</span>
+</footer>
+
+<script>
+(function () {
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // In-page links scroll without touching the URL, then move keyboard focus to where they went.
+  // "I've had a letter" also picks that enquiry type and focuses it.
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest("[data-scroll]");
+    if (!a) return;
+    var el = document.getElementById(a.getAttribute("data-scroll"));
+    if (!el) return;
+    e.preventDefault();
+    var target = el;
+    if (a.hasAttribute("data-letter")) {
+      var r = document.getElementById("h-enq-letter");
+      if (r) { r.checked = true; target = r; }
+    }
+    el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    if (target === el && !el.hasAttribute("tabindex")) el.setAttribute("tabindex", "-1");
+    target.focus({ preventScroll: true });
+  });
+
+  // Rail: mark the card that owns the middle of the screen, and show its number.
+  var railLinks = Array.prototype.slice.call(document.querySelectorAll(".rail a"));
+  var railN = document.getElementById("rail-n");
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (!en.isIntersecting) return;
+      railLinks.forEach(function (l, i) {
+        var on = l.getAttribute("data-scroll") === en.target.id;
+        l.classList.toggle("active", on);
+        if (on) railN.textContent = String(i + 1);
+      });
+    });
+  }, { rootMargin: "-48% 0px -48% 0px" });
+  document.querySelectorAll(".card[id]").forEach(function (s) { io.observe(s); });
+
+  // Wrapped chip groups: never leave one item alone on the last row.
+  // Tries narrower widths for the group and keeps the one with the fewest rows, no lone last item,
+  // and the most even rows. Rows are grouped by each item's vertical centre.
+  function rowsOf(kids) {
+    var rows = [];
+    kids.forEach(function (k) {
+      var c = k.offsetTop + k.offsetHeight / 2;
+      var row = rows.find(function (r) { return Math.abs(r.c - c) < 8; });
+      if (row) row.n++; else rows.push({ c: c, n: 1 });
+    });
+    return rows.sort(function (a, b) { return a.c - b.c; }).map(function (r) { return r.n; });
+  }
+  function balance(el) {
+    el.style.maxWidth = "";
+    if (!el.offsetWidth) return;
+    var kids = Array.prototype.filter.call(el.children, function (k) { return k.offsetWidth > 0; });
+    if (kids.length < 3) return;
+    var start = rowsOf(kids);
+    if (start.length < 2) return;
+    var full = el.offsetWidth;
+    var floor = Math.max.apply(null, kids.map(function (k) { return k.offsetWidth; }));
+    var best = null;
+    for (var w = full; w >= floor; w -= 4) {
+      el.style.maxWidth = w + "px";
+      var d = rowsOf(kids);
+      if (d.length > start.length + 1) break;
+      if (d[d.length - 1] < 2) continue;
+      var score = d.length * 1000 + (Math.max.apply(null, d) - Math.min.apply(null, d));
+      if (!best || score < best.score) best = { w: w, score: score };
+    }
+    el.style.maxWidth = best ? best.w + "px" : "";
+  }
+
+  // Client logos: always ONE row. Logos are in priority order; show them until the next one doesn't fit.
+  var logoRow = document.getElementById("logo-row");
+  function fitLogos() {
+    if (!logoRow || !logoRow.offsetWidth) return;
+    var imgs = Array.prototype.slice.call(logoRow.querySelectorAll("img"));
+    imgs.forEach(function (img) { img.hidden = false; });
+    var avail = logoRow.clientWidth, gap = parseFloat(getComputedStyle(logoRow).columnGap) || 24, used = 0, shown = 0, full = false;
+    imgs.forEach(function (img) {
+      var need = used + (shown ? gap : 0) + img.offsetWidth;
+      if (!full && need <= avail) { used = need; shown++; } else { full = true; img.hidden = true; }
+    });
+  }
+
+  // Case studies (FY25/26 Capability Statement).   keeps words together; ‑ is a non-breaking hyphen.
+  var CASES = {
+    msr: {
+      client: "Fleurieu Connections Alliance", where: "South Australia · 2021–2026",
+      name: "Main South Road Duplication.", value: "$1.1bn",
+      body: "Engineers ran 16 weeks of site visits and captured 50km+ of roadway condition on video as high‑precision georeferenced data. A shared tracking system kept the client's community team and our bookings team in step.",
+      stats: [["40,000+", "photos captured, pre & post"], ["175", "properties inspected"], ["50km+", "of road assessed by vehicle‑mounted video"]],
+      headline: 0, methods: ["photo", "video", "gps"], slug: "main-south-road-duplication"
+    },
+    ipswich: {
+      client: "Bennett + Bennett", where: "Ipswich, QLD · July 2024",
+      name: "Ipswich Hospital.", value: "$710M",
+      body: "Georeferenced pre and post‑construction surveys gave accurate, repeatable comparisons of hospital structures and surrounding assets, carried out safely amid high foot traffic.",
+      stats: [["5,000m²+", "inspected across plant rooms, roofs and hospital rooms"], ["4,108", "location‑marked photos"], ["782", "defects measured and classified by engineers"]],
+      headline: 2, methods: ["photo", "gps"], slug: "ipswich-hospital"
+    },
+    glenrowan: {
+      client: "UGL Pty Limited", where: "Glenrowan, Victoria · 2021–2024",
+      name: "Glenrowan Solar Farm.", value: "$170M",
+      body: "A structured, repeatable inspection method documented 20km+ of roadways and surrounding assets with high‑accuracy georeferenced photography and traffic‑controlled inspections.",
+      stats: [["20km+", "of roadways and adjacent assets captured"], ["3,036", "georeferenced photos"], ["2,549", "scheduled inspection minutes"]],
+      headline: 1, methods: ["photo", "gps"], slug: "glenrowan-solar-farm"
+    }
+  };
+  var tick = '<span class="tick"><svg><use href="#i-check"/></svg></span>';
+  function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  var caseTabs = document.querySelectorAll(".case .tabs button");
+  var caseCol = document.querySelector('#case-study .copy[data-aud="project"]');
+  var currentCase = "msr";
+  function renderCase(key) {
+    var c = CASES[key];
+    caseTabs.forEach(function (o) { o.setAttribute("aria-pressed", String(o.getAttribute("data-case") === key)); });
+    document.getElementById("cm-client").textContent = c.client;
+    document.getElementById("cm-where").textContent = c.where;
+    document.getElementById("case-name").textContent = c.name;
+    document.getElementById("case-value").textContent = c.value + " project.";
+    document.getElementById("case-body").textContent = c.body;
+    // The bubble shows the headline figure, so the list shows the other two.
+    document.getElementById("case-stats").innerHTML = c.stats.filter(function (s, i) { return i !== c.headline; }).map(function (s) {
+      return "<li>" + tick + "<span><b>" + esc(s[0]) + "</b> " + esc(s[1]) + "</span></li>";
+    }).join("");
+    var h = c.stats[c.headline];
+    document.getElementById("bubble-value").textContent = c.value;
+    document.getElementById("bubble-num").textContent = h[0];
+    document.getElementById("bubble-label").textContent = h[1];
+    document.getElementById("case-link").href = "https://ausdilaps.com.au/portfolio/" + c.slug;
+    document.querySelectorAll("#methods li").forEach(function (li) {
+      li.classList.toggle("used", c.methods.indexOf(li.getAttribute("data-m")) !== -1);
+    });
+  }
+  // Hold the case column at its tallest so switching tabs never moves the tabs under the cursor.
+  function sizeCase() {
+    if (!caseCol) return;
+    caseCol.style.minHeight = "";
+    if (!caseCol.offsetWidth) return;
+    var max = 0;
+    Object.keys(CASES).forEach(function (k) { renderCase(k); max = Math.max(max, caseCol.offsetHeight); });
+    renderCase(currentCase);
+    caseCol.style.minHeight = max + "px";
+  }
+  caseTabs.forEach(function (b) {
+    b.addEventListener("click", function () { currentCase = b.getAttribute("data-case"); renderCase(currentCase); });
+  });
+
+  // FAQ: same idea, hold the panel at the height of its tallest open answer.
+  var faqWrap = document.querySelector(".faq-wrap");
+  function sizeFaq() {
+    if (!faqWrap) return;
+    faqWrap.style.minHeight = "";
+    if (!faqWrap.offsetWidth) return;
+    var ds = Array.prototype.slice.call(faqWrap.querySelectorAll("details"));
+    var wasOpen = ds.filter(function (d) { return d.open; });
+    var max = 0;
+    ds.forEach(function (d) { ds.forEach(function (x) { x.open = x === d; }); max = Math.max(max, faqWrap.offsetHeight); });
+    ds.forEach(function (x) { x.open = wasOpen.indexOf(x) !== -1; });
+    faqWrap.style.minHeight = max + "px";
+  }
+
+  // Short screens: every card must still fit one screen. Measure what each card needs and scale the
+  // content of ALL cards by the same factor (so type stays consistent card to card), never below 80%.
+  var cards = Array.prototype.slice.call(document.querySelectorAll(".card"));
+  function cardParts(card) {
+    var list = card.classList.contains("projects") ? card.querySelectorAll(".proj-inner > *") : card.children;
+    return Array.prototype.filter.call(list, function (el) { return !el.hidden && !el.classList.contains("proj-media"); });
+  }
+  function cardPad(card) {
+    var box = card.classList.contains("projects") ? card.querySelector(".proj-inner") : card;
+    var cs = getComputedStyle(box);
+    return parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  }
+  function setZoom(z) { cards.forEach(function (c) { cardParts(c).forEach(function (el) { el.style.zoom = z === 1 ? "" : String(z); }); }); }
+  function fitCards() {
+    if (!(window.innerWidth >= 960 && window.innerHeight >= 660)) return;
+    var slot = window.innerHeight - document.querySelector(".site-header").offsetHeight - 20;
+    var over = function () { return cards.some(function (c) { return c.offsetHeight > slot + 1; }); };
+    if (!over()) return;
+    var z = 1;
+    cards.forEach(function (c) {
+      var pad = cardPad(c), h = c.offsetHeight;
+      if (h > slot + 1) z = Math.min(z, (slot - pad) / (h - pad));
+    });
+    z = Math.max(0.8, Math.floor(z * 100) / 100);
+    setZoom(z);
+    while (over() && z > 0.8) { z = Math.max(0.8, Math.round((z - 0.02) * 100) / 100); setZoom(z); }
+  }
+
+  function relayout() {
+    setZoom(1);
+    document.querySelectorAll("[data-balance]").forEach(balance);
+    fitLogos();
+    sizeCase();
+    sizeFaq();
+    fitCards();
+  }
+  var queued = false;
+  function queueRelayout() {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(function () { queued = false; relayout(); });
+  }
+  window.addEventListener("resize", queueRelayout);
+  window.addEventListener("load", relayout);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(relayout);
+  if (logoRow) logoRow.querySelectorAll("img").forEach(function (img) { img.addEventListener("load", queueRelayout); });
+
+  // Audience: homeowner or building project. Blocks marked data-aud show for one audience only.
+  // Test interface: nothing is remembered, so every load asks again.
+  var dialog = document.getElementById("audience");
+  var outside = [document.querySelector(".site-header"), document.querySelector(".rail"), document.querySelector("main"), document.querySelector(".site-footer")];
+  function applyAudience(a) {
+    document.documentElement.setAttribute("data-audience", a);
+    document.querySelectorAll("[data-aud]").forEach(function (el) { el.hidden = el.getAttribute("data-aud") !== a; });
+    relayout();
+  }
+  function openDialog() {
+    dialog.hidden = false;
+    document.documentElement.classList.add("aud-open");
+    outside.forEach(function (el) { if (el) el.inert = true; });
+    dialog.querySelector(".aud-panel").focus();
+  }
+  function closeDialog() {
+    dialog.hidden = true;
+    document.documentElement.classList.remove("aud-open");
+    outside.forEach(function (el) { if (el) el.inert = false; });
+    var brand = document.querySelector(".site-header .brand");
+    if (brand) brand.focus({ preventScroll: true });
+  }
+  var deepCard = (function () { var t = location.hash && document.getElementById(location.hash.slice(1)); return t && t.classList.contains("card") ? t : null; })();
+  dialog.querySelectorAll("[data-audience-choice]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      closeDialog();
+      applyAudience(b.getAttribute("data-audience-choice"));
+      // Arrived on a link to a card (e.g. #quote)? Keep them there.
+      if (deepCard) deepCard.scrollIntoView({ block: "start" }); else window.scrollTo(0, 0);
+    });
+  });
+  dialog.querySelector("[data-audience-skip]").addEventListener("click", closeDialog);
+  dialog.addEventListener("click", function (e) { if (e.target === dialog) closeDialog(); });
+  document.addEventListener("keydown", function (e) {
+    if (dialog.hidden) return;
+    if (e.key === "Escape") { closeDialog(); return; }
+    if (e.key !== "Tab") return;
+    var f = dialog.querySelectorAll("button");
+    var first = f[0], last = f[f.length - 1];
+    if (Array.prototype.indexOf.call(f, document.activeElement) === -1) { e.preventDefault(); (e.shiftKey ? last : first).focus(); return; }
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  applyAudience("project");
+  openDialog();
+
+  // Hero: pre / post toggle.
+  var report = document.getElementById("report");
+  var segBtns = report.querySelectorAll(".segmented button");
+  segBtns.forEach(function (b) {
+    b.addEventListener("click", function () {
+      report.setAttribute("data-state", b.getAttribute("data-state"));
+      segBtns.forEach(function (o) { o.setAttribute("aria-pressed", String(o === b)); });
+    });
+  });
+
+  // Tier 1 projects: swap the background photo.
+  var projBtns = document.querySelectorAll(".proj-list button");
+  var projImgs = document.querySelectorAll(".proj-media img");
+  function showProject(i) {
+    projBtns.forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-p") === i)); });
+    projImgs.forEach(function (img) { img.classList.toggle("active", img.getAttribute("data-p") === i); });
+  }
+  projBtns.forEach(function (b) {
+    b.addEventListener("click", function () { showProject(b.getAttribute("data-p")); });
+    // pointermove, not mouseenter: scrolling slides the list under a still cursor and must not swap photos.
+    b.addEventListener("pointermove", function (e) { if (e.pointerType === "mouse" && b.getAttribute("aria-pressed") !== "true") showProject(b.getAttribute("data-p")); });
+  });
+
+  // Forms: mockup only.
+  document.querySelectorAll("form.form-card").forEach(function (f) {
+    f.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var note = f.querySelector(".form-note");
+      note.textContent = "Mockup only: nothing was sent. In the live build this goes to the lead engine.";
+      note.classList.add("sent");
+    });
+  });
+})();
+</script>
+
+</html>

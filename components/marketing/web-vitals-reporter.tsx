@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { useReportWebVitals } from "next/web-vitals";
 
 /**
@@ -24,6 +25,18 @@ export function WebVitalsReporter() {
   const sent = useRef(false);
   /** The single largest layout shift's elements, for the server log — see biggestShift(). */
   const shift = useRef<string>("");
+  // ⚠️ The page the visitor LANDED on, not the one open when they leave. This sits in the
+  // root layout, so it outlives client-side navigation, and LCP/FCP/TTFB belong to the hard
+  // load. Reading location at hide time filed a visit that landed on /quote and left from /
+  // under "/" (2026-10-06 sweep).
+  const landing = useRef<string>("");
+  /** Client-side route changes during the visit. CLS keeps accumulating across them, so a
+   *  big shift with navs > 0 may have happened on a later page, not the landing one. */
+  const navs = useRef(0);
+  /** "navigate", "reload", "back-forward", "prerender"… — prerender is Chrome loading the
+   *  page before the visitor clicked, which is one suspect for the mobile CLS. */
+  const navType = useRef<string>("");
+  const pathname = usePathname();
 
   useReportWebVitals((metric) => {
     // Next reports its own custom timings (hydration, render) alongside the web vitals.
@@ -32,7 +45,22 @@ export function WebVitalsReporter() {
     if (["lcp", "inp", "cls", "fcp", "ttfb"].includes(key)) {
       metrics.current[key] = metric.value;
     }
+    if (!navType.current && typeof metric.navigationType === "string") {
+      navType.current = metric.navigationType;
+    }
   });
+
+  // Runs once on mount, then once per route change. The landing path is read from location,
+  // not the hook — the samples page is a middleware REWRITE, and the visible URL is the one
+  // the dashboard reports.
+  // Compared against the last path rather than counted per run, so React's dev double-run
+  // of effects can't count a navigation that never happened.
+  const lastPath = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastPath.current === null) landing.current = window.location.pathname;
+    else if (pathname !== lastPath.current) navs.current += 1;
+    lastPath.current = pathname;
+  }, [pathname]);
 
   useEffect(() => {
     function send() {
@@ -44,10 +72,12 @@ export function WebVitalsReporter() {
       sent.current = true;
 
       const body = JSON.stringify({
-        path: window.location.pathname,
+        path: landing.current || window.location.pathname,
         device: window.innerWidth < 768 ? "mobile" : "desktop",
         ...m,
         ...(shift.current ? { clsTarget: shift.current } : {}),
+        ...(navType.current ? { navType: navType.current.slice(0, 30) } : {}),
+        navs: navs.current,
       });
       try {
         navigator.sendBeacon?.("/api/vitals", new Blob([body], { type: "application/json" }));

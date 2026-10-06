@@ -5,6 +5,7 @@
 
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { selectAll } from "@/lib/supabase/select-all";
 import { isProductionRuntime } from "@/lib/page-views";
 
 export type VitalsSample = {
@@ -123,15 +124,23 @@ export async function loadWebVitals(days = 7): Promise<WebVitals> {
   };
   try {
     const since = new Date(Date.now() - days * DAY).toISOString();
-    const { data, error } = await createAdminClient()
-      .from("web_vitals")
-      .select("path, device, lcp_ms, inp_ms, cls, fcp_ms")
-      .gte("occurred_at", since)
-      // Visitors means the public site. Staff tools and Command Centre are all desktop and
-      // were 11% of the sample (Oct 2026) — enough to move the device split by 5 points and
-      // to fill "slowest pages" with internal tools.
-      .not("path", "like", "/admin%")
-      .not("path", "like", "/staff%");
+    const db = createAdminClient();
+    // Paged: a week was ~430 rows in Oct 2026, and past 1,000 an unpaged select would work
+    // the percentiles out from an arbitrary subset with nothing on screen to say so.
+    const { data, error } = await selectAll((from, to) =>
+      db
+        .from("web_vitals")
+        .select("path, device, lcp_ms, inp_ms, cls, fcp_ms")
+        .gte("occurred_at", since)
+        // Visitors means the public site. Staff tools and Command Centre are all desktop and
+        // were 11% of the sample (Oct 2026) — enough to move the device split by 5 points and
+        // to fill "slowest pages" with internal tools.
+        .not("path", "like", "/admin%")
+        .not("path", "like", "/staff%")
+        .order("occurred_at")
+        .order("id")
+        .range(from, to),
+    );
     if (error) throw error;
 
     const all = data ?? [];

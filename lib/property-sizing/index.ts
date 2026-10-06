@@ -10,6 +10,7 @@ import { estimateBuilding } from "./building";
 import { mapPool } from "@/lib/util/map-pool";
 import { houseNumber } from "./parse";
 import { verifyParcelForAddress } from "@/lib/kml/standard-markup/parcels/verify-address";
+import { isPropertyFallbackId } from "@/lib/kml/standard-markup/parcels/parcel-id";
 import { arcgisRingsFromLatLng, latLngRingFromArcgis } from "./rings";
 
 /** States with an automated lot-size source wired up. Grows per the rollout plan. */
@@ -116,7 +117,9 @@ async function lookupLot(addr: ParsedAddress): Promise<WorkRow> {
       parcelLabel: result.lotPlan,
     });
     if (verdict.outcome === "corrected") {
-      result.lotPlan = verdict.parcel.idKey.replace(/^\/+/, "") || result.lotPlan;
+      const id = verdict.parcel.idKey.replace(/^\/+/, "");
+      // ⚠️ VIC's Vicmap_Property fallback hands over a `prop:<pfi>` id — not a lot/plan, never printed.
+      result.lotPlan = isPropertyFallbackId(id) ? null : id || result.lotPlan;
       result.lotSizeSqm = verdict.areaSqm;
       result.flags = [...result.flags, verdict.note];
       lon = verdict.point.lng;

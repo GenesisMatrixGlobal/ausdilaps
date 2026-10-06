@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { selectAll } from "@/lib/supabase/select-all";
 import { isProductionRuntime } from "@/lib/page-views";
 import { GAME_SLUGS } from "@/lib/tools/registry";
 
@@ -73,16 +74,30 @@ const fetchUsageRows = cache(async (): Promise<UsageRow[]> => {
   const since = new Date(Date.now() - WINDOW_DAYS * DAY).toISOString();
   const db = createAdminClient();
 
-  const withUser = await db
-    .from("tool_usage")
-    .select("tool_slug, used_at, user_id")
-    .gte("used_at", since);
+  // Paged past PostgREST's 1,000-row cap, which a busy month passes silently.
+  const withUser = await selectAll((from, to) =>
+    db
+      .from("tool_usage")
+      .select("tool_slug, used_at, user_id")
+      .gte("used_at", since)
+      .order("used_at")
+      .order("id")
+      .range(from, to),
+  );
 
   // Same pre-0020 fallback as the writer: report per tool exactly as before, with nobody
   // attributed, rather than an empty page.
   if (withUser.error && /user_id/.test(withUser.error.message)) {
     console.warn("[tool-usage] tool_usage.user_id missing — apply migration 0020.");
-    const plain = await db.from("tool_usage").select("tool_slug, used_at").gte("used_at", since);
+    const plain = await selectAll((from, to) =>
+      db
+        .from("tool_usage")
+        .select("tool_slug, used_at")
+        .gte("used_at", since)
+        .order("used_at")
+        .order("id")
+        .range(from, to),
+    );
     if (plain.error) throw plain.error;
     return (plain.data ?? []).map((r) => ({ ...(r as Omit<UsageRow, "user_id">), user_id: null }));
   }

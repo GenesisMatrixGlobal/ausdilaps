@@ -154,9 +154,8 @@ Vercel deploys in about a minute.
 
 ## One-time setup
 
-1. **Run the migrations** — `npm run migrate` (needs `DATABASE_URL` in `.env.local`; the value
-   is `POSTGRES_URL_NON_POOLING` in Vercel, or Supabase → Project Settings → Database →
-   Connection string → URI).
+1. **Run the migrations** — paste the file into the Supabase SQL editor for **AusDilaps - Sydney** (`crqfxdywgxtxgpwrojyc`), then run `notify pgrst, 'reload schema';`. See CLAUDE.md §3 for the Management API
+   route when an access token is current.
 2. **Supabase → Auth → URL Configuration** — Site URL `https://ausdilaps.vercel.app`.
    Redirect allow-list:
    - `https://ausdilaps.vercel.app/staff/auth/callback`

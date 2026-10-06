@@ -8,7 +8,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { SF_ID } from "@/lib/salesforce-links";
-import { isStaff } from "@/lib/auth/is-staff";
+import { isStaffInAnyDepartment } from "@/lib/auth/is-staff";
+import { MARKUP_SYNC_DEPARTMENTS } from "@/lib/sync-departments";
 import { isConfigError, MarkupSyncError } from "@/lib/markup-sync";
 import { clearQuote } from "@/lib/quote-lines/clear";
 import { ensureQuoteEditable } from "@/lib/quote-lines/editable";
@@ -21,7 +22,9 @@ const requestSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  if (!(await isStaff("MARKUP_SYNC_ALLOW_UNAUTHED"))) {
+  // Estimators only (admins pass everywhere) — the same gate as the markup upload beside it.
+  // Was any signed-in staff member, which let any department clear any Quote's line items.
+  if (!(await isStaffInAnyDepartment(MARKUP_SYNC_DEPARTMENTS, "MARKUP_SYNC_ALLOW_UNAUTHED"))) {
     return NextResponse.json({ ok: false, error: "Not authorised." }, { status: 401 });
   }
 

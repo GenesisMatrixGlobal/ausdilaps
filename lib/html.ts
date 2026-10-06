@@ -91,13 +91,96 @@ export function safeExternalUrl(raw?: string | null): { href: string; host: stri
   }
 }
 
+/**
+ * The most HTML any parser here reads. Real bulletins run ~2.7 KB a notice (a complete
+ * 11-notice TenderSearch bulletin is 30 KB; the biggest stored ones are cut off at the 40 KB
+ * raw_payload slice with 14 notices in), so this is room for ~90.
+ * Past it the rest is dropped (and logged by the mailbox reader): a body this size is an
+ * attack or a mistake, not a digest.
+ */
+export const MAX_HTML_CHARS = 250_000;
+
+/** A tag longer than this is dropped by tameHtml(). The longest real one is a 3 KB CSS comment. */
+const MAX_TAG_CHARS = 8_000;
+const LONG_TAG = new RegExp(`<[^<>]{${MAX_TAG_CHARS},}>`, "g");
+
+/**
+ * Third-party HTML made safe for `<a\b[^>]*…>` style regexes: capped, every `<` that meets
+ * another `<` before a `>` removed, and any tag over MAX_TAG_CHARS dropped.
+ *
+ * ⚠️ `[^>]*` runs straight through `<a <a <a …` and over a dozen `href=`s in one tag, and the
+ * backtracking is CUBIC: a crafted 20 KB email held contentLinks() for 7.4 s and htmlToText()
+ * for 7.5 s (2026-10-06), so one ~60 KB email to tenders@ outlasted the scan's 290 s and sat
+ * in the lookback for three nights. After this every `[^>]*` stops inside one bounded tag.
+ */
+export function tameHtml(html: string): string {
+  return html
+    .slice(0, MAX_HTML_CHARS)
+    .replace(/<(?=[^<>]*(?:<|$))/g, " ")
+    .replace(LONG_TAG, " ");
+}
+
 /** Inline styles that hide text from a human but not from a naive tag-stripper. */
 const HIDDEN_STYLE = "display\\s*:\\s*none|visibility\\s*:\\s*hidden|font-size\\s*:\\s*0|opacity\\s*:\\s*0";
 
+/**
+ * The OPENING tag of an element hidden by an inline style. The style test is a lookahead
+ * because JS lookarounds never backtrack — written inline, every `style=` x every hidden
+ * phrase in it was a separate way to fail, which is where the cubic came from.
+ */
 const HIDDEN_ELEMENT = new RegExp(
-  `<(div|span|p|td|tr|table|section|a)\\b[^>]*style\\s*=\\s*["'][^"']*(?:${HIDDEN_STYLE})[^"']*["'][^>]*>[\\s\\S]*?<\\/\\1>`,
+  `<(div|span|p|td|tr|table|section|a)\\b(?=[^<>]*style\\s*=\\s*["'][^"'<>]*(?:${HIDDEN_STYLE}))[^<>]*>`,
   "gi"
 );
+
+/** Elements whose text is never shown: dropped whole, not just untagged. */
+const UNRENDERED_ELEMENT = /<(script|style|head)\b[^<>]*>/gi;
+
+/**
+ * Removes each element `open` matches, through the first matching close tag.
+ *
+ * ⚠️ Not `<(x)…>[\s\S]*?<\/\1>`: that rescans to the end of the input for every opening tag
+ * that never closes — 60,000 unclosed `<style>`s took 2.2 s at 500 KB. A close tag missing
+ * after one opening is missing after every later one, so it is only looked for once.
+ */
+function stripElements(html: string, open: RegExp): string {
+  const unclosed = new Set<string>();
+  let out = "";
+  let kept = 0;
+  open.lastIndex = 0;
+  for (let m = open.exec(html); m; m = open.exec(html)) {
+    const tag = m[1].toLowerCase();
+    if (unclosed.has(tag)) continue;
+    const close = new RegExp(`</${tag}>`, "gi");
+    close.lastIndex = open.lastIndex;
+    const end = close.exec(html);
+    if (!end) {
+      unclosed.add(tag);
+      continue;
+    }
+    out += `${html.slice(kept, m.index)} `;
+    kept = open.lastIndex = end.index + end[0].length;
+  }
+  return out + html.slice(kept);
+}
+
+/** `<!-- … -->`, by indexOf for the same reason: an unclosed `<!--` must cost one scan, not one per opening. */
+function stripComments(html: string): string {
+  let out = "";
+  let kept = 0;
+  for (let start = html.indexOf("<!--"); start !== -1; start = html.indexOf("<!--", kept)) {
+    const end = html.indexOf("-->", start + 4);
+    if (end === -1) break;
+    out += `${html.slice(kept, start)} `;
+    kept = end + 3;
+  }
+  return out + html.slice(kept);
+}
+
+/** `String.fromCodePoint` THROWS past U+10FFFF, so one `&#99999999;` failed the sender's whole run. */
+function codePoint(code: number): string {
+  return code <= 0x10ffff ? String.fromCodePoint(code) : "";
+}
 
 /**
  * Decodes the named and numeric entities that actually turn up in RSS and email.
@@ -114,8 +197,8 @@ export function decodeEntities(value: string): string {
     .replace(/&quot;/gi, '"')
     .replace(/&#0?39;|&apos;/gi, "'")
     .replace(/&nbsp;/gi, " ")
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_, code: string) => codePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => codePoint(parseInt(code, 16)))
     // &amp; last, so "&amp;lt;" decodes to "&lt;" rather than "<".
     .replace(/&amp;/gi, "&");
 }
@@ -141,13 +224,13 @@ export function decodeEntities(value: string): string {
  * lib/tenders/classify.ts is what actually contains the risk.
  */
 export function htmlToText(html: string, maxChars = 12_000): string {
-  const text = decodeEntities(html)
-    .replace(/<(script|style|head)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
-    .replace(HIDDEN_ELEMENT, " ")
-    .replace(/<!--[\s\S]*?-->/g, " ")
+  // Capped BEFORE decoding (which only shrinks it), and every tag pattern below is `[^<>]`,
+  // never `[^>]`: decoding turns `&lt;` into fresh `<`s, so tameHtml() can't run first.
+  const decoded = decodeEntities(html.slice(0, MAX_HTML_CHARS));
+  const text = stripComments(stripElements(stripElements(decoded, UNRENDERED_ELEMENT), HIDDEN_ELEMENT))
     .replace(/<\/(p|div|tr|li|h[1-6]|table|section)>/gi, "\n")
     .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
+    .replace(/<[^<>]+>/g, " ")
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

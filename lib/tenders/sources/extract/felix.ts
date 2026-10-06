@@ -87,7 +87,8 @@ function requestNumber(message: ExtractSource, text: string): string | null {
  * senders.ts filters digests on anchor text rather than URL.
  */
 function actionLink(html: string): string | null {
-  const anchors = [...html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
+  // Same lookahead form as contentLinks() in senders.ts — linear on a crafted body.
+  const anchors = [...html.matchAll(/<a\b(?=[^<>]*href\s*=\s*["']([^"']+)["'])[^<>]*>([\s\S]*?)<\/a>/gi)];
   for (const [, href, inner] of anchors) {
     const label = inner.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
     if (!/^https?:\/\//i.test(href)) continue;

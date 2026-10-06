@@ -15,6 +15,7 @@ config({ path: ".env.local" });
 
 import { fetchMailboxMessages, parseMessages, type EmailSource } from "../lib/tenders/sources/mailbox";
 import { senderDomain, slugForDomain, resolveParseMode, contentLinks } from "../lib/tenders/senders";
+import { tameHtml } from "../lib/html";
 
 const from = (m: { from?: { emailAddress?: { address?: string } } }) =>
   m.from?.emailAddress?.address ?? null;
@@ -41,7 +42,8 @@ async function main() {
 
     console.log(`── ${source.slug}  (${mine.length} email${mine.length === 1 ? "" : "s"} -> ${items.length} item${items.length === 1 ? "" : "s"})`);
     for (const m of mine) {
-      const html = m.body?.contentType?.toLowerCase() === "html" ? (m.body.content ?? "") : "";
+      // Tamed as parseMessages() tames it, or a crafted body takes the slow path here.
+      const html = m.body?.contentType?.toLowerCase() === "html" ? tameHtml(m.body.content ?? "") : "";
       const mode = resolveParseMode("auto", html, domain);
       const links = contentLinks(html, domain).length;
       console.log(`   [${mode}${mode === "digest" ? `, ${links} links` : ""}]  ${(m.subject ?? "(no subject)").slice(0, 66)}`);

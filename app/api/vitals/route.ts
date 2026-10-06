@@ -26,6 +26,11 @@ const schema = z.object({
   ttfb: ms,
   /** The biggest layout shift's elements, logged (not stored) when CLS is past "good". */
   clsTarget: z.string().max(400).optional(),
+  /** How the page loaded ("prerender" = before the visitor clicked) and how many client-side
+   *  route changes followed. Logged beside clsTarget, not stored — diagnostics for the mobile
+   *  CLS, not a dashboard figure. */
+  navType: z.string().max(30).regex(/^[a-z-]+$/).optional(),
+  navs: z.number().int().min(0).max(1000).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -50,10 +55,12 @@ export async function POST(req: NextRequest) {
     return new NextResponse(null, { status: 204 });
   }
 
-  const { clsTarget, ...sample } = d;
+  const { clsTarget, navType, navs, ...sample } = d;
   // Read in the Vercel function log: `vercel logs ausdilaps.com.au` filtered on "[vitals]".
-  if ((d.cls ?? 0) > 0.1 && clsTarget) {
-    console.warn(`[vitals] shift ${d.cls} on ${d.path} (${d.device}): ${clsTarget}`);
+  if ((d.cls ?? 0) > 0.1) {
+    console.warn(
+      `[vitals] shift ${d.cls} on ${d.path} (${d.device}, ${navType ?? "?"}, ${navs ?? 0} navs): ${clsTarget ?? "no target (Safari, or shift before observer)"}`
+    );
   }
   await recordVitals(sample);
   return new NextResponse(null, { status: 204 });

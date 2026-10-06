@@ -1,6 +1,6 @@
 import { FETCH_TIMEOUT_MS } from "../config";
 import { canonicalUrl, contentHash, externalRefForEmailLink, externalRefForMessage } from "../dedupe";
-import { htmlToText } from "@/lib/html";
+import { htmlToText, MAX_HTML_CHARS, tameHtml } from "@/lib/html";
 import {
   contentLinks,
   isSeededTrusted,
@@ -208,9 +208,41 @@ function fromAddress(message: GraphMessage): string | null {
   return message.from?.emailAddress?.address ?? null;
 }
 
-/** The HTML body, or "" when the message was plain text. */
+/**
+ * The HTML body, or "" when the message was plain text.
+ *
+ * Tamed, because contentLinks() and the extractors match anchors with `[^>]*` regexes that a
+ * crafted body makes cubic — see tameHtml() in lib/html.ts.
+ */
 function htmlBody(message: GraphMessage): string {
-  return message.body?.contentType?.toLowerCase() === "html" ? (message.body.content ?? "") : "";
+  if (message.body?.contentType?.toLowerCase() !== "html") return "";
+  const raw = message.body.content ?? "";
+  // tameHtml() cuts at MAX_HTML_CHARS; say so, or the notices past the cut vanish unlogged.
+  if (raw.length > MAX_HTML_CHARS) {
+    console.warn(`[tenders] ${fromAddress(message)} ${logSubject(message)} is ${raw.length} chars of HTML; read the first ${MAX_HTML_CHARS}`);
+  }
+  return tameHtml(raw);
+}
+
+/** The subject for a log line, quoted — JSON escaping stops a "\n" in it forging a second line. */
+const logSubject = (message: GraphMessage) => JSON.stringify((message.subject ?? "").slice(0, 120));
+
+/**
+ * The most items one email may become. The biggest real bulletin on file has 14 notices.
+ *
+ * ⚠️ Without it one email of 5,000 links is 5,000 pending rows: Phase A writes each one on
+ * the scan's clock, and Phase B classifies 60 a night oldest-first, so every real tender that
+ * arrives after it waits weeks. The overflow is logged, never itemised.
+ */
+export const MAX_ITEMS_PER_MESSAGE = 100;
+
+function capItems(items: RawItem[], message: GraphMessage): RawItem[] {
+  if (items.length <= MAX_ITEMS_PER_MESSAGE) return items;
+  console.warn(
+    `[tenders] ${fromAddress(message)} ${logSubject(message)} parsed to ${items.length} items; ` +
+      `kept the first ${MAX_ITEMS_PER_MESSAGE}`
+  );
+  return items.slice(0, MAX_ITEMS_PER_MESSAGE);
 }
 
 /**
@@ -330,7 +362,7 @@ export function parseMessages(messages: GraphMessage[], source: EmailSource): Ra
     );
 
     if (extracted) {
-      return extracted.map((n) => ({
+      const items = extracted.map((n) => ({
         sourceSlug: source.slug,
         externalRef: n.externalRef,
         title: n.title,
@@ -349,10 +381,11 @@ export function parseMessages(messages: GraphMessage[], source: EmailSource): Ra
         emailFrom: fromAddress(message),
         senderTrusted: source.isTrusted,
       })) satisfies RawItem[];
+      return capItems(items, message);
     }
 
     const mode = resolveParseMode(source.parseMode, htmlBody(message), source.senderDomain);
-    if (mode === "digest") return parseDigest(message, source);
+    if (mode === "digest") return capItems(parseDigest(message, source), message);
 
     // A direct invitation is very often "pricing request attached" with almost no body.
     // Classified on the body alone that reads as no_match and the tender is lost, so the

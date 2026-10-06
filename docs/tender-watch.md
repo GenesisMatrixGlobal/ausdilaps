@@ -38,11 +38,7 @@ So `tenders@ausdilaps.com.au` registers for every portal's alerts and the portal
 
 ### 1. Database
 
-```bash
-npm run migrate
-```
-
-Applies `0006_tender_watch.sql` (and `0004`/`0005` if they haven't run). Needs `DATABASE_URL` — the same value Vercel provisions as `POSTGRES_URL_NON_POOLING`. Migrations are idempotent; re-running is a no-op.
+Apply `0006_tender_watch.sql` (and `0004`/`0005` if they haven't run): paste the file into the Supabase SQL editor for **AusDilaps - Sydney** (`crqfxdywgxtxgpwrojyc`), then run `notify pgrst, 'reload schema';`. Migrations are idempotent; re-running is a no-op.
 
 ### 2. Environment
 
@@ -284,7 +280,6 @@ Four defences, all in the code already:
 ## Verifying
 
 ```bash
-npm run migrate && npm run migrate   # second run proves idempotency
 npm run build && npm run lint
 ```
 

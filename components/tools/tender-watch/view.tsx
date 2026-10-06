@@ -398,7 +398,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
         <div className="mb-6 rounded-lg border border-ad-orange/40 bg-ad-orange/5 p-4">
           <p className="text-sm font-semibold text-ad-ink">Tender Watch isn&rsquo;t set up yet</p>
           <p className="mt-1 text-xs text-ad-muted">
-            {data.unavailable} Run <code className="rounded bg-white px-1">npm run migrate</code> and set the Tender Watch
+            {data.unavailable} Apply the Tender Watch migrations in the Supabase SQL editor and set the Tender Watch
             environment variables — see <code className="rounded bg-white px-1">docs/tender-watch.md</code>.
           </p>
         </div>

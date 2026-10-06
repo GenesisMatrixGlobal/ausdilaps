@@ -1,5 +1,5 @@
-// VIC equivalent of ./qld.ts — same Vicmap_Parcel service already used by
-// lib/property-sizing/vic.ts, but an envelope query instead of a point query.
+// VIC equivalent of ./qld.ts — a Vicmap_Parcel envelope query with a Vicmap_Property
+// fallback. lib/property-sizing/vic.ts now reaches it through ../parcel-at-point.ts.
 // Free, no API key. VIC has no fuzzy-match confidence score (matchScore is always null).
 
 import { geocodeVic, splitStreet } from "@/lib/property-sizing/vic";
@@ -34,8 +34,8 @@ interface PropertyResp {
   }[];
 }
 
-// Same generous timeout as lib/property-sizing/vic.ts — VIC's ArcGIS Online hosted
-// feature services have been observed taking 12-15s to respond.
+// Generous timeout: VIC's ArcGIS Online hosted feature services have been observed taking
+// 12-15s to respond.
 const fetchJson = <T,>(url: string, params: URLSearchParams) => fetchJsonShared<T>(url, { params, timeoutMs: 25_000 });
 
 export async function fetchParcelsVic(addr: {
@@ -77,6 +77,10 @@ export async function fetchParcelsVic(addr: {
  * cadastral parcels with no code change. The fallback's cost is that a property PFI is not a
  * lot/plan — see ./parcel-id.ts — so the lot/plan column is blank while it is in use, and
  * resolve.ts flags that on the markup rather than letting it pass unremarked.
+ *
+ * ⚠️ Keep this a function DECLARATION: lib/property-sizing/vic.ts imports parcel-at-point,
+ * which imports this file, which imports property-sizing/vic.ts — and parcel-at-point's
+ * PROVIDERS map reads this at load time. A `const` arrow would be undefined there.
  */
 export async function fetchParcelsNearPointVic(
   lng: number,

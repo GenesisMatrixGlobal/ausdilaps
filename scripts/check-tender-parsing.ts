@@ -20,7 +20,8 @@
  * When a portal changes format, add a real sample here first, watch it fail, then fix.
  */
 
-import { parseMessages, type GraphMessage, type EmailSource } from "../lib/tenders/sources/mailbox";
+import { parseMessages, MAX_ITEMS_PER_MESSAGE, type GraphMessage, type EmailSource } from "../lib/tenders/sources/mailbox";
+import { htmlToText } from "../lib/html";
 import { detectParseMode, contentLinks, senderDomain, slugForDomain } from "../lib/tenders/senders";
 import { displayTitle, groupItems, groupKey, MERGE_AT } from "../lib/tenders/group";
 import { extractNotices, extractorFor } from "../lib/tenders/sources/extract";
@@ -158,6 +159,48 @@ const mixed = [
 ];
 ok("a source only takes its own domain's mail", parseMessages(mixed, source("somecouncil.nsw.gov.au")).length === 1);
 ok("...and ignores everything else", parseMessages(mixed, source("nobody.example")).length === 0);
+
+// ── A hostile email must not stall or flood the scan ───────────────────────────
+//
+// Anyone can mail tenders@. Before 2026-10-06 the first three bodies below took 7-8 s EACH
+// (the regexes were cubic, so ~60 KB outlasted the scan's 290 s), and one `&#99999999;` threw
+// out of htmlToText and failed the sender's whole source for the night.
+{
+  const hostile = (n: number, unit: string) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
+  const bodies: [string, string][] = [
+    // Every `<a` start x every hidden phrase in one style attribute: the cubic in HIDDEN_ELEMENT.
+    ["hidden-style cubic, 20 KB", `${"<a ".repeat(2_200)}style="${"opacity:0 ".repeat(660)}">${"x".repeat(6_600)}`],
+    // The same shape against contentLinks()'s anchor regex.
+    ["anchor cubic, 20 KB", `${"<a ".repeat(2_200)}${'href="x" '.repeat(740)}>${"x".repeat(6_600)}`],
+    ["150 KB of '<'", "<".repeat(150_000)],
+    // The worst shape left (contentLinks is still ~n² on it) — MAX_HTML_CHARS is what holds it.
+    ["2 MB of unclosed multi-href tags", hostile(2_000_000, `<a ${'href="x" '.repeat(880)}>xx`)],
+  ];
+  for (const [label, html] of bodies) {
+    const t = performance.now();
+    const out = parseMessages([msg({ from: "x@attacker.example", subject: label, html })], source("attacker.example"));
+    htmlToText(html, 200_000);
+    const ms = Math.round(performance.now() - t);
+    ok(`hostile body parses fast: ${label}`, ms < 1_000 && out.length === 1, `${ms} ms, ${out.length} item(s)`);
+  }
+
+  let threw = "";
+  try {
+    parseMessages([msg({ from: "x@attacker.example", subject: "entity", html: "<p>a &#99999999; &#x110000; b</p>" })], source("attacker.example"));
+  } catch (e) {
+    threw = (e as Error).message;
+  }
+  ok("an out-of-range numeric entity does not throw", threw === "", threw);
+
+  // One email, one item per link — so a 5,000-link email used to be 5,000 pending rows ahead
+  // of every real tender in a 60-a-night classify queue.
+  const links = Array.from({ length: MAX_ITEMS_PER_MESSAGE + 50 }, (_, i) =>
+    `<a href="https://buy.nsw.gov.au/opportunity/RFT-${i}">Dilapidation survey number ${i}</a>`).join("\n");
+  const flood = parseMessages([msg({ from: "noreply@buy.nsw.gov.au", subject: "flood", html: links })], buynsw);
+  ok(`an email of ${MAX_ITEMS_PER_MESSAGE + 50} links yields exactly ${MAX_ITEMS_PER_MESSAGE} items`,
+     flood.length === MAX_ITEMS_PER_MESSAGE, `${flood.length}`);
+  ok("...the first ones, in order", flood[0]?.title === "Dilapidation survey number 0", String(flood[0]?.title));
+}
 
 for (const [from, expect] of [
   ["noreply@buy.nsw.gov.au", "buy.nsw.gov.au"],

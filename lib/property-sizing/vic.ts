@@ -1,6 +1,6 @@
 // Victoria lot-size lookup.
-// Pipeline: address -> Google Geocoding API -> point-in-polygon query against
-// Vicmap_Parcel -> Shape__Area in m².
+// Pipeline: address -> Google Geocoding API -> the markup's parcelAtPoint (Vicmap_Parcel, with
+// its Vicmap_Property fallback) -> area computed from the ring, in m².
 //
 // VIC has no working equivalent of QLD's QldLocator / NSW's NSWPoint dedicated
 // geocoder. The obvious candidate — the Vicmap_Address ArcGIS Online hosted
@@ -11,33 +11,22 @@
 // database table, not a real geocoding service. A separate-looking GeocodeServer at
 // corp-geo.mapshare.vic.gov.au/.../VMAddressEZIAdd turned out to be an unconfigured
 // generic Esri World Geocoder template (returns nonsense POI matches). Vicmap_Parcel
-// itself (the actual cadastral data — the thing only VIC government has) is fast and
-// reliable (spatial envelope/point query, not attribute filtering) and is unchanged
-// below. GOOGLE_MAPS_API_KEY is already provisioned for Site Markup's Static Maps
-// calls and already needs the Geocoding API enabled alongside it (see
-// .env.local.example) — no new setup.
+// itself (the actual cadastral data — the thing only VIC government has) is a fast
+// spatial query, not attribute filtering — though not always UP, hence the fallback the
+// markup stack carries and this now shares. GOOGLE_MAPS_API_KEY is already provisioned
+// for Site Markup's Static Maps calls and already needs the Geocoding API enabled
+// alongside it (see .env.local.example) — no new setup.
 
 import type { LotResult } from "./types";
-import { fetchJson as fetchJsonShared } from "@/lib/fetch-json";
 import { geocodeViaGoogle, type GoogleGeocodeOutcome } from "./google-geocode";
-import { arcgisErrorMessage } from "@/lib/arcgis";
 import { ringAreaSqm } from "@/lib/kml/standard-markup/geometry";
-import { latLngRingFromArcgis } from "./rings";
-
-const PARCEL_URL =
-  "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Parcel/FeatureServer/0/query";
-
-interface ParcelFeature {
-  attributes?: { parcel_spi?: string; Shape__Area?: number };
-  geometry?: { rings?: number[][][] };
-}
-interface ParcelResp {
-  features?: ParcelFeature[];
-}
-
-// Vicmap_Parcel (an ArcGIS Online hosted feature service) has been observed taking
-// 12-15s to respond on occasion — more headroom than QLD/NSW's own state-run services.
-const fetchJson = <T,>(url: string, params: URLSearchParams) => fetchJsonShared<T>(url, { params, timeoutMs: 25_000 });
+// ⚠️ A circular import: parcels/vic.ts imports geocodeVic/splitStreet from here. Safe only while
+// nothing on the loop reads an import at LOAD time except a function declaration (hoisted) —
+// parcel-at-point's PROVIDERS map is the one that does.
+import { parcelAtPoint } from "@/lib/kml/standard-markup/parcel-at-point";
+import { isPropertyFallbackId, lotPlanFromId } from "@/lib/kml/standard-markup/parcels/parcel-id";
+import type { ParcelFeature } from "@/lib/kml/standard-markup/parcels/types";
+import { arcgisRingsFromLatLng } from "./rings";
 
 /** Split "8 Ironwood Ct" into a house number + road name, dropping the road type
  *  (VIC's road_name field excludes it) so "Ct" vs "Court" can't cause a mismatch. */
@@ -89,55 +78,41 @@ export async function lookupVic(addr: { street: string; suburb: string; postcode
 
   const { x, y, matchedAddress } = geo;
 
+  // The markup's own point lookup, NOT a query of our own. ⚠️ This used to ask Vicmap_Parcel
+  // directly, so it had none of parcels/vic.ts's Vicmap_Property fallback — and that layer did go
+  // down in production (2026-09-08). Both layers failing still THROWS, and lands below as an
+  // error, never as "no parcel": an outage must not blame the address (lib/arcgis.ts).
+  let parcel: ParcelFeature | null;
   try {
-    const p = await fetchJson<ParcelResp>(
-      PARCEL_URL,
-      new URLSearchParams({
-        geometry: `${x},${y}`,
-        geometryType: "esriGeometryPoint",
-        inSR: "4326",
-        spatialRel: "esriSpatialRelIntersects",
-        outFields: "parcel_spi,Shape__Area",
-        returnGeometry: "true",
-        outSR: "4326",
-        f: "json",
-      })
-    );
-    // An ArcGIS failure arrives as HTTP 200 with an `error` body and no `features`, which
-    // read here as "no titled parcel at this point" — blaming the address for an outage.
-    // See lib/arcgis.ts.
-    const arcgisError = arcgisErrorMessage(p);
-    if (arcgisError) {
-      return { status: "error", flags: [`The VIC cadastre service rejected the query: ${arcgisError}`] };
-    }
-    const feat = p.features?.[0];
-    const area = feat?.attributes?.Shape__Area;
-    if (!feat || area == null) {
-      return {
-        status: "no_parcel",
-        matchedAddress,
-        _lon: x,
-        _lat: y,
-        flags: ["no titled parcel at this point — measure manually"],
-      };
-    }
-    // Area from the ring, never Shape__Area: Vicmap publishes areas in Web Mercator, inflated by
-    // 1/cos²(latitude) — 1.6x at Melbourne. 68 Mason St Newport read 448 m² here against the
-    // 279 m² Building Markup measured from the same ring. Same rule the markup applies.
-    const ring = latLngRingFromArcgis(feat.geometry?.rings);
-    return {
-      status: "ok",
-      lotSizeSqm: ring ? Math.round(ringAreaSqm(ring)) : Math.round(area),
-      lotPlan: feat.attributes?.parcel_spi?.replace(/\\/g, "/") ?? null,
-      matchedAddress,
-      matchScore: null,
-      source: "VIC Vicmap Property",
-      _lon: x,
-      _lat: y,
-      _parcelRings: feat.geometry?.rings,
-      flags: [],
-    };
+    parcel = await parcelAtPoint("VIC", { lat: y, lng: x });
   } catch (e) {
     return { status: "error", matchedAddress, _lon: x, _lat: y, flags: [`cadastre failed: ${(e as Error).message}`] };
   }
+  if (!parcel) {
+    return {
+      status: "no_parcel",
+      matchedAddress,
+      _lon: x,
+      _lat: y,
+      flags: ["no titled parcel at this point — measure manually"],
+    };
+  }
+  return {
+    status: "ok",
+    // Area from the ring, never Shape__Area: Vicmap publishes areas in Web Mercator, inflated by
+    // 1/cos²(latitude) — 1.6x at Melbourne. 68 Mason St Newport read 448 m² here against the
+    // 279 m² Building Markup measured from the same ring. Same rule the markup applies.
+    lotSizeSqm: Math.round(ringAreaSqm(parcel.ring)),
+    // Null on the fallback: a property PFI is not a title reference (parcels/parcel-id.ts).
+    lotPlan: lotPlanFromId(parcel.idKey),
+    matchedAddress,
+    matchScore: null,
+    source: "VIC Vicmap Property",
+    _lon: x,
+    _lat: y,
+    _parcelRings: arcgisRingsFromLatLng(parcel.ring),
+    flags: isPropertyFallbackId(parcel.idKey)
+      ? ["VIC's parcel cadastre was unavailable — property boundary from Vicmap Property, no lot/plan. Check the outline before quoting."]
+      : [],
+  };
 }

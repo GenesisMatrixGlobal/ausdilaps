@@ -46,7 +46,7 @@ if (ON_DEPLOY && process.env.VERCEL_ENV !== "production") {
   process.exit(0);
 }
 
-// Same as scripts/migrate.mjs — dotenv's default is .env, which this repo doesn't use.
+// dotenv's default is .env, which this repo doesn't use.
 // Absent on Vercel, where the values come from the build environment instead.
 config({ path: ".env.local" });
 

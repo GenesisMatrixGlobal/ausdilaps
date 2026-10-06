@@ -86,7 +86,9 @@ function anchorText(inner: string): string {
  * for the two passes to disagree.
  */
 export function contentLinks(html: string, domain: string | null): DigestLink[] {
-  const anchors = [...html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
+  // href read in a LOOKAHEAD: the old `[^>]*href…[^>]*>` backtracked quadratically on a body
+  // of unclosed many-href tags. Greedy `[^<>]*` keeps picking the LAST href in a tag, as before.
+  const anchors = [...html.matchAll(/<a\b(?=[^<>]*href\s*=\s*["']([^"']+)["'])[^<>]*>([\s\S]*?)<\/a>/gi)];
 
   const kept: DigestLink[] = [];
   const seen = new Set<string>();

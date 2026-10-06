@@ -2,7 +2,7 @@
 //
 // /admin/staff can invite everyone else, but it needs an admin to be signed in,
 // so the very first superadmin has to come from outside the app. Run this once,
-// straight after `npm run migrate`:
+// straight after the migrations are applied:
 //
 //   node scripts/invite-admin.mjs rhys.m@ausdilaps.com.au "Rhys Morgan"
 //

@@ -8,7 +8,7 @@
 
 The full marketing + lead + insights build (Phases 1–7 of the plan) is **built, green, and live** on the Vercel preview **https://ausdilaps.vercel.app** (auto-deploys on every push to `main`). Latest deploys verified: all page types return `200`. The live `ausdilaps.com.au` domain is **not** cut over yet (still the old WordPress site).
 
-Stack: Next.js 16.2.4 (App Router, Turbopack) · React 19 · TS · Tailwind v4 · shadcn. Flat root, `@/*` alias. Run: `npm run dev` / `npm run build` / `npm run migrate`.
+Stack: Next.js 16.2.4 (App Router, Turbopack) · React 19 · TS · Tailwind v4 · shadcn. Flat root, `@/*` alias. Run: `npm run dev` / `npm run build`.
 
 ---
 
@@ -50,7 +50,7 @@ Stack: Next.js 16.2.4 (App Router, Turbopack) · React 19 · TS · Tailwind v4 �
 - **`.env.local` exists locally** (git-ignored) with known values filled; Supabase keys are **blank locally** (they live in Vercel), so the form won't persist if run purely locally without adding them.
 - **Resend: NOT live yet.** Interim plan agreed: zero-domain `onboarding@resend.dev` sender, `ADMIN_EMAIL=info@pixelmatrix.com.au`, `LEAD_TEST_MODE=true`. **Waiting on the `RESEND_API_KEY`** (must be from a Resend account registered under info@pixelmatrix.com.au, because resend.dev only delivers to the account's own email). Until added, leads still save; no email is sent. At go-live: switch `RESEND_FROM_EMAIL` to a verified ausdilaps.com.au address, `ADMIN_EMAIL` → info@ausdilaps.com.au, `LEAD_TEST_MODE=false`.
 - **GA4**: `NEXT_PUBLIC_GA4_ID=G-81JV6BQ2R5` (env-gated).
-- `npm run migrate` runner exists (`scripts/migrate.mjs`, `pg` devDep) — needs `DATABASE_URL` in `.env.local` (Supabase → Settings → Database → Connection string → URI).
+- Migrations: paste the file into the Supabase SQL editor for **AusDilaps - Sydney** (`crqfxdywgxtxgpwrojyc`), then run `notify pgrst, 'reload schema';`. (`npm run migrate` was deleted 2026-10-06 — it pointed at the retired Tokyo database.)
 
 ---
 

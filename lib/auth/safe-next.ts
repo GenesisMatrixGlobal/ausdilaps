@@ -25,6 +25,11 @@ export function safeNext(next: string | null | undefined): string {
   }
   if (url.origin !== SENTINEL) return FALLBACK;
   const path = url.pathname + url.search;
+  // ⚠️ Check AGAIN after parsing. URL collapses dot segments, so "/.//evil.com" passes the
+  // test above and comes out as "//evil.com" — off-site the moment it hits a Location
+  // header (found in the 2026-10-06 sweep). The sentinel check can't see it: relative to
+  // the sentinel, "//evil.com" is still a path.
+  if (!/^\/(?![/\\])/.test(path)) return FALLBACK;
   // Never back onto a login route — that would loop.
   if (path.startsWith("/staff/login") || path.startsWith("/admin/login")) return FALLBACK;
   return path;

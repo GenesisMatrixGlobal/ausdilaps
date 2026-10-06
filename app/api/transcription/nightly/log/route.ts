@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isStaffInAnyDepartment } from "@/lib/auth/is-staff";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { selectAll } from "@/lib/supabase/select-all";
 import { TRANSCRIPTION_ALLOW_UNAUTHED_ENV, TRANSCRIPTION_DEPARTMENTS } from "@/lib/transcription/config";
 import { addDays, isIsoDate, sydneyNow } from "@/lib/transcription/nightly/dates";
 import { selectFolders } from "@/lib/transcription/nightly/run";
@@ -45,13 +46,21 @@ export async function POST(req: NextRequest) {
   const [runs, folders, files] = await Promise.all([
     db.from("transcription_nightly_runs").select("run_date, status, day_folder_id, day_folder_path, last_tick_at, report_sent_at, report, error").gte("run_date", since).order("run_date", { ascending: false }),
     listFolders(since),
-    pageAll(since),
+    selectAll<Slim>((from, to) =>
+      db
+        .from("transcription_nightly_files")
+        .select("run_date, inspector_folder_id, status, flags, duration_seconds")
+        .gte("run_date", since)
+        .order("created_at")
+        .order("id")
+        .range(from, to),
+    ),
   ]);
-  const err = runs.error ?? folders.error;
+  const err = runs.error ?? folders.error ?? files.error;
   if (err) return NextResponse.json({ ok: false, error: missingTable(err.message) }, { status: 500 });
 
   const out = (runs.data ?? []).map((r) => {
-    const fs = files.filter((f) => f.run_date === r.run_date);
+    const fs = (files.data ?? []).filter((f) => f.run_date === r.run_date);
     const withAudio = new Set(fs.map((f) => f.inspector_folder_id));
     const fl = (folders.data ?? []).filter((f) => f.run_date === r.run_date);
     const report = r.report as { live?: boolean; emailed?: boolean; sendError?: string | null } | null;
@@ -81,31 +90,17 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, runs: out });
 }
 
+// ⚠️ Both list reads are PAGED: PostgREST stops at 1,000 rows without an error, and a busy
+// six weeks of job folders can pass that. Ordered on the INSERT time then `id`: `run_date`
+// ties across a whole night, and `id` alone is a random uuid, so a row the 4-7am cron inserts
+// between two page requests would shift the offsets and be counted twice or not at all.
 type Slim = { run_date: string; inspector_folder_id: string | null; status: string; flags: number | null; duration_seconds: number | null };
-
-/** PostgREST stops at 1,000 rows; a busy six weeks passes that. */
-async function pageAll(since: string): Promise<Slim[]> {
-  const db = createAdminClient();
-  const out: Slim[] = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await db
-      .from("transcription_nightly_files")
-      .select("run_date, inspector_folder_id, status, flags, duration_seconds")
-      .gte("run_date", since)
-      .order("id")
-      .range(from, from + 999);
-    if (error || !data) break;
-    out.push(...(data as Slim[]));
-    if (data.length < 1000) break;
-  }
-  return out;
-}
 
 /** Folder rows for the list; without notes_files on a database from the first paste of 0025. */
 async function listFolders(since: string): Promise<{ data: { run_date: string; box_folder_id: string; notes_files?: string[] | null }[] | null; error: { message: string } | null }> {
   const db = createAdminClient();
-  const res = await db.from("transcription_nightly_folders").select("run_date, box_folder_id, notes_files").gte("run_date", since);
-  if (res.error && /notes_files/.test(res.error.message)) return db.from("transcription_nightly_folders").select("run_date, box_folder_id").gte("run_date", since);
+  const res = await selectAll((from, to) => db.from("transcription_nightly_folders").select("run_date, box_folder_id, notes_files").gte("run_date", since).order("first_seen_at").order("id").range(from, to));
+  if (res.error && /notes_files/.test(res.error.message)) return selectAll((from, to) => db.from("transcription_nightly_folders").select("run_date, box_folder_id").gte("run_date", since).order("first_seen_at").order("id").range(from, to));
   return res;
 }
 

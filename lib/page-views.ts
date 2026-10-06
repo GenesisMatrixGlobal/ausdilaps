@@ -7,6 +7,7 @@
 
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { selectAll } from "@/lib/supabase/select-all";
 
 export type PageViewEvent =
   | "view_locked"
@@ -184,11 +185,19 @@ export async function loadSamplesStats(): Promise<SamplesStats> {
   try {
     const now = Date.now();
     const since = new Date(now - 30 * DAY).toISOString();
-    const { data, error } = await createAdminClient()
-      .from("page_views")
-      .select("event, occurred_at, rendered")
-      .eq("path", SAMPLES_VIEW_PATH)
-      .gte("occurred_at", since);
+    const db = createAdminClient();
+    // Paged past PostgREST's 1,000-row cap, which it hits silently — the tile would count a
+    // subset and look right.
+    const { data, error } = await selectAll((from, to) =>
+      db
+        .from("page_views")
+        .select("event, occurred_at, rendered")
+        .eq("path", SAMPLES_VIEW_PATH)
+        .gte("occurred_at", since)
+        .order("occurred_at")
+        .order("id")
+        .range(from, to),
+    );
     if (error) throw error;
 
     const week = now - 7 * DAY;

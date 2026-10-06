@@ -9,6 +9,9 @@ import { WebVitalsReporter } from "@/components/marketing/web-vitals-reporter";
 
 const GA_ID = process.env.NEXT_PUBLIC_GA4_ID;
 
+// The generic fallback families are appended in globals.css (--font-sans / --font-heading),
+// NOT via next/font's `fallback` option — under Turbopack that option silently drops the
+// metric-matched "Inter Fallback" face, which is what keeps desktop from reflowing.
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
@@ -35,7 +38,15 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en-AU" className={`${inter.variable} ${spaceGrotesk.variable}`}>
+    // data-scroll-behavior: globals.css sets `scroll-behavior: smooth`, and without this
+    // Next's reset-to-top on every client navigation ANIMATED — a footer link opened the next
+    // page by sliding up from 12,000px. With it, Next turns smoothing off for route changes
+    // only; in-page anchors keep it.
+    <html
+      lang="en-AU"
+      className={`${inter.variable} ${spaceGrotesk.variable}`}
+      data-scroll-behavior="smooth"
+    >
       <body>
         <JsonLd data={[organizationSchema(), localBusinessSchema()]} />
         {children}

@@ -155,6 +155,35 @@ export function itemFrom(row: ListRow, url: string, detail: ReturnType<typeof pa
   };
 }
 
+/**
+ * A tender's detail page, following a redirect only while it stays on TENDER_URL.
+ *
+ * ⚠️ Not fetch's default `redirect: "follow"`: the URL passed the allowlist, but wherever the
+ * council subdomain 30x'd to never had to — the hole the list postback's check closes. A
+ * redirect off it returns null, and the item falls back to its list row.
+ */
+async function fetchDetail(url: string): Promise<string | null> {
+  // ONE clock for every hop, as `redirect: "follow"` had — per hop, three redirects could
+  // take 60 s and run a batch well past the crawl budget.
+  const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+  for (let hop = 0; hop < 3; hop++) {
+    const r = await fetch(url, {
+      headers: { "user-agent": UA },
+      redirect: "manual",
+      signal,
+      cache: "no-store",
+    });
+    if (r.status < 300 || r.status >= 400) return r.ok ? r.text() : null;
+    await r.body?.cancel();
+    const location = r.headers.get("location");
+    if (!location) return null; // a 3xx with nowhere to go would re-fetch the same URL
+    const next = new URL(location, url).toString();
+    if (!TENDER_URL.test(next)) return null;
+    url = next;
+  }
+  return null;
+}
+
 export async function fetchETenderBox(): Promise<FetchResult> {
   const started = Date.now();
   const late = () => Date.now() - started > BUDGET_MS;
@@ -226,8 +255,8 @@ export async function fetchETenderBox(): Promise<FetchResult> {
       batch.map(async ({ url }) => {
         if (late()) return null;
         try {
-          const r = await fetch(url, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), cache: "no-store" });
-          return r.ok ? parseDetail(await r.text()) : null;
+          const page = await fetchDetail(url);
+          return page ? parseDetail(page) : null;
         } catch {
           return null;
         }

@@ -3,7 +3,7 @@ import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadToolUsage } from "@/lib/tools/usage";
 import { loadSamplesStats, type SamplesStats } from "@/lib/page-views";
-import { loadWebVitals, type WebVitals } from "@/lib/web-vitals";
+import { emptyDevice, loadWebVitals, type WebVitals } from "@/lib/web-vitals";
 import { GAME_SLUGS } from "@/lib/tools/registry";
 import { loadPageSpeed, PAGESPEED_TARGETS, type PageSpeedScore } from "@/lib/pagespeed";
 import { ASSET_COUNT_RANGES } from "@/lib/leads";
@@ -288,7 +288,7 @@ function empty(unavailable: string, now: number) {
     } as SamplesStats,
     vitals: {
       samples: 0,
-      p75: { lcp: null, inp: null, cls: null },
+      byDevice: { mobile: emptyDevice(), desktop: emptyDevice() },
       slowest: [],
       unavailable,
     } as WebVitals,

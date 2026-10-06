@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Fragment } from "react";
 import { headers } from "next/headers";
 import { requireAdmin } from "@/lib/auth/session";
 import { loadDashboard, type Alert, type Breakdown } from "@/lib/admin/dashboard";
@@ -9,7 +10,7 @@ import { Sparkline } from "@/components/staff/sparkline";
 import { ComingSoon } from "@/components/staff/coming-soon";
 import { ASSET_COUNT_RANGES } from "@/lib/leads";
 import type { SamplesStats } from "@/lib/page-views";
-import { rate, VITALS_THRESHOLDS, type VitalKey, type WebVitals } from "@/lib/web-vitals";
+import { DEVICES, rate, VITALS_THRESHOLDS, type Device, type VitalKey, type WebVitals } from "@/lib/web-vitals";
 
 /**
  * The GM's dashboard.
@@ -266,11 +267,14 @@ function FieldVitals({ v }: { v: WebVitals }) {
     { key: "cls", label: "Shift (CLS)" },
   ];
 
+  const share = (d: Device) =>
+    v.samples === 0 ? 0 : Math.round((v.byDevice[d].samples / v.samples) * 100);
+
   return (
     <div className="border-t border-ad-border px-4 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-ad-muted">
-          Real visitors \u00b7 7 days
+          Real visitors · 7 days
         </p>
         <p className="text-xs text-ad-muted">
           {v.unavailable
@@ -281,22 +285,38 @@ function FieldVitals({ v }: { v: WebVitals }) {
         </p>
       </div>
 
-      <div className="mt-2 flex gap-6">
-        {KEYS.map(({ key, label }) => {
-          const n = v.p75[key];
-          const r = v.unavailable ? "none" : rate(key, n);
-          return (
-            <div key={key}>
-              <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-ad-muted">
-                {label}
-              </p>
-              <p className={`text-base font-semibold tabular-nums ${TONE[r]}`}>{fmt(key, n)}</p>
+      {/* Device = viewport under 768px at load (web-vitals-reporter.tsx), so most tablets
+          count as desktop. Page views, not people. Metrics run DOWN and devices ACROSS:
+          the panel is a third of the page wide and three metric columns did not fit. */}
+      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] items-baseline gap-x-3 gap-y-1.5">
+        <span />
+        {DEVICES.map((d) => (
+          <div key={d}>
+            <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-ad-muted">{d}</p>
+            <p className="text-xs tabular-nums text-ad-ink">
+              {v.unavailable ? "\u2014" : `${share(d)}% · ${v.byDevice[d].samples}`}
+            </p>
+          </div>
+        ))}
+        {KEYS.map(({ key, label }) => (
+          <Fragment key={key}>
+            <div>
+              <p className="text-xs text-ad-ink">{label}</p>
               <p className="text-[0.6rem] text-ad-muted/70">
-                good \u2264 {key === "cls" ? VITALS_THRESHOLDS[key].good : `${VITALS_THRESHOLDS[key].good}ms`}
+                good ≤ {key === "cls" ? VITALS_THRESHOLDS[key].good : `${VITALS_THRESHOLDS[key].good}ms`}
               </p>
             </div>
-          );
-        })}
+            {DEVICES.map((d) => {
+              const n = v.byDevice[d].p75[key];
+              const r = v.unavailable ? "none" : rate(key, n);
+              return (
+                <p key={d} className={`text-base font-semibold tabular-nums ${TONE[r]}`}>
+                  {fmt(key, n)}
+                </p>
+              );
+            })}
+          </Fragment>
+        ))}
       </div>
 
       {v.slowest.length > 0 && (
@@ -311,7 +331,7 @@ function FieldVitals({ v }: { v: WebVitals }) {
                   {p.path}
                 </span>
                 <span className="shrink-0 tabular-nums text-ad-muted">
-                  {(p.lcpP75 / 1000).toFixed(1)}s \u00b7 {p.samples}
+                  {(p.lcpP75 / 1000).toFixed(1)}s · {p.samples}
                 </span>
               </li>
             ))}

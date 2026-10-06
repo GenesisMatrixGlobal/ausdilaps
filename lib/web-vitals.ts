@@ -63,11 +63,23 @@ export function rate(key: VitalKey, p75: number | null): VitalRating {
   return p75 <= t.good ? "good" : p75 <= t.poor ? "needs-work" : "poor";
 }
 
-export type WebVitals = {
-  /** How many page views contributed, over the window. */
+export type Device = VitalsSample["device"];
+export const DEVICES: readonly Device[] = ["mobile", "desktop"];
+
+/** One device's slice of the window. */
+export type DeviceVitals = {
   samples: number;
   /** 75th percentile per metric, null when nothing was recorded for it. */
   p75: Record<VitalKey, number | null>;
+};
+
+export type WebVitals = {
+  /** How many page views contributed, over the window. */
+  samples: number;
+  /** Split by device, never blended: a phone on 4G and a desktop on office fibre are two
+   *  different sites, and one combined p75 hides whichever is worse. The mobile-only CLS of
+   *  0.7+ on cold homepage loads (Sep–Oct 2026) was invisible in the blended figure. */
+  byDevice: Record<Device, DeviceVitals>;
   /** Worst pages by LCP p75, only counting paths with enough samples to mean anything. */
   slowest: { path: string; lcpP75: number; samples: number }[];
   /** Set when the table can't be read — most likely 0016 not applied yet. */
@@ -75,6 +87,11 @@ export type WebVitals = {
 };
 
 const DAY = 86_400_000;
+
+export const emptyDevice = (): DeviceVitals => ({
+  samples: 0,
+  p75: { lcp: null, inp: null, cls: null },
+});
 /** Below this a percentile is noise, not a measurement. A single slow phone on a train
  *  should not put a page at the top of a "slowest" list. */
 const MIN_SAMPLES_PER_PATH = 5;
@@ -89,7 +106,7 @@ function percentile(values: number[], p: number): number | null {
 export async function loadWebVitals(days = 7): Promise<WebVitals> {
   const empty: WebVitals = {
     samples: 0,
-    p75: { lcp: null, inp: null, cls: null },
+    byDevice: { mobile: emptyDevice(), desktop: emptyDevice() },
     slowest: [],
     unavailable: null,
   };
@@ -97,13 +114,30 @@ export async function loadWebVitals(days = 7): Promise<WebVitals> {
     const since = new Date(Date.now() - days * DAY).toISOString();
     const { data, error } = await createAdminClient()
       .from("web_vitals")
-      .select("path, lcp_ms, inp_ms, cls")
-      .gte("occurred_at", since);
+      .select("path, device, lcp_ms, inp_ms, cls")
+      .gte("occurred_at", since)
+      // Visitors means the public site. Staff tools and Command Centre are all desktop and
+      // were 11% of the sample (Oct 2026) — enough to move the device split by 5 points and
+      // to fill "slowest pages" with internal tools.
+      .not("path", "like", "/admin%")
+      .not("path", "like", "/staff%");
     if (error) throw error;
 
     const rows = data ?? [];
-    const nums = (pick: (r: (typeof rows)[number]) => number | null) =>
-      rows.map(pick).filter((v): v is number => v != null && Number.isFinite(v));
+    type Row = (typeof rows)[number];
+    const nums = (list: Row[], pick: (r: Row) => number | null) =>
+      list.map(pick).filter((v): v is number => v != null && Number.isFinite(v));
+    const sliceFor = (device: Device): DeviceVitals => {
+      const list = rows.filter((r) => r.device === device);
+      return {
+        samples: list.length,
+        p75: {
+          lcp: percentile(nums(list, (r) => r.lcp_ms as number | null), 75),
+          inp: percentile(nums(list, (r) => r.inp_ms as number | null), 75),
+          cls: percentile(nums(list, (r) => (r.cls == null ? null : Number(r.cls))), 75),
+        },
+      };
+    };
 
     const byPath = new Map<string, number[]>();
     for (const r of rows) {
@@ -115,11 +149,7 @@ export async function loadWebVitals(days = 7): Promise<WebVitals> {
 
     return {
       samples: rows.length,
-      p75: {
-        lcp: percentile(nums((r) => r.lcp_ms as number | null), 75),
-        inp: percentile(nums((r) => r.inp_ms as number | null), 75),
-        cls: percentile(nums((r) => (r.cls == null ? null : Number(r.cls))), 75),
-      },
+      byDevice: { mobile: sliceFor("mobile"), desktop: sliceFor("desktop") },
       slowest: [...byPath.entries()]
         .filter(([, v]) => v.length >= MIN_SAMPLES_PER_PATH)
         .map(([path, v]) => ({ path, lcpP75: percentile(v, 75) ?? 0, samples: v.length }))

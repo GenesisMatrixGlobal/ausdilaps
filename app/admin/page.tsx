@@ -146,14 +146,19 @@ function withZeros(found: Breakdown[], all: readonly string[]) {
   return all.map((label) => ({ label, count: map.get(label) ?? 0 }));
 }
 
-function ScoreRow({ label, scores, error }: {
+function ScoreRow({ label, scores, error, note }: {
   label: string;
   scores: readonly (readonly [string, number | null])[];
   error?: string;
+  /** Muted, beside the label — e.g. how old the scores are. */
+  note?: string;
 }) {
   return (
     <div className="border-b border-ad-border px-4 py-3 last:border-b-0">
-      <p className="text-sm font-medium text-ad-ink">{label}</p>
+      <p className="text-sm font-medium text-ad-ink">
+        {label}
+        {note && <span className="ml-2 text-xs font-normal text-ad-muted">{note}</span>}
+      </p>
       {error ? (
         <p className="mt-1 text-xs text-ad-amber">{error}</p>
       ) : (
@@ -477,6 +482,10 @@ export default async function AdminHomePage() {
                   key={p.url}
                   label={p.label}
                   error={p.error && `Couldn't measure — ${p.error}`}
+                  // Scores refresh daily, so 2+ days means the refresh keeps failing and this
+                  // is the last good run — or nobody has opened the dashboard for a while
+                  // (that load refreshes it in the background).
+                  note={p.ageDays != null && p.ageDays >= 2 ? `measured ${p.ageDays} days ago` : undefined}
                   scores={[
                     ["Speed", p.performance],
                     ["A11y", p.accessibility],

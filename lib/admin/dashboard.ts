@@ -1,11 +1,10 @@
 import "server-only";
-import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadToolUsage } from "@/lib/tools/usage";
 import { loadSamplesStats, type SamplesStats } from "@/lib/page-views";
 import { emptyDevice, loadWebVitals, type WebVitals } from "@/lib/web-vitals";
 import { GAME_SLUGS } from "@/lib/tools/registry";
-import { loadPageSpeed, PAGESPEED_TARGETS, type PageSpeedScore } from "@/lib/pagespeed";
+import { loadPageSpeed, type PageSpeedScore } from "@/lib/pagespeed";
 import { ASSET_COUNT_RANGES } from "@/lib/leads";
 
 /**
@@ -47,19 +46,6 @@ export type Alert = {
 export type Breakdown = { label: string; count: number };
 
 export type DashboardData = Awaited<ReturnType<typeof loadDashboard>>;
-
-/**
- * PageSpeed takes 10-30s per URL, so it is cached hard and separately. The dashboard
- * renders whatever the last run produced; a cold cache shows a pending state rather than
- * making anyone wait.
- */
-const cachedPageSpeed = unstable_cache(
-  async (origin: string) => loadPageSpeed(origin),
-  // The measured paths are part of the key, so editing PAGESPEED_TARGETS busts the cache
-  // instead of serving yesterday's scores under today's labels for up to 24 hours.
-  ["pagespeed", PAGESPEED_TARGETS.map((t) => t.path).join(",")],
-  { revalidate: 86_400, tags: ["pagespeed"] }
-);
 
 type LeadRow = {
   created_at: string;
@@ -113,7 +99,7 @@ export async function loadDashboard(origin: string) {
         .order("created_at", { ascending: false }),
       db.from("profiles").select("is_active, last_seen_at"),
       loadToolUsage(),
-      cachedPageSpeed(origin).catch(() => [] as PageSpeedScore[]),
+      loadPageSpeed(origin),
       loadSamplesStats(),
       loadWebVitals(),
     ]);

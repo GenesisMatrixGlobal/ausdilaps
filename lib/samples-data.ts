@@ -59,7 +59,7 @@ export const SAMPLES_FAQ: FaqItem[] = [
   },
   {
     q: "What's included in a dilapidation report?",
-    a: "A detailed description of each inspected structure, all existing damage and defects (cracks, settling, movement, leaks, wear), high-resolution geo-referenced photographic and video records, repair or maintenance recommendations where issues are found, and a clear summary signed off by our engineers.",
+    a: "A detailed description of each inspected structure, all existing damage and defects (cracks, settling, movement, leaks, wear), high-resolution geo-referenced photographic and video records, and a clear summary signed off by our engineers.",
   },
   {
     q: "Can I get a sample for my specific project type?",

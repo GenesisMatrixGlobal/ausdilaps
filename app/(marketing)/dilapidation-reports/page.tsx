@@ -226,7 +226,7 @@ const INCLUSIONS = [
   { title: "Existing damage & defects", body: "Cracks, settling, movement, leaks and wear — recorded with severity and location." },
   { title: "Photographic & video record", body: "High-resolution, location-referenced imagery — ultra-high-quality and defensible." },
   { title: "Geo-referenced imagery", body: "GPS-logged capture so pre and post-works images compare to the exact spot." },
-  { title: "Recommendations", body: "Repair or maintenance recommendations where existing issues are identified." },
+  { title: "A record, not repair advice", body: "Reports document condition. Cause-of-damage findings and repair recommendations come with a DOA or SIA, quoted on request." },
   { title: "Summary of findings", body: "Clear conclusions and a defensible record, signed off by our engineers." },
 ];
 

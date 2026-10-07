@@ -23,7 +23,7 @@ export const FAQ: FaqCategory[] = [
       },
       {
         q: "What is included in a dilapidation report?",
-        a: "A comprehensive record of the inspected property's condition, interior and exterior: property age, construction type and notable features; existing damage or defects such as cracks, settling or leaks; nearby construction that may impact the property; photographs or video documentation; repair or maintenance recommendations; and a summary of findings.",
+        a: "A comprehensive record of the inspected property's condition, interior and exterior: property age, construction type and notable features; existing damage or defects such as cracks, settling or leaks; nearby construction that may impact the property; photographs or video documentation; and a summary of findings. Repair recommendations aren't part of a standard report — they come with a Defect Origin Assessment or Structural Integrity Assessment, on request.",
       },
       {
         q: "How long does it take to complete a dilapidation report?",
@@ -35,7 +35,7 @@ export const FAQ: FaqCategory[] = [
       },
       {
         q: "What happens if the dilapidation report identifies issues?",
-        a: "The report outlines the specific problems and severity, with recommendations such as crack repair, wall reinforcement or foundation stabilisation. A pre-construction report serves as the reference point for determining new damage during works, supporting compensation claims and prompt resolution.",
+        a: "The report records each issue with its location, size and photographs — it documents condition rather than recommending repairs. If you need the cause assessed or repair advice, that's a Defect Origin Assessment or Structural Integrity Assessment, quoted separately. A pre-construction report serves as the reference point for determining new damage during works, supporting compensation claims and prompt resolution.",
       },
     ],
   },

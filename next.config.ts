@@ -17,6 +17,12 @@ const nextConfig: NextConfig = {
     // small enough that the very first real PDF would fail with an opaque error. Matches
     // MAX_UPLOAD_BYTES in lib/knowledge/extract.ts; change both together.
     serverActions: { bodySizeLimit: "25mb" },
+    // Reuse a dynamic page the browser rendered in the last 30s instead of asking the
+    // server again (Next's default is 0). Flicking between Command Centre tabs is then
+    // instant. APP-WIDE, so any dynamic page can show data up to 30s old after navigating
+    // back to it; server actions that call revalidatePath() still clear it. Nothing here
+    // relies on a fresh read for safety — e.g. the tender send route refuses a resend (409).
+    staleTimes: { dynamic: 30 },
   },
   async redirects() {
     return REDIRECTS;

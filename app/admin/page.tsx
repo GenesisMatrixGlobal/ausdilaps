@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Fragment } from "react";
+import { Fragment, Suspense } from "react";
 import { headers } from "next/headers";
 import { requireAdmin } from "@/lib/auth/session";
 import { loadDashboard, type Alert, type Breakdown } from "@/lib/admin/dashboard";
@@ -9,6 +9,7 @@ import { dollars, loadApiUsage, type ApiUsage } from "@/lib/admin/api-usage";
 import { Sparkline } from "@/components/staff/sparkline";
 import { ComingSoon } from "@/components/staff/coming-soon";
 import { ASSET_COUNT_RANGES } from "@/lib/leads";
+import { loadPageSpeed, PAGESPEED_TARGETS } from "@/lib/pagespeed";
 import type { SamplesStats } from "@/lib/page-views";
 import { DEVICES, rate, VITALS_THRESHOLDS, type Device, type VitalKey, type WebVitals } from "@/lib/web-vitals";
 
@@ -179,6 +180,55 @@ function ScoreRow({ label, scores, error, note }: {
       )}
     </div>
   );
+}
+
+const LAB_SCORE_NAMES = ["Speed", "A11y", "SEO", "Practices"] as const;
+
+/**
+ * Google's lab scores, in their OWN Suspense boundary.
+ *
+ * Scores are cached a day per page (lib/pagespeed.ts), but a miss is a live Lighthouse run
+ * of 10-30 seconds with a 60-second timeout. Loaded with everything else it held the whole
+ * dashboard for that long; streamed in here, the page paints at once and only these rows wait.
+ */
+async function LabScores({ origin }: { origin: string }) {
+  const scores = await loadPageSpeed(origin);
+  if (scores.length === 0) {
+    return (
+      <p className="px-4 py-3 text-sm text-ad-muted">
+        Not measured yet — the first check runs in the background.
+      </p>
+    );
+  }
+  return scores.map((p) => (
+    <ScoreRow
+      key={p.url}
+      label={p.label}
+      error={p.error && `Couldn't measure — ${p.error}`}
+      // Scores refresh daily, so 2+ days means the refresh keeps failing and this
+      // is the last good run — or nobody has opened the dashboard for a while
+      // (that load refreshes it in the background).
+      note={p.ageDays != null && p.ageDays >= 2 ? `measured ${p.ageDays} days ago` : undefined}
+      scores={[
+        [LAB_SCORE_NAMES[0], p.performance],
+        [LAB_SCORE_NAMES[1], p.accessibility],
+        [LAB_SCORE_NAMES[2], p.seo],
+        [LAB_SCORE_NAMES[3], p.bestPractices],
+      ] as const}
+    />
+  ));
+}
+
+/** Same rows, same height, while LabScores is still measuring — so nothing jumps when it lands. */
+function LabScoresPending() {
+  return PAGESPEED_TARGETS.map((t) => (
+    <ScoreRow
+      key={t.path}
+      label={t.label}
+      note="measuring…"
+      scores={LAB_SCORE_NAMES.map((name) => [name, null] as const)}
+    />
+  ));
 }
 
 /** What the tools spent on Google and Anthropic this month (migration 0018, lib/api-usage.ts):
@@ -363,7 +413,7 @@ export default async function AdminHomePage() {
     process.env.NEXT_PUBLIC_SITE_URL ??
     (host.startsWith("localhost") ? "https://ausdilaps.vercel.app" : `https://${host}`);
 
-  const [d, apiUsage, tenders] = await Promise.all([loadDashboard(origin), loadApiUsage(), loadTenderReview()]);
+  const [d, apiUsage, tenders] = await Promise.all([loadDashboard(), loadApiUsage(), loadTenderReview()]);
   const { enquiries: e, staff, tools } = d;
 
   const delta = e.thisWeek - e.lastWeek;
@@ -472,29 +522,9 @@ export default async function AdminHomePage() {
 
         <Section title="Site health" hint="lab scores daily, real visitors live">
           <Panel>
-            {d.pageSpeed.length === 0 ? (
-              <p className="px-4 py-3 text-sm text-ad-muted">
-                Not measured yet — the first check runs in the background.
-              </p>
-            ) : (
-              d.pageSpeed.map((p) => (
-                <ScoreRow
-                  key={p.url}
-                  label={p.label}
-                  error={p.error && `Couldn't measure — ${p.error}`}
-                  // Scores refresh daily, so 2+ days means the refresh keeps failing and this
-                  // is the last good run — or nobody has opened the dashboard for a while
-                  // (that load refreshes it in the background).
-                  note={p.ageDays != null && p.ageDays >= 2 ? `measured ${p.ageDays} days ago` : undefined}
-                  scores={[
-                    ["Speed", p.performance],
-                    ["A11y", p.accessibility],
-                    ["SEO", p.seo],
-                    ["Practices", p.bestPractices],
-                  ] as const}
-                />
-              ))
-            )}
+            <Suspense fallback={<LabScoresPending />}>
+              <LabScores origin={origin} />
+            </Suspense>
             <FieldVitals v={d.vitals} />
             <div className="border-t border-ad-border px-4 py-2.5">
               <a

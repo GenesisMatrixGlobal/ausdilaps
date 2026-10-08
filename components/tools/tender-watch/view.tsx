@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { TabBar } from "@/components/ui/tab-bar";
 import { sameParty, senderOrigin } from "@/lib/tenders/display";
 import { EmptyState } from "@/components/staff/empty-state";
@@ -60,7 +61,7 @@ type Pane = (typeof PANES)[number]["key"];
 /**
  * The queue is the default and everything else is an archive.
  *
- * "Rejected" reads from `items` rather than `groups` — a no_match row is never an
+ * "Rejected" reads from `rejected` (rows) rather than `groups` — a no_match row is never an
  * opportunity, so grouping it would be work nobody looks at.
  */
 const FILTERS = [
@@ -108,6 +109,7 @@ function hostOf(url: string): string | null {
 }
 
 export function TenderWatchView({ initial }: { initial: TenderSummary }) {
+  const router = useRouter();
   const [data, setData] = useState(initial);
   const [pane, setPane] = useState<Pane>("opportunities");
   const [filter, setFilter] = useState<Filter>("queue");
@@ -148,6 +150,25 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
     setFlash(null);
   }
 
+  /**
+   * Take a summary a route handler returned — and drop Next's client copy of this page.
+   *
+   * ⚠️ Both halves, every time. `staleTimes.dynamic` (next.config.ts) keeps a visited page's
+   * server render for 30 s, and a fetch to a route handler never invalidates it: send three
+   * tenders, click away, click back to this tool or its other door (/admin/tenders ⇄ the
+   * accounts tool page) and the view remounts from the PRE-send render — the three are back
+   * in the queue, ticked for a second send. router.refresh() is what clears that cache (all
+   * routes, not just this one).
+   *
+   * It does not cost the screen anything: a refresh keeps this component mounted (same
+   * segment, same state key), so the flash, the note and the ticks survive, and useState
+   * ignores the new `initial` it renders — `data` is already the newer of the two.
+   */
+  function adopt(next: TenderSummary) {
+    setData(next);
+    router.refresh();
+  }
+
   async function refresh() {
     const res = await fetch("/api/tenders/summary", {
       method: "POST",
@@ -159,7 +180,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
       setError(json.error ?? "Couldn't refresh the pipeline.");
       return;
     }
-    setData(json as TenderSummary);
+    adopt(json as TenderSummary);
   }
 
   /** Operator toggles on a discovered source. Admin-only server-side. */
@@ -175,7 +196,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
       setError(json.error ?? "Couldn't update that source.");
       return;
     }
-    setData(json as TenderSummary);
+    adopt(json as TenderSummary);
   }
 
   /**
@@ -201,10 +222,9 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
       // lead does not — which is how RFQ #126379's "Fifteenth Avenue Upgrade" hides.
       texts: [...new Set([g.title, ...g.members.map((m) => m.agency)].filter((t): t is string => !!t))].slice(0, 12),
     }));
-    if (probes.length === 0) {
-      setDupes({});
-      return;
-    }
+    // No cards, no badges to show — and nothing reads `dupes` without a card. (It used to
+    // setDupes({}) here, a synchronous setState in an effect, which the lint rejects.)
+    if (probes.length === 0) return;
 
     let cancelled = false;
     void (async () => {
@@ -248,18 +268,21 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
         warning?: string;
         sent?: number;
         dismissed?: number;
+        /** Dismiss only: rows (not opportunities) that had been sent, and were left as sent. */
+        alreadySent?: number;
         toSelf?: boolean;
       } & Partial<TenderSummary>;
 
       if (!res.ok || !json.ok) {
         setError(json.error ?? "That didn't go through.");
-        // The route returns the refreshed summary even on a send failure, so the screen
-        // still catches up with anything another person changed meanwhile.
-        if (json.groups) setData(json as TenderSummary);
+        // The route returns the refreshed summary on a refusal or a send failure too, so the
+        // screen still catches up with anything another person changed meanwhile.
+        if (json.groups) adopt(json as TenderSummary);
         return;
       }
 
-      setData(json as TenderSummary);
+      // The preview too: it allocates handoff codes, which the cards show.
+      adopt(json as TenderSummary);
       if (json.toSelf) {
         // Keep the ticks and the note: the next press is the real send of this same
         // selection, and re-picking twelve rows after a preview is a reason not to preview.
@@ -268,11 +291,16 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
       }
       setSelected(new Set());
       setNote("");
+      const leftAlone = json.alreadySent ?? 0;
       setFlash(
         json.warning ??
           (action === "send"
             ? `Sent ${json.sent} opportunit${json.sent === 1 ? "y" : "ies"} to the team.`
-            : `Dismissed ${chosen.length} opportunit${chosen.length === 1 ? "y" : "ies"}.`)
+            : leftAlone > 0
+              ? // Someone sent part of the selection while this screen was behind. Said in
+                // alerts, because that is what the route can count.
+                `Dismissed ${json.dismissed} alert${json.dismissed === 1 ? "" : "s"}. ${leftAlone} had already been sent and ${leftAlone === 1 ? "was" : "were"} left as sent.`
+              : `Dismissed ${chosen.length} opportunit${chosen.length === 1 ? "y" : "ies"}.`)
       );
     } catch (e) {
       setError((e as Error).message);
@@ -355,9 +383,10 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
 
   const groupsFor = (key: Filter) =>
     key === "rejected" ? [] : data.groups.filter((g) => g.state === key);
-  const rejected = data.items.filter((i) => i.relevance === "no_match");
+  // Only the newest rejections travel; the tab's count is the real total (a count query).
+  const rejected = data.rejected;
 
-  const count = (key: Filter) => (key === "rejected" ? rejected.length : groupsFor(key).length);
+  const count = (key: Filter) => (key === "rejected" ? data.rejectedTotal : groupsFor(key).length);
   const visibleGroups = groupsFor(filter);
 
   // Nothing to scan and nothing scanned yet — the pipeline is built but not switched on.
@@ -393,8 +422,8 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
 
       {data.truncated && (
         <p className="mb-4 text-xs text-ad-orange">
-          More tenders in the last {data.windowDays} days than this page can list, so the counts below are short. Narrow
-          the window with <code className="rounded bg-white px-1">TENDER_WINDOW_DAYS</code>.
+          More matches in the last {data.windowDays} days than this page can list, so the opportunity lists below are
+          short. Narrow the window with <code className="rounded bg-white px-1">TENDER_WINDOW_DAYS</code>.
         </p>
       )}
 
@@ -521,6 +550,11 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
 
           {filter === "rejected" && (
             <p className="mt-2.5 text-xs text-ad-muted">
+              {data.rejectedTotal > rejected.length && (
+                <>
+                  Showing the newest {rejected.length} of {data.rejectedTotal.toLocaleString()}.{" "}
+                </>
+              )}
               Rejected tenders stay visible on purpose. A classifier that quietly starts dropping real work is the
               failure you&rsquo;d never notice — reading a few rejections each week is the only thing that catches it.
             </p>

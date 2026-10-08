@@ -22,7 +22,7 @@ config({ path: ".env.local" });
 
 import { scriptDb } from "./_db";
 import { WINDOW_DAYS } from "../lib/tenders/config";
-import { loadTenderSummary } from "../lib/tenders/summary";
+import { REJECTED_LIST_ROWS, loadTenderSummary } from "../lib/tenders/summary";
 
 let fails = 0;
 const ok = (pass: boolean, label: string, detail = "") => {
@@ -76,6 +76,21 @@ async function main() {
   // THE regression. The tile and the list it sits above must never disagree again.
   const listed = summary.items.filter((i) => i.relevance === "match").length;
   ok(f.matched === listed, "the funnel agrees with the list on screen", `${f.matched} vs ${listed}`);
+
+  // The Rejected tab: its label is a COUNT, its list is only the newest REJECTED_LIST_ROWS.
+  // Since 2026-10-08 — before that the label was the length of a list capped at 1,000 rows.
+  const rejectedRows = await countWhere((b) => b.eq("relevance", "no_match"));
+  ok(summary.rejectedTotal === rejectedRows, "the Rejected tab count == row count", `${summary.rejectedTotal}`);
+  ok(
+    summary.rejected.length === Math.min(rejectedRows, REJECTED_LIST_ROWS) &&
+      summary.rejected.every((i) => i.relevance === "no_match"),
+    "the Rejected list is the newest no_match rows, capped",
+    `${summary.rejected.length} listed`
+  );
+  ok(
+    summary.rejected.every((r, i, all) => i === 0 || all[i - 1].createdAt >= r.createdAt),
+    "the Rejected list is newest first"
+  );
 
   // Grouping must never lose a row — it is a display concern, not deduplication.
   const grouped = summary.groups.reduce((n, g) => n + g.count, 0);

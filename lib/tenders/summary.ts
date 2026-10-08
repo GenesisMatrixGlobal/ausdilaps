@@ -20,6 +20,35 @@ import { mailboxConfigured } from "./sources/mailbox";
 
 const DAY = 86_400_000;
 
+/**
+ * How many rejected rows the Rejected tab lists — the NEWEST ones in the window.
+ *
+ * ⚠️ The tab's COUNT is not this list's length; it is a count query (`rejectedTotal`). The
+ * window holds ~1,000 no_match rows, nearly all prefilter rejects, and shipping every one of
+ * them on every visit was ~0.8MB of a page whose job is the dozen matches. The tab exists to
+ * audit the classifier, which reading the latest hundred does as well as reading all of them —
+ * so the rows keep their reasoning and only the tail is cut, and the screen says it was.
+ */
+export const REJECTED_LIST_ROWS = 100;
+
+/** Every column ItemView is built from. One list, so the three item queries cannot drift. */
+const ITEM_COLUMNS =
+  "id, title, agency, site_location, contact, jurisdiction, url, closes_at, source_slug, relevance, confidence, services, model_summary, model_reasoning, classified_by, classified_at, model, status, reviewed_at, sender_trusted, injection_suspected, forwarded_at, created_at, email_from";
+
+/**
+ * Unwraps a tender_items read, THROWING on a query error.
+ *
+ * ⚠️ The Supabase client RETURNS errors rather than throwing them, so `count ?? 0` and
+ * `data ?? []` read a failed query as "nothing there" — a funnel of zeros, presented as fact.
+ * Thrown, it reaches loadTenderSummary's catch and the page says the tables are unavailable,
+ * which is the failure this file already chose: an undercount presented as a total is worse
+ * than no figure.
+ */
+function must<T extends { error: { message: string } | null }>(result: T): T {
+  if (result.error) throw new Error(result.error.message);
+  return result;
+}
+
 export type TenderSummary = Awaited<ReturnType<typeof loadTenderSummary>>;
 
 function emptySummary(isAdmin: boolean, unavailable: string | null) {
@@ -41,6 +70,8 @@ function emptySummary(isAdmin: boolean, unavailable: string | null) {
     funnel: { fetched: 0, fresh: 0, duplicate: 0, prefiltered: 0, classified: 0, matched: 0, review: 0, sent: 0 },
     sources: [] as SourceView[],
     items: [] as ItemView[],
+    rejected: [] as ItemView[],
+    rejectedTotal: 0,
     groups: [] as GroupView[],
     runs: [] as RunView[],
   };
@@ -174,7 +205,27 @@ async function query(isAdmin: boolean, db: SupabaseClient) {
   const now = Date.now();
   const since = new Date(now - WINDOW_DAYS * DAY).toISOString();
 
-  const [runRows, sourceRows, itemRows, pendingCount, handoffRows, stillOpenRows, closedCount] = await Promise.all([
+  /** A windowed row COUNT — no rows travel. Every funnel figure past the fetch is one. */
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any -- a filter on the builder */
+  const windowCount = (filter: (b: any) => any) =>
+    filter(db.from("tender_items").select("id", { count: "exact", head: true }).gte("created_at", since));
+
+  const [
+    runRows,
+    sourceRows,
+    itemRows,
+    rejectedRows,
+    pendingCount,
+    handoffRows,
+    stillOpenRows,
+    closedCount,
+    prefilteredCount,
+    classifiedCount,
+    matchedCount,
+    reviewCount,
+    sentCount,
+    rejectedCount,
+  ] = await Promise.all([
     db
       .from("tender_scan_runs")
       .select(
@@ -186,14 +237,28 @@ async function query(isAdmin: boolean, db: SupabaseClient) {
     // Scoped by the window, not by a bare row cap. The old `.limit(120)` with no time
     // filter is half of the "16 matches" bug: eight matches simply fell off the end of the
     // list, so the tab count and every count derived from it were quietly short.
+    //
+    // ⚠️ match/maybe ONLY — the rows grouping reads. It used to be every row in the window,
+    // and the window grew past MAX_LIST_ROWS on prefilter rejects alone (1,014 of 1,027 rows
+    // on 2026-10-08): ~0.8MB per visit, the cap tripped, and every funnel figure counted off
+    // it came out short. pending/error rows are not rendered anywhere (pending is the
+    // unwindowed count below), and no_match has its own capped list.
     db
       .from("tender_items")
-      .select(
-        "id, title, agency, site_location, contact, jurisdiction, url, closes_at, source_slug, relevance, confidence, services, model_summary, model_reasoning, classified_by, classified_at, model, status, reviewed_at, sender_trusted, injection_suspected, forwarded_at, created_at, email_from"
-      )
+      .select(ITEM_COLUMNS)
       .gte("created_at", since)
+      .in("relevance", ["match", "maybe"])
       .order("created_at", { ascending: false })
       .limit(MAX_LIST_ROWS),
+    // The Rejected tab: the newest rejections, WITH their reasoning — auditing the
+    // classifier is the tab's whole job, so these are never slimmed to a title.
+    db
+      .from("tender_items")
+      .select(ITEM_COLUMNS)
+      .gte("created_at", since)
+      .eq("relevance", "no_match")
+      .order("created_at", { ascending: false })
+      .limit(REJECTED_LIST_ROWS),
     // Queue depth, deliberately NOT windowed: an item stuck pending since last month is
     // exactly what this is for, and hiding it behind the report window would defeat it.
     db.from("tender_items").select("id", { count: "exact", head: true }).eq("relevance", "pending"),
@@ -206,9 +271,7 @@ async function query(isAdmin: boolean, db: SupabaseClient) {
     // their own, labelled, meaning.
     db
       .from("tender_items")
-      .select(
-        "id, title, agency, site_location, contact, jurisdiction, url, closes_at, source_slug, relevance, confidence, services, model_summary, model_reasoning, classified_by, classified_at, model, status, reviewed_at, sender_trusted, injection_suspected, forwarded_at, created_at, email_from"
-      )
+      .select(ITEM_COLUMNS)
       .lt("created_at", since)
       .in("relevance", ["match", "maybe"])
       .is("forwarded_at", null)
@@ -228,12 +291,38 @@ async function query(isAdmin: boolean, db: SupabaseClient) {
       .is("forwarded_at", null)
       .neq("status", "archived")
       .lt("closes_at", new Date(now + MIN_LEAD_TIME_MS).toISOString()),
+    // The funnel — see the note on `funnel` below.
+    windowCount((b) => b.eq("classified_by", "prefilter")),
+    windowCount((b) => b.eq("classified_by", "anthropic")),
+    windowCount((b) => b.eq("relevance", "match")),
+    windowCount((b) => b.eq("relevance", "maybe")),
+    // ⚠️ Counted, never derived from the match/maybe rows: a no_match row can carry a
+    // forwarded_at (one in the window does, 2026-10-08), and it still went to the team.
+    windowCount((b) => b.not("forwarded_at", "is", null)),
+    windowCount((b) => b.eq("relevance", "no_match")),
   ]);
+
+  // Every tender_items read throws on error — see must(). The run, source and handoff reads
+  // keep their old degrade-to-empty behaviour: none of them feeds a count of tenders.
+  for (const r of [
+    itemRows,
+    rejectedRows,
+    pendingCount,
+    stillOpenRows,
+    closedCount,
+    prefilteredCount,
+    classifiedCount,
+    matchedCount,
+    reviewCount,
+    sentCount,
+    rejectedCount,
+  ])
+    must(r);
 
   const recent = runRows.data ?? [];
   const items = itemRows.data ?? [];
-  // If this ever trips, the window is producing more rows than the cap and the numbers
-  // below are short again. Surfaced rather than silently wrong.
+  // If this ever trips, more match/maybe rows arrived in the window than the cap, and the
+  // opportunity lists (not the funnel, which is counted) are short. Surfaced, not hidden.
   const truncated = items.length >= MAX_LIST_ROWS;
 
   // Counted by distinct night, not by row — a run fans out to one row per source, and
@@ -317,10 +406,13 @@ async function query(isAdmin: boolean, db: SupabaseClient) {
    * there is no source to attribute a match to. The old funnel summed those five columns
    * and therefore reported 0 forever, directly above a list of real matches.
    *
-   * Counting the item rows removes the class of bug rather than the instance: `items` is
-   * the exact array the list below renders, so a tile and the list it sits above cannot
-   * disagree. Only fetched/fresh/duplicate stay on the run counters, because those are
-   * genuinely facts about a fetch and nothing else records them.
+   * Counting the item rows removes the class of bug rather than the instance. They are
+   * COUNT queries over the same window rather than a tally of a fetched list: tallying a
+   * list capped at MAX_LIST_ROWS is how the funnel went short the moment the window held
+   * more rows than the cap. `npm run check:summary` asserts each figure equals a direct row
+   * count AND that the matched figure equals the matches listed on screen. Only
+   * fetched/fresh/duplicate stay on the run counters, because those are genuinely facts
+   * about a fetch and nothing else records them.
    */
   const fetchCounters = recent.reduce(
     (acc, r) => ({
@@ -331,15 +423,13 @@ async function query(isAdmin: boolean, db: SupabaseClient) {
     { fetched: 0, fresh: 0, duplicate: 0 }
   );
 
-  const countItems = (fn: (i: (typeof items)[number]) => boolean) => items.filter(fn).length;
-
   const funnel = {
     ...fetchCounters,
-    prefiltered: countItems((i) => i.classified_by === "prefilter"),
-    classified: countItems((i) => i.classified_by === "anthropic"),
-    matched: countItems((i) => i.relevance === "match"),
-    review: countItems((i) => i.relevance === "maybe"),
-    sent: countItems((i) => i.forwarded_at !== null),
+    prefiltered: prefilteredCount.count ?? 0,
+    classified: classifiedCount.count ?? 0,
+    matched: matchedCount.count ?? 0,
+    review: reviewCount.count ?? 0,
+    sent: sentCount.count ?? 0,
   };
 
   const toItemView = (i: (typeof items)[number]): ItemView => ({
@@ -379,8 +469,8 @@ async function query(isAdmin: boolean, db: SupabaseClient) {
     ...((stillOpenRows.data ?? []) as typeof items).map(toItemView).filter((i) => !seen.has(i.id)),
   ];
 
-  // Only match/maybe are grouped — a no_match row is never an opportunity, and grouping the
-  // 130 prefiltered rejects would cost work nobody looks at.
+  // Only match/maybe are grouped — a no_match row is never an opportunity. Both queries
+  // already fetch nothing else; the filter below keeps that true if one of them is widened.
   const codeByGroup = new Map(
     ((handoffRows.data ?? []) as { code: string; group_key: string }[]).map((h) => [h.group_key, h.code])
   );
@@ -432,6 +522,10 @@ async function query(isAdmin: boolean, db: SupabaseClient) {
     funnel,
     sources,
     items: itemViews,
+    /** The newest REJECTED_LIST_ROWS rejections in the window — a list, not a total. */
+    rejected: ((rejectedRows.data ?? []) as typeof items).map(toItemView),
+    /** Every rejection in the window, counted. What the Rejected tab's label shows. */
+    rejectedTotal: rejectedCount.count ?? 0,
     groups,
     // The run log is operator detail — it carries error text and timings.
     runs: isAdmin
@@ -457,12 +551,18 @@ async function query(isAdmin: boolean, db: SupabaseClient) {
  * once any copy has been handed over, a fresh copy arriving must NOT push it back into the
  * queue. That would recreate exactly the nagging this feature exists to stop.
  *
+ * `sent` beats `dismissed` too. A send is a fact — an email went to the team and a handoff code
+ * may be in Salesforce — while a dismissal is a judgement; filing a sent job under Dismissed
+ * hides the one thing anyone needs to know about it. Dismiss leaves sent rows alone since
+ * 2026-10-08 (app/api/tenders/send/route.ts), so this is the second guard, for rows archived
+ * before that or by hand.
+ *
  * `dismissed` requires EVERY member archived. Dismissing one copy of a five-copy job is a
  * judgement about that email, not about the opportunity.
  */
 function groupState(members: ItemView[]): GroupView["state"] {
-  if (members.every((m) => m.status === "archived")) return "dismissed";
   if (members.some((m) => m.forwardedAt !== null)) return "sent";
+  if (members.every((m) => m.status === "archived")) return "dismissed";
   return "queue";
 }
 

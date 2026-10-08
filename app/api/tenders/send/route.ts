@@ -95,6 +95,14 @@ export async function POST(req: NextRequest) {
   const db = createAdminClient();
   const now = new Date().toISOString();
 
+  /**
+   * The refreshed dashboard, spread into every answer below — refusals included. The view
+   * adopts it whenever it is present, so a refusal still moves the screen on to what the
+   * database now says (usually: someone else already sent or dismissed these). Not the 500:
+   * whatever threw there would most likely sink the summary's reads too.
+   */
+  const freshSummary = () => loadTenderSummary(!!user && isAdmin(user));
+
   try {
     // Re-read from the database rather than trusting anything the client described. The
     // request carries ids and nothing else, so a caller cannot influence what the email
@@ -113,12 +121,28 @@ export async function POST(req: NextRequest) {
 
     if (error) throw new Error(error.message);
     if (!rows?.length) {
-      return NextResponse.json({ ok: false, error: "Nothing to act on." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Nothing to act on.", ...(await freshSummary()) }, { status: 400 });
     }
 
     // ── Dismiss ───────────────────────────────────────────────────────────
+    //
+    // ⚠️ SENT rows are left alone. Dismiss used to archive every row it was given, so a job a
+    // colleague handed over a minute earlier — still ticked on a screen that hadn't caught up
+    // — was filed under Dismissed with the dismisser's name on it, hiding that it went to the
+    // team at all. Rows already archived are skipped too, so the first reviewer and their note
+    // survive a second dismissal (a dismissed job comes back to the queue when a new reminder
+    // copy arrives, and dismissing that copy must not rewrite the old ones).
     if (action === "dismiss") {
-      const { error: updateError } = await db
+      const alreadySent = rows.filter((r) => r.forwarded_at !== null).length;
+      const toDismiss = rows.filter((r) => r.forwarded_at === null && r.status !== "archived");
+      if (toDismiss.length === 0) {
+        return NextResponse.json(
+          { ok: false, error: "Those have already been sent or dismissed.", ...(await freshSummary()) },
+          { status: 409 }
+        );
+      }
+
+      const { data: dismissed, error: updateError } = await db
         .from("tender_items")
         .update({
           status: "archived",
@@ -128,14 +152,21 @@ export async function POST(req: NextRequest) {
         })
         .in(
           "id",
-          rows.map((r) => r.id)
-        );
+          toDismiss.map((r) => r.id)
+        )
+        // Re-checked IN the write: a send that lands between the read above and this update
+        // must still win.
+        .is("forwarded_at", null)
+        .select("id");
       if (updateError) throw new Error(updateError.message);
 
+      const archived = dismissed?.length ?? 0;
       return NextResponse.json({
         ok: true,
-        dismissed: rows.length,
-        ...(await loadTenderSummary(!!user && isAdmin(user))),
+        dismissed: archived,
+        // Rows, not opportunities — the same unit the selection bar's "N alerts" uses.
+        alreadySent: alreadySent + (toDismiss.length - archived),
+        ...(await freshSummary()),
       });
     }
 
@@ -147,7 +178,7 @@ export async function POST(req: NextRequest) {
     const fresh = rows.filter((r) => r.forwarded_at === null && r.status !== "archived");
     if (fresh.length === 0) {
       return NextResponse.json(
-        { ok: false, error: "Those have already been sent or dismissed." },
+        { ok: false, error: "Those have already been sent or dismissed.", ...(await freshSummary()) },
         { status: 409 }
       );
     }
@@ -226,7 +257,7 @@ export async function POST(req: NextRequest) {
     // A dry run needs an address to send to, and the session is the only source for it.
     if (toSelf && !user?.email) {
       return NextResponse.json(
-        { ok: false, error: "Can't send you a copy — this session has no email address." },
+        { ok: false, error: "Can't send you a copy — this session has no email address.", ...(await freshSummary()) },
         { status: 400 }
       );
     }
@@ -248,7 +279,7 @@ export async function POST(req: NextRequest) {
         {
           ok: false,
           error: result.error ?? "Send failed.",
-          ...(await loadTenderSummary(!!user && isAdmin(user))),
+          ...(await freshSummary()),
         },
         { status: 502 }
       );
@@ -278,7 +309,7 @@ export async function POST(req: NextRequest) {
         sent: items.length,
         rows: fresh.length,
         toSelf: true,
-        ...(await loadTenderSummary(!!user && isAdmin(user))),
+        ...(await freshSummary()),
       });
     }
 
@@ -300,7 +331,7 @@ export async function POST(req: NextRequest) {
           sent: items.length,
           warning:
             "The email was sent, but these could not be marked as handed over — they will still show in the queue.",
-          ...(await loadTenderSummary(!!user && isAdmin(user))),
+          ...(await freshSummary()),
         },
         { status: 200 }
       );
@@ -310,7 +341,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       sent: items.length,
       rows: fresh.length,
-      ...(await loadTenderSummary(!!user && isAdmin(user))),
+      ...(await freshSummary()),
     });
   } catch (e) {
     const error = (e as Error).message;

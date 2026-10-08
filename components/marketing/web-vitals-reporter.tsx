@@ -137,7 +137,8 @@ export function WebVitalsReporter() {
 /** Staff and Command Centre pages — the only ones whose server time is sent. */
 const STAFF_PATH = /^\/(admin|staff)(\/|$)/;
 
-/** Not in lib.dom yet. Both are 0 when absent; Chromium only. */
+/** Not in lib.dom yet. Undefined outside Chromium (and finalResponseHeadersStart before
+ *  Chrome 133); 0 when no 103 arrived. */
 type NavTiming = PerformanceNavigationTiming & {
   firstInterimResponseStart?: number;
   finalResponseHeadersStart?: number;

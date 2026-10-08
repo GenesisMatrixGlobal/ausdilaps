@@ -5,6 +5,7 @@ import { requireAdmin } from "@/lib/auth/session";
 import { Container } from "@/components/marketing/container";
 import { AdminNav } from "@/components/staff/admin-nav";
 import { NavTimer } from "@/components/staff/nav-timer";
+import { LinkPending } from "@/components/staff/link-pending";
 
 export const metadata = {
   title: "Command Centre",
@@ -37,7 +38,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               href="/admin"
               className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-ad-orange transition-opacity hover:opacity-80"
             >
-              Command Centre
+              <LinkPending>Command Centre</LinkPending>
             </Link>
           </div>
 
@@ -46,7 +47,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               href="/staff"
               className="text-sm font-medium text-ad-muted transition-colors hover:text-ad-ink"
             >
-              Staff portal
+              {/* Into /staff, which has no loading boundary: this click waits for the server
+                  with nothing else on screen changing. Dot BEFORE the label — the name sits
+                  16px after it. */}
+              <LinkPending side="start">Staff portal</LinkPending>
             </Link>
             <span className="hidden max-w-[16ch] truncate text-sm text-ad-muted lg:block">
               {user.fullName || user.email}

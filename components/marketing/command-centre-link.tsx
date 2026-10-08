@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { LinkPending } from "@/components/staff/link-pending";
 
 /** "Command Centre" in the website header, for a signed-in admin only.
  *
@@ -31,7 +32,9 @@ export function CommandCentreLink() {
       href="/admin"
       className="text-xs font-semibold uppercase tracking-[0.14em] text-ad-orange transition-opacity hover:opacity-80"
     >
-      Command Centre
+      {/* No loading boundary sits above /admin, so from the website this click shows nothing
+          until AdminLayout's auth answers. Dot BEFORE the label — the phone link is 12px after. */}
+      <LinkPending side="start">Command Centre</LinkPending>
     </Link>
   );
 }

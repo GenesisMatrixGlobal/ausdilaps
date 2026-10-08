@@ -44,8 +44,10 @@ const ITEM_COLUMNS =
  * which is the failure this file already chose: an undercount presented as a total is worse
  * than no figure.
  */
-function must<T extends { error: { message: string } | null }>(result: T): T {
-  if (result.error) throw new Error(result.error.message);
+function must<T extends { error: { message: string } | null; status?: number }>(result: T): T {
+  // A failed HEAD (the count queries) has no body, so postgrest-js hands back an EMPTY
+  // message — fall back to the status or the panel reads "unavailable: " with no reason.
+  if (result.error) throw new Error(result.error.message || `tender_items query failed (HTTP ${result.status ?? "?"})`);
   return result;
 }
 
@@ -205,9 +207,14 @@ async function query(isAdmin: boolean, db: SupabaseClient) {
   const now = Date.now();
   const since = new Date(now - WINDOW_DAYS * DAY).toISOString();
 
-  /** A windowed row COUNT — no rows travel. Every funnel figure past the fetch is one. */
-  /* eslint-disable-next-line @typescript-eslint/no-explicit-any -- a filter on the builder */
-  const windowCount = (filter: (b: any) => any) =>
+  /**
+   * A windowed row COUNT — no rows travel. Every funnel figure past the fetch is one.
+   * The explicit return type keeps the builder's `any` inside this helper: without it every
+   * funnel figure and rejectedTotal in the exported TenderSummary type widened to `any`.
+   */
+  const windowCount = (
+    filter: (b: any) => any // eslint-disable-line @typescript-eslint/no-explicit-any -- a filter on the builder
+  ): PromiseLike<{ count: number | null; error: { message: string } | null; status: number }> =>
     filter(db.from("tender_items").select("id", { count: "exact", head: true }).gte("created_at", since));
 
   const [

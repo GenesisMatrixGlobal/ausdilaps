@@ -2,10 +2,26 @@
  * Shown the instant a Command Centre tab is clicked, inside the header and nav.
  *
  * Every page here is rendered per request. Without this file a click did nothing visible
- * until the server finished, which read as a frozen page. It also bounds PREFETCHING: a
- * dynamic route prefetches only down to its loading boundary, so opening one tab no longer
- * renders all seven on the server (seen in the logs: seven full renders within a second
- * of opening /admin, each thrown away, then each click rendering again).
+ * until the server finished, which read as a frozen page.
+ *
+ * ⚠️ It does NOT change prefetching between tabs, and an earlier version of this comment
+ * (and commit 80bb943's message) said it did. On this non-PPR app a default <Link> prefetch
+ * of a sibling tab is a route-tree request plus a metadata-only request: neither runs the
+ * admin layout or a page loader, with or without this file (read in Next 16.3.8's
+ * segment-cache scheduler, 2026-10-08). The burst of /admin requests in the logs is those.
+ * What it DOES change: prefetching /admin from OUTSIDE it (the staff header's Command Centre
+ * link, the website's CommandCentreLink) now renders AdminLayout down to this boundary —
+ * one getUser + profiles read, cached ~5 min — which is what lets that click paint the
+ * header, nav and skeleton at once. A deliberate trade.
+ *
+ * ⚠️ Keep AdminNav on the DEFAULT prefetch. prefetch={true} would render every tab's page
+ * on every load; prefetch={false} makes a click wait for the server before anything paints,
+ * because the skeleton relies on the cached route tree. That cache goes stale after ~5 min,
+ * which is why the nav links also carry a useLinkStatus pending dot (LinkPending).
+ *
+ * React holds a shown fallback for at least ~300ms, so on a fast warm tab content can land
+ * a little later than without the skeleton. Judge speed on click-to-content (the
+ * `[vitals] nav` log line), not on how soon the skeleton appears.
  *
  * Deliberately generic — a heading, a row of tiles, two panels — so it sits under every
  * tab without pretending to know the page's layout.

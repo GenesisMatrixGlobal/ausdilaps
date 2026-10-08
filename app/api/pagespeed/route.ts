@@ -55,10 +55,12 @@ async function measureAndStore(
       seo: score.seo,
       bestPractices: score.bestPractices,
     };
-    // A 200 with no categories is not a measurement — writing it would replace good scores
-    // with four dashes and call them fresh.
-    const empty = Object.values(scores).every((v) => v === null);
-    const failure = score.error ?? (empty ? "PageSpeed returned no scores" : null);
+    // A 200 without a SPEED score is not a measurement — writing it would replace a good score
+    // with a dash and call it fresh. Lighthouse does this on an audit-level runtime error
+    // (NO_LCP, a page that never paints) while still scoring the other categories, so
+    // "all four null" alone let a broken run through as a success.
+    const failure =
+      score.error ?? (scores.performance === null ? "PageSpeed returned no Speed score (Lighthouse runtime error)" : null);
     const result: Result = failure
       ? { path, measured: false, saved: false, error: failure }
       : { path, measured: true, saved: false, scores };

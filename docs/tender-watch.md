@@ -56,11 +56,10 @@ See the `─── Tender Watch ───` block in `.env.local.example`. The mi
 
 ### 3. Cron
 
-**The nightly job is currently PAUSED.** `vercel.json` ships with `"crons": []` on purpose — a
-cron firing against a route with no `CRON_SECRET` just 503s into the logs every night, and there
-are no sources to scan yet.
-
-To switch it on, put this back in `vercel.json`:
+**The nightly job is ON** (back on since 2026-09-01, moved to 5am Brisbane on 2026-09-02). It
+was shipped paused with `"crons": []` — a cron firing against a route with no `CRON_SECRET`
+just 503s into the logs every night. If it ever has to be paused again, remove these two
+entries from `vercel.json` (it also carries the transcription and PageSpeed crons — leave those):
 
 ```json
 "crons": [

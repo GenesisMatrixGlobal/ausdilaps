@@ -155,8 +155,9 @@ export async function POST(req: NextRequest) {
           toDismiss.map((r) => r.id)
         )
         // Re-checked IN the write: a send that lands between the read above and this update
-        // must still win.
+        // must still win, and so must a colleague's dismissal (their name and note stay).
         .is("forwarded_at", null)
+        .neq("status", "archived")
         .select("id");
       if (updateError) throw new Error(updateError.message);
 
@@ -164,7 +165,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         ok: true,
         dismissed: archived,
-        // Rows, not opportunities — the same unit the selection bar's "N alerts" uses.
+        // Rows, not opportunities — the same unit the selection bar's "N alerts" uses. Rows
+        // the write skipped (sent or dismissed by someone else in between) count as left alone.
         alreadySent: alreadySent + (toDismiss.length - archived),
         ...(await freshSummary()),
       });

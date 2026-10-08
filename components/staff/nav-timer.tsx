@@ -8,7 +8,8 @@ import type { NavStart } from "@/instrumentation-client";
  *  app carrying both attributes. Change that file's markup and this goes blind silently. */
 const SKELETON = '[role="status"][aria-label="Loading"]';
 /** Stop watching a page that still hasn't shown its content. Reported as "gave up" rather
- *  than dropped, because a 20-second tab is exactly what this exists to catch. */
+ *  than dropped, because a 20-second tab is exactly what this exists to catch — and that
+ *  includes a navigation that only COMMITS after 20s (no prefetch, cold server). */
 const GIVE_UP_MS = 20_000;
 /** The vitals route's ceiling for navMs — a background tab can fire the give-up late. */
 const MAX_MS = 60_000;
@@ -44,20 +45,30 @@ export function NavTimer() {
   useEffect(() => {
     const start = window.__adNavStart;
     // Not a navigation to what just committed (a hard load, or a click on another tab still
-    // in flight), or one already measured. The age bound stops a stale note — a click on the
-    // tab already open never commits anything — timing an unrelated change.
+    // in flight), or one already measured.
     if (!start || start.done || start.path !== pathname) return;
     // Both sides through URLSearchParams: the hook's string re-encodes (a space becomes
     // "+"), the note keeps the href's own spelling.
     if (new URLSearchParams(start.search).toString() !== search) return;
-    if (performance.now() - start.t > GIVE_UP_MS) return;
 
     const skeleton = skeletonShowing();
     const finish = (gaveUp: boolean) => {
       if (start.done) return;
       start.done = true; // synchronously, so a strict-mode re-run can't send it twice
-      afterFrame(() => send(start, skeleton, gaveUp));
+      // The end is taken NOW; the frame is only a short wait for the paint. Read inside the
+      // frame callback, a tab hidden in between would hold the frame — and the clock — until
+      // it was shown again.
+      const at = performance.now();
+      afterFrame(() => send(start, skeleton, gaveUp, Math.min(performance.now(), at + 100)));
     };
+
+    // Committed only after the give-up: report it now rather than watch a further 20s. A
+    // matching note this old can only be a slow commit — every navigation writes a new note,
+    // and a click on the tab already open commits nothing, so this effect never re-runs for it.
+    if (performance.now() - start.t > GIVE_UP_MS) {
+      finish(skeleton);
+      return;
+    }
 
     // Already showing content: a tab reused from the router cache (staleTimes).
     if (!skeleton) {
@@ -114,13 +125,13 @@ function afterFrame(fn: () => void) {
   else requestAnimationFrame(() => fn());
 }
 
-function send(start: NavStart, skeleton: boolean, gaveUp: boolean) {
+function send(start: NavStart, skeleton: boolean, gaveUp: boolean, end: number) {
   const body = JSON.stringify({
     // Pathname only — the vitals route rejects a query string, so `search` never leaves.
     path: start.path,
     // The route requires it, and the log line reads better with it.
     device: window.innerWidth < 768 ? "mobile" : "desktop",
-    navMs: Math.min(MAX_MS, Math.round(performance.now() - start.t)),
+    navMs: Math.min(MAX_MS, Math.round(end - start.t)),
     navType: start.type,
     skeleton,
     ...(gaveUp ? { gaveUp: true } : {}),

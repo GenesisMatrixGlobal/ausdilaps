@@ -277,7 +277,16 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
         setError(json.error ?? "That didn't go through.");
         // The route returns the refreshed summary on a refusal or a send failure too, so the
         // screen still catches up with anything another person changed meanwhile.
-        if (json.groups) adopt(json as TenderSummary);
+        if (json.groups) {
+          const next = json as TenderSummary;
+          adopt(next);
+          // A 409 means someone else already sent or dismissed what was ticked. Those groups
+          // leave the queue, so drop their ticks — otherwise the bar reads "N selected" with
+          // nothing visibly ticked and the buttons repeat the same 409.
+          setSelected(
+            (prev) => new Set([...prev].filter((k) => next.groups.some((g) => g.key === k && g.state === "queue")))
+          );
+        }
         return;
       }
 
@@ -354,8 +363,8 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
     {
       // Deliberately the number of CARDS below, not a count of rows. The old tile summed a
       // run counter nothing ever wrote, so it read "0 matches" directly above a list of
-      // sixteen. Anything on this page that claims a total now comes from the same array
-      // the list renders.
+      // sixteen. Every total on this page is either the array the list renders or a count
+      // query over the same window — never a run counter.
       label: "To review",
       value: data.stats.open,
       sub: data.stats.open === 0 ? "Queue is clear" : "Waiting for someone",

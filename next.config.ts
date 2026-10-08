@@ -20,8 +20,13 @@ const nextConfig: NextConfig = {
     // Reuse a dynamic page the browser rendered in the last 30s instead of asking the
     // server again (Next's default is 0). Flicking between Command Centre tabs is then
     // instant. APP-WIDE, so any dynamic page can show data up to 30s old after navigating
-    // back to it; server actions that call revalidatePath() still clear it. Nothing here
-    // relies on a fresh read for safety — e.g. the tender send route refuses a resend (409).
+    // back to it.
+    //
+    // ⚠️ Only router.refresh() or a server action that calls revalidatePath()/redirect()
+    // clears this cache. A fetch() to a route handler clears NOTHING — so a client view
+    // seeded from server props that then mutates through /api/* must call router.refresh()
+    // after a successful write, or a Link back within 30s shows the pre-write data. Tender
+    // Watch is the case that bit (2026-10-08): a sent tender reappeared in the queue.
     staleTimes: { dynamic: 30 },
   },
   async redirects() {

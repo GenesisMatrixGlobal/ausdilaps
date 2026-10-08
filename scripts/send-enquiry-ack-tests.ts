@@ -24,7 +24,7 @@ const base = (over: Partial<QuoteInput>): QuoteInput =>
 const cases: Record<(typeof INQUIRY_TYPES)[number], QuoteInput> = {
   "New Quote": base({ inquiryType: "New Quote", company: "CPB Contractors", projectName: "Western Tunnelling Package", projectLocation: "Rozelle NSW", assetCount: "100+" }),
   "I Received An Access Letter": base({ inquiryType: "I Received An Access Letter", propertyRole: "Tenant", contactAddress: "12 Craig Avenue, Vaucluse NSW 2030", contactMethod: ["SMS", "Call"] }),
-  "Report Inquiry": base({ inquiryType: "Report Inquiry", projectNumber: "OPT-25824", documentId: "DOC-4471" }),
+  "Report Inquiry": base({ inquiryType: "Report Inquiry", contactAddress: "44 Eastern Avenue, Dover Heights NSW 2030", projectNumber: "OPT-25824", documentId: "DOC-4471" }),
   "General Inquiry": base({ inquiryType: "General Inquiry" }),
 };
 

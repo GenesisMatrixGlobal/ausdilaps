@@ -63,7 +63,7 @@ const TYPE_OPTIONS: { value: InquiryType; label: string; hint: string; cta: stri
   {
     value: "Report Inquiry",
     label: "Report question",
-    hint: "Share your question and a project reference, if you have one.",
+    hint: "Share your question and the property address.",
     cta: "Send message",
     icon: FileText,
   },
@@ -501,10 +501,10 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
             </div>
           )}
 
-          {(isNewQuote || isAccessLetter) && (
+          {(isNewQuote || isAccessLetter || isReport) && (
             <div>
               <label className={labelCls} htmlFor="contactAddress">
-                {isAccessLetter ? "Your address" : "Project address or suburb"}{" "}
+                {isAccessLetter ? "Your address" : isReport ? "Property address" : "Project address or suburb"}{" "}
                 {isAccessLetter && <span className="text-ad-orange">*</span>}
               </label>
               <input
@@ -541,20 +541,6 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
                   </option>
                 ))}
               </select>
-            </div>
-          )}
-
-          {isReport && (
-            <div>
-              <label className={labelCls} htmlFor="projectNumber">
-                Project / OPT number
-              </label>
-              <input
-                id="projectNumber"
-                placeholder="OPT-XXXXX (if known)"
-                className={inputCls}
-                {...register("projectNumber")}
-              />
             </div>
           )}
 
@@ -756,11 +742,14 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
         </div>
       )}
 
+      {/* Address FIRST: most people asking about a report only have the property address
+          (staff feedback, 2026-10-08). The references help a contractor who has them. */}
       {inquiryType === "Report Inquiry" && (
         <div className="mt-5 grid gap-5 border-t border-ad-border pt-5 sm:grid-cols-2">
+          <AddressFields register={register} namePrefix="" label="Property address" />
           <div>
             <label className={labelCls} htmlFor="projectNumber">
-              Project / OPT number
+              Project / OPT number <span className="font-normal text-ad-muted">(optional)</span>
             </label>
             <input
               id="projectNumber"
@@ -768,18 +757,14 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
               className={inputCls}
               {...register("projectNumber")}
             />
-            <p className="mt-1.5 text-xs text-ad-muted">
-              If this is an existing project and you know the OPT number, please provide it.
-            </p>
           </div>
           <div>
             <label className={labelCls} htmlFor="documentId">
-              Document ID
+              Document ID <span className="font-normal text-ad-muted">(optional)</span>
             </label>
             <input id="documentId" className={inputCls} {...register("documentId")} />
-            <p className="mt-1.5 text-xs text-ad-muted">Found on the front page of your report, where accessible.</p>
+            <p className="mt-1.5 text-xs text-ad-muted">On the front page of the report, if you have it.</p>
           </div>
-          <AddressFields register={register} namePrefix="" />
         </div>
       )}
 

@@ -33,6 +33,7 @@ const cases: Record<(typeof INQUIRY_TYPES)[number], QuoteInput> = {
   "Report Inquiry": base({
     inquiryType: "Report Inquiry",
     name: "Sam Lee",
+    contactAddress: "44 Eastern Avenue, Dover Heights NSW 2030",
     projectNumber: "OPT-25824",
     documentId: "DOC-4471",
   }),
@@ -78,9 +79,11 @@ assert.ok(letterNone.html.includes("By SMS, phone or email."), "no method ticked
 assert.ok(letter.html.includes("Hi Tom,"), "apostrophe in the surname doesn't break the greeting");
 
 const report = enquiryAckEmail({ input: cases["Report Inquiry"], siteUrl: site });
-assert.ok(report.html.includes("OPT-25824") && report.html.includes("DOC-4471"), "report echoes both references");
-const reportNoRef = enquiryAckEmail({ input: base({ inquiryType: "Report Inquiry", name: "Sam" }), siteUrl: site });
-assert.ok(reportNoRef.html.includes("reply with it"), "report without a reference asks for one");
+// The address leads; references are never echoed back (staff feedback, 2026-10-08).
+assert.ok(report.html.includes("44 Eastern Avenue"), "report echoes the property address");
+assert.ok(!report.html.includes("OPT-25824") && !report.html.includes("DOC-4471"), "report never echoes references");
+const reportNoAddress = enquiryAckEmail({ input: base({ inquiryType: "Report Inquiry", name: "Sam" }), siteUrl: site });
+assert.ok(reportNoAddress.html.includes("Reply with the property address"), "report without an address asks for one");
 
 // Hostile input: a name that is a URL gets the neutral greeting, and markup is escaped.
 const hostile = enquiryAckEmail({

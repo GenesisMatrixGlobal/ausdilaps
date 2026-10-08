@@ -161,25 +161,23 @@ function contentFor(d: QuoteInput, siteUrl: string, samplesCode?: string): Conte
         links: [faq],
       };
 
-    case "Report Inquiry": {
-      const refs = [
-        d.projectNumber ? `project number <strong>${escapeHtml(d.projectNumber)}</strong>` : "",
-        d.documentId ? `document ID <strong>${escapeHtml(d.documentId)}</strong>` : "",
-      ].filter(Boolean);
+    // Lead with the PROPERTY ADDRESS, never the project / document references (staff
+    // feedback, 2026-10-08): most enquirers only have the address, and echoing references
+    // back read as either "we've found your report" or "you were meant to know these".
+    case "Report Inquiry":
       return {
         subject: "We've received your report enquiry — AusDilaps",
         headline: "We've received your report enquiry.",
         intro: [
-          refs.length > 0
-            ? `Thanks. With ${refs.join(" and ")} we can find your report straight away, and we'll come back to you shortly.`
-            : "Thanks, we'll come back to you shortly. If you have a project or OPT number, or the document ID from the report, reply with it and we'll find it faster.",
+          d.contactAddress
+            ? `Thanks for getting in touch about <strong>${escapeHtml(d.contactAddress)}</strong>. We'll look into it and come back to you shortly.`
+            : "Thanks for getting in touch. We'll look into it and come back to you shortly. Reply with the property address and we'll find the report faster.",
         ],
         stepsHeading: "",
         steps: [],
         primary: faq,
         links: [capability],
       };
-    }
 
     case "General Inquiry":
     default:

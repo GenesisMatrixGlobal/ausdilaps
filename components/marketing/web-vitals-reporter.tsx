@@ -71,13 +71,17 @@ export function WebVitalsReporter() {
       if (Object.keys(m).length === 0) return;
       sent.current = true;
 
+      const path = landing.current || window.location.pathname;
       const body = JSON.stringify({
-        path: landing.current || window.location.pathname,
+        path,
         device: window.innerWidth < 768 ? "mobile" : "desktop",
         ...m,
         ...(shift.current ? { clsTarget: shift.current } : {}),
         ...(navType.current ? { navType: navType.current.slice(0, 30) } : {}),
         navs: navs.current,
+        // Logged by the route, never stored. Staff pages only: they are rendered per
+        // request, so server time is the thing worth knowing there — see serverTiming().
+        ...(STAFF_PATH.test(path) ? serverTiming() : {}),
       });
       try {
         navigator.sendBeacon?.("/api/vitals", new Blob([body], { type: "application/json" }));
@@ -129,6 +133,60 @@ export function WebVitalsReporter() {
 
   return null;
 }
+
+/** Staff and Command Centre pages — the only ones whose server time is sent. */
+const STAFF_PATH = /^\/(admin|staff)(\/|$)/;
+
+/** Not in lib.dom yet. Both are 0 when absent; Chromium only. */
+type NavTiming = PerformanceNavigationTiming & {
+  firstInterimResponseStart?: number;
+  finalResponseHeadersStart?: number;
+};
+
+/**
+ * How long the server took on a hard load, for the /api/vitals log line — not stored.
+ *
+ * ⚠️ The stored TTFB cannot answer that, and it is deliberately left meaning what it means.
+ * Vercel sends an empty HTTP 103 (Early Hints) ahead of the page, Chromium sets
+ * `responseStart` when the 103 lands, and web-vitals' TTFB is `responseStart` (less any
+ * prerender activation) — so it times the 103's round trip and excludes ALL server time. A
+ * slow Command Centre render still shows a fast TTFB. The real response's headers are what
+ * mark the server producing its first byte of HTML:
+ *
+ *   serverMs: the 103 landing → the real response's headers. The 103 goes out before the
+ *             function runs, so this is close to pure server time. With no 103 it runs from
+ *             the request being sent, and so also carries one network round trip.
+ *   htmlMs:   those headers → the last byte. Pages stream, so this includes every Suspense
+ *             boundary resolving on the server (the PageSpeed rows on /admin).
+ *
+ * Read at hide time, when the document has long finished loading. A prerendered page did
+ * this work before the visitor clicked — the log line carries the navType to tell.
+ */
+function serverTiming(): { serverMs?: number; htmlMs?: number } {
+  try {
+    const nav = performance.getEntriesByType("navigation")[0] as NavTiming | undefined;
+    if (!nav) return {};
+    const interim = nav.firstInterimResponseStart || 0;
+    // A 103 arrived but this browser can't say when the real headers did (Chromium before
+    // 133): `responseStart` is the 103 itself, so any figure here would be a confident 0.
+    const headers = nav.finalResponseHeadersStart || (interim ? 0 : nav.responseStart);
+    const sent = interim || nav.requestStart;
+    if (!headers || !sent) return {};
+    const out: { serverMs?: number; htmlMs?: number } = {};
+    const server = headers - sent;
+    // responseEnd is 0 while the document is still streaming — left out, not sent negative.
+    const html = nav.responseEnd ? nav.responseEnd - headers : -1;
+    if (inRange(server)) out.serverMs = Math.round(server);
+    if (inRange(html)) out.htmlMs = Math.round(html);
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** The vitals route's bounds for these two. It drops an out-of-range value on its own, but
+ *  there is no reason to send one. */
+const inRange = (v: number) => Number.isFinite(v) && v >= 0 && v <= 60_000;
 
 type LayoutShift = PerformanceEntry & {
   value: number;

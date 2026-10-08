@@ -1,8 +1,10 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { requireAdmin } from "@/lib/auth/session";
 import { Container } from "@/components/marketing/container";
 import { AdminNav } from "@/components/staff/admin-nav";
+import { NavTimer } from "@/components/staff/nav-timer";
 
 export const metadata = {
   title: "Command Centre",
@@ -68,6 +70,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       </div>
 
       <Container className="py-8">{children}</Container>
+
+      {/* Times each tab click, start to content, into the /api/vitals log — renders nothing.
+          Suspense because it reads useSearchParams; every page here is dynamic, so it never
+          actually suspends, but a statically rendered route would refuse to build without it. */}
+      <Suspense fallback={null}>
+        <NavTimer />
+      </Suspense>
     </div>
   );
 }

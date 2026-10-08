@@ -22,8 +22,9 @@ const nextConfig: NextConfig = {
     // instant. APP-WIDE, so any dynamic page can show data up to 30s old after navigating
     // back to it.
     //
-    // ⚠️ Only router.refresh() or a server action that calls revalidatePath()/redirect()
-    // clears this cache. A fetch() to a route handler clears NOTHING — so a client view
+    // ⚠️ Only router.refresh(), or a server action that calls revalidatePath()/
+    // revalidateTag()/refresh() or sets/deletes a cookie, clears this cache — redirect()
+    // alone does NOT (server-action-reducer.js, Next 16.3.8). A fetch() to a route handler clears NOTHING — so a client view
     // seeded from server props that then mutates through /api/* must call router.refresh()
     // after a successful write, or a Link back within 30s shows the pre-write data. Tender
     // Watch is the case that bit (2026-10-08): a sent tender reappeared in the queue.

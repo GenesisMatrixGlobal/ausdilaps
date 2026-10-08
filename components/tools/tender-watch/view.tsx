@@ -308,7 +308,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
             : leftAlone > 0
               ? // Someone sent part of the selection while this screen was behind. Said in
                 // alerts, because that is what the route can count.
-                `Dismissed ${json.dismissed} alert${json.dismissed === 1 ? "" : "s"}. ${leftAlone} had already been sent and ${leftAlone === 1 ? "was" : "were"} left as sent.`
+                `Dismissed ${json.dismissed} alert${json.dismissed === 1 ? "" : "s"}. ${leftAlone} ${leftAlone === 1 ? "was" : "were"} already sent or dismissed and left alone.`
               : `Dismissed ${chosen.length} opportunit${chosen.length === 1 ? "y" : "ies"}.`)
       );
     } catch (e) {
@@ -363,8 +363,9 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
     {
       // Deliberately the number of CARDS below, not a count of rows. The old tile summed a
       // run counter nothing ever wrote, so it read "0 matches" directly above a list of
-      // sixteen. Every total on this page is either the array the list renders or a count
-      // query over the same window — never a run counter.
+      // sixteen. Every TENDER total on this page is the array the list renders or a count
+      // over tender_items; the scan tiles read the run counters that ARE written
+      // (items_fetched/new/duplicate), never the five dead ones.
       label: "To review",
       value: data.stats.open,
       sub: data.stats.open === 0 ? "Queue is clear" : "Waiting for someone",

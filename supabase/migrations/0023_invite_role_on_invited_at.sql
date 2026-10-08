@@ -54,6 +54,13 @@ create trigger on_auth_user_invited
   execute function public.handle_user_invited();
 
 -- Repair everyone 0022 already caught: invited, staff metadata, still client_member.
+--
+-- ⚠️ ONLY people who have never signed in (added 2026-10-08). raw_user_meta_data is
+-- writable by the user themselves (auth.updateUser with the anon key), so once someone has
+-- had a session it may no longer be what the inviter wrote — a stuck invitee could set
+-- role 'superadmin' and have this grant it. The trigger above is safe: invited_at is set at
+-- invite time, before the invitee has ever had a session. Anyone signed in and still stuck
+-- is repaired by /admin/staff from app_metadata.invite, which only the server can write.
 update public.profiles p set
   role = (u.raw_user_meta_data->>'role')::user_role,
   departments = case
@@ -67,4 +74,5 @@ from auth.users u
 where u.id = p.id
   and p.role = 'client_member'
   and u.invited_at is not null
+  and u.last_sign_in_at is null
   and u.raw_user_meta_data->>'role' in ('superadmin', 'admin', 'staff');

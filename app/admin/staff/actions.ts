@@ -106,6 +106,22 @@ export async function inviteStaff(formData: FormData): Promise<ActionResult> {
       .eq("id", invited.user.id)
       .eq("role", "client_member");
     if (roleErr) console.error("[admin] couldn't apply invite role:", roleErr.message);
+
+    // ⚠️ The same answer, kept where only the SERVER can write it. If the write above failed,
+    // repairStuckInvites() finishes the job later — and it must not take the role from
+    // user_metadata, which any signed-in user can rewrite with auth.updateUser() and the
+    // public anon key (a stuck invitee could make themselves superadmin). app_metadata is
+    // service-role only.
+    const { error: metaErr } = await conn.client.auth.admin.updateUserById(invited.user.id, {
+      app_metadata: {
+        invite: {
+          role,
+          departments: role === "staff" ? departments : [],
+          can_manage_knowledge: role === "staff" ? canManageKnowledge : false,
+        },
+      },
+    });
+    if (metaErr) console.error("[admin] couldn't record the invite in app_metadata:", metaErr.message);
   }
 
   revalidatePath("/admin/staff");
@@ -254,7 +270,29 @@ export async function removeStaff(formData: FormData): Promise<ActionResult> {
   return { ok: true, message: "Staff member removed." };
 }
 
-type AuthUser = { id: string; invited_at?: string | null; user_metadata?: Record<string, unknown> };
+type AuthUser = {
+  id: string;
+  invited_at?: string | null;
+  last_sign_in_at?: string | null;
+  user_metadata?: Record<string, unknown>;
+  app_metadata?: Record<string, unknown>;
+};
+
+/**
+ * What the INVITER asked for, from a source the invitee cannot have edited — or null.
+ *
+ * ⚠️ user_metadata is writable by the user themselves (auth.updateUser({ data }) with the
+ * anon key), so on its own it must never decide a role. app_metadata.invite is written by
+ * inviteStaff() with the service role and is the answer for every invite since 2026-10-08.
+ * An older invite only carries user_metadata, and that is trusted ONLY while the person has
+ * never signed in: without a session they cannot have changed it, so it is still exactly
+ * what the inviter wrote.
+ */
+function inviteIntent(u: AuthUser): Record<string, unknown> | null {
+  const invite = u.app_metadata?.invite;
+  if (invite && typeof invite === "object") return invite as Record<string, unknown>;
+  return u.last_sign_in_at ? null : (u.user_metadata ?? null);
+}
 
 /** One list for the read in listStaff() AND the repair's returning select, so a repaired
  *  row patched into the list has exactly the shape of the rows around it. */
@@ -272,9 +310,10 @@ type ProfileRow = Omit<StaffRow, "last_sign_in_at" | "invited_at" | "departments
  * 0022's trigger honours the invite metadata only when auth.users.invited_at is set, and
  * GoTrue sets that AFTER the insert — so an invited person's profile came through as
  * client_member, which this page filters out. They were invisible here and bounced at
- * /staff/no-access, with nothing anywhere saying why. This applies the metadata for
- * anyone who WAS invited (invited_at set — a self-signup never has it, which is the rule
- * 0022 exists for) and is still client_member. Same guard as 0023's trigger, so once that
+ * /staff/no-access, with nothing anywhere saying why. This applies what the INVITER asked
+ * for (inviteIntent — never user-editable metadata) to anyone who WAS invited (invited_at
+ * set — a self-signup never has it, which is the rule 0022 exists for) and is still
+ * client_member. Same guard as 0023's trigger, so once that
  * is pasted this has nothing left to do. Best-effort; a failure only means the row stays
  * hidden one more load.
  *
@@ -296,21 +335,23 @@ async function repairStuckInvites(
   const authById = new Map(users.map((u) => [u.id, u]));
   const stuck = profiles.flatMap((p) => {
     const u = authById.get(p.id);
-    const role = parseRole(u?.user_metadata?.role);
-    return p.role === "client_member" && u?.invited_at && role ? [{ profile: p, user: u, role }] : [];
+    if (!u || p.role !== "client_member" || !u.invited_at) return [];
+    const intent = inviteIntent(u);
+    const role = parseRole(intent?.role);
+    return intent && role ? [{ profile: p, user: u, intent, role }] : [];
   });
   if (stuck.length === 0) return;
 
   await Promise.all(
-    stuck.map(async ({ profile, user, role }) => {
+    stuck.map(async ({ profile, user, intent, role }) => {
       // ⚠️ Keep the role = 'client_member' guard even though the row was client_member a
       // moment ago: an admin may have edited it since, and this must never demote anyone.
       const { data, error } = await client
         .from("profiles")
         .update({
           role,
-          departments: role === "staff" ? normaliseDepartments(user.user_metadata?.departments) : [],
-          can_manage_knowledge: role === "staff" && user.user_metadata?.can_manage_knowledge === true,
+          departments: role === "staff" ? normaliseDepartments(intent.departments) : [],
+          can_manage_knowledge: role === "staff" && intent.can_manage_knowledge === true,
         })
         .eq("id", user.id)
         .eq("role", "client_member")
@@ -367,7 +408,7 @@ export type StaffRow = {
  *  list that loads is worth more than one that is perfectly labelled. */
 async function readAuthUsers(
   client: ReturnType<typeof createAdminClient>
-): Promise<(AuthUser & { email?: string; last_sign_in_at?: string | null })[]> {
+): Promise<(AuthUser & { email?: string })[]> {
   try {
     const { data, error } = await client.auth.admin.listUsers({ perPage: 1000 });
     if (error) throw error;

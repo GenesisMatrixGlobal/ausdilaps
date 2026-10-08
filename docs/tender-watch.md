@@ -75,7 +75,7 @@ entries from `vercel.json` (it also carries the transcription and PageSpeed cron
 
 Queensland doesn't observe daylight saving, so a fixed UTC expression *is* 5am Brisbane year-round — no timezone code anywhere.
 
-Three Vercel caveats: crons only fire on **production** deployments, only after the next push to `main`, and count/duration are plan-limited (Hobby caps at 2 crons — these two use the whole allowance).
+Three Vercel caveats: crons only fire on **production** deployments, only after the next push to `main`, and count/duration are plan-limited (the project is on a plan that allows the four crons it now runs, one of them every 10 minutes).
 
 ### 4. Sending is manual — there is nothing to switch on
 

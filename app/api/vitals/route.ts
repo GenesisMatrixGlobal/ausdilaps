@@ -21,7 +21,9 @@ const msOr = (v: number | null | undefined) => (v == null ? "?" : `${Math.round(
 const schema = z.object({
   // Pathname only. Capped, and anything with a query string or a scheme is rejected rather
   // than cleaned — a well-behaved client never sends one, so a malformed path is a signal.
-  path: z.string().min(1).max(300).regex(/^\/[^?#\s]*$/, "pathname only"),
+  // No control characters either: the path is now printed into the function log
+  // ("[vitals] nav <path> …"), and an escape sequence there would reach whoever reads it.
+  path: z.string().min(1).max(300).regex(/^\/[^?#\s\x00-\x1f\x7f]*$/, "pathname only"),
   device: z.enum(["mobile", "desktop"]),
   lcp: ms,
   inp: ms,

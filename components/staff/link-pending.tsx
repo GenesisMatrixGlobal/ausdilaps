@@ -9,9 +9,10 @@ import { cn } from "@/lib/utils";
  * nothing more, so no text: `<Link href="/admin"><LinkPending>Overview</LinkPending></Link>`.
  *
  * app/admin/loading.tsx only shows when the target's prefetched route tree is cached and fresh.
- * After ~5 minutes idle, straight after a hard load, coming in from the staff portal (no loading
- * boundary above the admin segment), or on a ?month= link that keeps the same segment, a click
- * changes nothing on screen until the server answers — which is what read as a frozen page.
+ * After ~5 minutes idle, straight after a hard load, coming in from the staff portal or the
+ * website before that prefetch has landed (or once it is stale), or on a ?month= link that
+ * keeps the same segment, a click changes nothing on screen until the server answers — which
+ * is what read as a frozen page.
  * `useLinkStatus` goes pending on EVERY click, cached or not, so this covers all of those.
  *
  * ⚠️ Must be rendered INSIDE a `<Link>` — the hook reads that Link's context, and anywhere else

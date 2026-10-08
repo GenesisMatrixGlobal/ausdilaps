@@ -158,7 +158,7 @@ type NavTiming = PerformanceNavigationTiming & {
  *             function runs, so this is close to pure server time. With no 103 it runs from
  *             the request being sent, and so also carries one network round trip.
  *   htmlMs:   those headers → the last byte. Pages stream, so this includes every Suspense
- *             boundary resolving on the server (the PageSpeed rows on /admin).
+ *             boundary resolving on the server (on /admin, the page behind loading.tsx).
  *
  * Read at hide time, when the document has long finished loading. A prerendered page did
  * this work before the visitor clicked — the log line carries the navType to tell.

@@ -15,6 +15,10 @@
     {
       "path": "/api/transcription/nightly",
       "schedule": "*/10 17-20 * * *"
+    },
+    {
+      "path": "/api/pagespeed",
+      "schedule": "0 16 * * *"
     }
   ]
 }

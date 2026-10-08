@@ -5,6 +5,7 @@ import { loadToolUsage } from "@/lib/tools/usage";
 import { loadSamplesStats, type SamplesStats } from "@/lib/page-views";
 import { emptyDevice, loadWebVitals, type WebVitals } from "@/lib/web-vitals";
 import { GAME_SLUGS } from "@/lib/tools/registry";
+import { loadPageSpeed, type PageSpeedReport } from "@/lib/pagespeed";
 import { ASSET_COUNT_RANGES } from "@/lib/leads";
 
 /**
@@ -14,10 +15,11 @@ import { ASSET_COUNT_RANGES } from "@/lib/leads";
  * message instead of throwing, and does every query in a single Promise.all so the page
  * pays one round trip to Sydney rather than one per panel.
  *
- * ⚠️ PageSpeed is NOT loaded here. It streams into the page in its own Suspense boundary
- * (`LabScores` in app/admin/page.tsx), because a cache miss is a live Lighthouse run of
- * 10-30 seconds, and inside this Promise.all it held the whole dashboard for that long.
- * Everything left in here answers in ~100ms.
+ * ⚠️ PageSpeed is a READ of `pagespeed_scores` here, never a Lighthouse run. A run takes
+ * 10-40 seconds, and while this loaded it live (behind a 24h cache that kept resetting) it
+ * held the whole dashboard for that long. The nightly cron /api/pagespeed measures and
+ * stores; this reads two rows, so everything in the Promise.all answers in ~100ms. Don't
+ * add anything here that calls out to Google.
  *
  * Scope note: this reports what came IN — enquiry volume, mix, and whether anything went
  * missing on the way. It says nothing about outcomes. Status, won/lost and pipeline value
@@ -85,7 +87,7 @@ export async function loadDashboard() {
     const db = createAdminClient();
     const since90 = new Date(now - 90 * DAY).toISOString();
 
-    const [leadsRes, staffRes, usage, samples, vitals] = await Promise.all([
+    const [leadsRes, staffRes, usage, pageSpeed, samples, vitals] = await Promise.all([
       db
         .from("leads")
         // Only the columns still rendered — inquiry_type, source_page and salesforce_synced
@@ -95,6 +97,7 @@ export async function loadDashboard() {
         .order("created_at", { ascending: false }),
       db.from("profiles").select("is_active, last_seen_at"),
       loadToolUsage(),
+      loadPageSpeed(),
       loadSamplesStats(),
       loadWebVitals(),
     ]);
@@ -221,6 +224,7 @@ export async function loadDashboard() {
         usedLast30: workTools.reduce((n, s) => n + s.last30Days, 0),
         byTool: usage,
       },
+      pageSpeed,
       samples,
       vitals,
     };
@@ -256,6 +260,7 @@ function empty(unavailable: string, now: number) {
       usedLast30: 0,
       byTool: new Map<string, { toolSlug: string; last30Days: number; last7Days: number; lastUsedAt: string | null }>(),
     },
+    pageSpeed: { scores: [], unavailable } as PageSpeedReport,
     samples: {
       views7d: 0,
       viewsPrev7d: 0,

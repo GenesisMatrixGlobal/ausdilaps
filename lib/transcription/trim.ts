@@ -48,6 +48,9 @@ const EDIT: readonly [RegExp, string][] = [
   [/\bjust\s+/gi, ""],
   // "please" carries nothing the report needs — "south wall here, please." (the team, 2026-09-18)
   [/[,\s]*\bplease\b[,]?/gi, ""],
+  // "you know" — on the manager's filler list (2026-10-08). "Like" and "sort of" are NOT here:
+  // "looks like a stepped crack" and "a sort of hairline crack" carry meaning a regex can't see.
+  [/[,\s]*\byou know\b[,]?/gi, ""],
 ];
 
 /** Leading fillers, peeled repeatedly: "So, now the next photo…" → "The next photo…". */
@@ -63,7 +66,10 @@ export const CHECK_FLAG = /\[CHECK( NUMBER)?:[^\]]*\]/g;
  * error the typist has to resolve, and it must never pass unflagged even if the clean-up pass
  * missed it. Adds a flag only when the line has none.
  */
-const GARBLED_NUMBER = /\b(\d+\s*and\s*\d+|\d+[a-z]+\d+|hundred and \d+|(one|two|three|four|five|six|seven|eight|nine)\s+(hundred|thirty|forty|fifty|sixty|seventy|eighty|ninety)\s+\w+)\b/i;
+// "N and M" is garbled only as a hundred plus a remainder ("300 and 34", "300And34" — one number
+// said as "three hundred and thirty-four"). "84 and 85" is two photos, and flagging it was noise:
+// on a real 19-minute dictation (30 Danby St, 2026-10-08) 12 of 16 flags were clear numbers.
+const GARBLED_NUMBER = /\b(\d*00\s*and\s*\d{1,2}|\d+[a-z]+\d+|hundred and \d+|(one|two|three|four|five|six|seven|eight|nine)\s+(hundred|thirty|forty|fifty|sixty|seventy|eighty|ninety)\s+\w+)\b/i;
 
 export function flagGarbledNumber(line: string): string {
   if (CHECK_FLAG.test(line)) {
@@ -82,6 +88,33 @@ export function countFlags(text: string): number {
   return n;
 }
 
+/** A line that is talking about photo numbers — the only place a spoken number is converted. */
+const PHOTO_CONTEXT = /\b(photos?|figures?|pictures?|number|no\.?|#)\b/i;
+
+const ONES: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 };
+const TEENS: Record<string, number> = { ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19 };
+const TENS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+const O = Object.keys(ONES).join("|");
+const SPOKEN_HUNDREDS = new RegExp(
+  `\\b(${O})[\\s-]+(?:(${Object.keys(TENS).join("|")})(?:[\\s-]+(${O}))?|(${Object.keys(TEENS).join("|")})|oh[\\s-]+(${O}))\\b`,
+  "gi"
+);
+
+/**
+ * "Photo one forty one, one forty two" → "Photo 141, 142". The usual way to say a three-digit
+ * photo number, which Deepgram leaves as words; the manager's rule is digits (2026-10-08). Only
+ * the hundreds-then-tens shape, and only on a line about photo numbers. Digit-by-digit ("one two
+ * eight") and "hundred and" forms stay as heard and are flagged — those are the ambiguous ones.
+ */
+export function spokenPhotoNumbers(line: string): string {
+  if (!PHOTO_CONTEXT.test(line)) return line;
+  return line.replace(SPOKEN_HUNDREDS, (_m, h: string, tens?: string, unit?: string, teen?: string, oh?: string) => {
+    const k = (w?: string) => (w ?? "").toLowerCase();
+    const rest = tens ? TENS[k(tens)] + (unit ? ONES[k(unit)] : 0) : teen ? TEENS[k(teen)] : ONES[k(oh)];
+    return String(ONES[k(h)] * 100 + rest);
+  });
+}
+
 const TIMESTAMP = /^\d{2}:\d{2}:\d{2}$/;
 
 export function trimLine(text: string): string {
@@ -89,6 +122,7 @@ export function trimLine(text: string): string {
   if (!t) return "";
   if (DROP_LINE.some((re) => re.test(t))) return "";
   for (const [re, to] of EDIT) t = t.replace(re, to);
+  t = spokenPhotoNumbers(t);
   for (let guard = 0; guard < 4 && LEADING_FILLER.test(t); guard++) t = t.replace(LEADING_FILLER, "");
   t = t
     .replace(/\s{2,}/g, " ")

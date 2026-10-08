@@ -10,7 +10,7 @@
 
 import { chunkBody, formatBatch, formatTranscript, splitHeader, timestamp, timestampLines } from "@/lib/transcription/format";
 import { DICTATION_KEYTERMS, STAFF_NAMES, keytermsFor, keytermsForFile } from "@/lib/transcription/keyterms";
-import { countFlags, flagGarbledNumber, linesRemoved, trimForTyping, trimLine } from "@/lib/transcription/trim";
+import { countFlags, flagGarbledNumber, linesRemoved, spokenPhotoNumbers, trimForTyping, trimLine } from "@/lib/transcription/trim";
 import { extractBoxLinks, parseBoxLink } from "@/lib/transcription/box-link";
 import { addDays, displayDate, isAtOrAfter, isIsoDate, matchesDay, matchesMonth, matchesYear, sydneyNow, sydneyYesterday } from "@/lib/transcription/nightly/dates";
 import { folderInitials, initialsOf, matchInspector } from "@/lib/transcription/nightly/initials";
@@ -115,6 +115,8 @@ const KEPT: [string, string][] = [
   ["Minor damage in the flooring in hallway, just outside the pool room.", "Minor damage in the flooring in hallway, outside the pool room."],
   ["So, now the next photo photo number 12 is the retaining wall on the rear of the house.", "The next photo photo number 12 is the retaining wall on the rear of the house."],
   ["Next photo is the boundary fence on the west yacht", "Next photo is the boundary fence on the west yacht."],
+  ["Next photo is, you know, the north wall of the garage.", "Next photo is the north wall of the garage."],
+  ["It looks like a stepped crack on the east wall.", "It looks like a stepped crack on the east wall."],
 ];
 for (const [inp, want] of KEPT) eq(trimLine(inp), want, `kept: ${inp}`);
 
@@ -138,6 +140,16 @@ eq(flagGarbledNumber("Photo 300And34 is the wall. [CHECK NUMBER: 300And34, likel
 eq(flagGarbledNumber("The 2 and 3 storey buildings on the east side."), "The 2 and 3 storey buildings on the east side.", "digits joined by 'and' with no photo word are not a figure number");
 eq(trimLine("So the next photo for number 56756 is the north wall of room 3."), "The next photo for number 56756 is the north wall of room 3.", "a long odd number with no garble pattern passes through (the model flags it)");
 eq(countFlags("a [CHECK: x] b [CHECK NUMBER: 1, likely 2] c"), 2, "flags counted");
+// Spoken photo numbers become digits (the manager's rule, 2026-10-08) — lines out of 30 Danby St,
+// where these were all flagged as garbled and drowned the four flags that mattered.
+eq(trimLine("And then photo one eighty and one eighty one."), "And then photo 180 and 181.", "spoken hundreds → digits, and two photos are not one garbled number");
+eq(trimLine("First the photo, one eighty three, one eighty four, one eighty five."), "First the photo, 183, 184, 185.", "a list of spoken numbers");
+eq(trimLine("Photo two thirty five is the kerb."), "Photo 235 is the kerb.", "spoken hundreds are converted before the safety net sees them");
+eq(trimLine("Photo one oh five is the gutter."), "Photo 105 is the gutter.", "'oh' for zero");
+eq(trimLine("Photo 83 west wall at 84 and 85 north wall."), "Photo 83 west wall at 84 and 85 north wall.", "two consecutive photos are not flagged");
+eq(spokenPhotoNumbers("Two forty litre bins by the fence."), "Two forty litre bins by the fence.", "no photo word, no conversion");
+eq(trimLine("And for the one two eight is a damage on east wall."), "And for the one two eight is a damage on east wall.", "digit-by-digit is left as heard (the model flags it)");
+eq(flagGarbledNumber("Photo 300 and 34 is the north wall."), "Photo 300 and 34 is the north wall. [CHECK NUMBER: 300 and 34]", "a hundred plus a remainder is still flagged");
 
 {
   const full = formatTranscript({

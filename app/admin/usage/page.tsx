@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth/session";
 import { StatTiles, type Stat } from "@/components/staff/stat-tiles";
+import { LinkPending } from "@/components/staff/link-pending";
 import {
   apiLabel,
   dollars,
@@ -249,15 +250,20 @@ export default async function ApiUsagePage({ searchParams }: { searchParams: Pro
         alongside. Months are Brisbane calendar months; check against the invoice once.
       </p>
 
-      {/* Month navigation. Any month against the one before it, not only this one against last. */}
-      <nav className="mt-6 flex items-center gap-3 text-sm" aria-label="Month">
-        <Link href={`/admin/usage?month=${u.prevKey}${openTool ? `&tool=${encodeURIComponent(openTool)}` : ""}`} className="rounded-full border border-ad-border px-3 py-1 text-ad-ink hover:bg-ad-surface">
-          ← {lastMonth.label}
+      {/* Month navigation. Any month against the one before it, not only this one against last.
+          ⚠️ These keep the same route segment, so app/admin/loading.tsx never shows for them:
+          the page sits unchanged until the server answers, and LinkPending is the only sign the
+          click registered. px-4 (not px-3) keeps its dot clear of the pill's border; nowrap +
+          flex-wrap move a whole pill to the next line on a phone instead of breaking "← September
+          2026" over two lines inside its border. */}
+      <nav className="mt-6 flex flex-wrap items-center gap-3 text-sm" aria-label="Month">
+        <Link href={`/admin/usage?month=${u.prevKey}${openTool ? `&tool=${encodeURIComponent(openTool)}` : ""}`} className="whitespace-nowrap rounded-full border border-ad-border px-4 py-1 text-ad-ink hover:bg-ad-surface">
+          <LinkPending>← {lastMonth.label}</LinkPending>
         </Link>
         <span className="font-medium text-ad-ink">{month.label}</span>
         {u.nextKey ? (
-          <Link href={`/admin/usage?month=${u.nextKey}${openTool ? `&tool=${encodeURIComponent(openTool)}` : ""}`} className="rounded-full border border-ad-border px-3 py-1 text-ad-ink hover:bg-ad-surface">
-            Next →
+          <Link href={`/admin/usage?month=${u.nextKey}${openTool ? `&tool=${encodeURIComponent(openTool)}` : ""}`} className="whitespace-nowrap rounded-full border border-ad-border px-4 py-1 text-ad-ink hover:bg-ad-surface">
+            <LinkPending>Next →</LinkPending>
           </Link>
         ) : (
           <span className="text-xs text-ad-muted">current month, to date</span>

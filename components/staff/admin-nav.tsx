@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { LinkPending } from "./link-pending";
 
 const LINKS = [
   { href: "/admin", label: "Overview" },
@@ -33,7 +34,9 @@ export function AdminNav() {
                 : "border-transparent text-ad-muted hover:text-ad-ink"
             )}
           >
-            {link.label}
+            {/* The dot lands in the tab's right padding and takes no space, so the tab keeps
+                its width and the underline stays centred on the label. */}
+            <LinkPending>{link.label}</LinkPending>
           </Link>
         );
       })}

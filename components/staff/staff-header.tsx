@@ -4,6 +4,7 @@ import { Container } from "@/components/marketing/container";
 import { DEPARTMENTS } from "@/lib/departments";
 import { canAccess, isAdmin, type StaffUser } from "@/lib/auth/session";
 import { DepartmentSwitcher } from "./department-switcher";
+import { LinkPending } from "./link-pending";
 
 export function StaffHeader({ user }: { user: StaffUser }) {
   const departments = DEPARTMENTS.filter((d) => canAccess(user, d.slug));
@@ -35,7 +36,10 @@ export function StaffHeader({ user }: { user: StaffUser }) {
               href="/admin"
               className="text-sm font-medium text-ad-muted transition-colors hover:text-ad-ink"
             >
-              Command Centre
+              {/* Dot BEFORE the label: after it, the dot would sit in the 12px gap hard against
+                  the next item. Staff → Command Centre is the slowest click there is (no loading
+                  boundary above the admin segment), so it is the one that most needs the cue. */}
+              <LinkPending side="start">Command Centre</LinkPending>
             </Link>
           )}
           <span className="hidden max-w-[16ch] truncate text-sm text-ad-muted lg:block">

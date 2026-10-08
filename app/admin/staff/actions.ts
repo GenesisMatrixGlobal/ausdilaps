@@ -254,6 +254,18 @@ export async function removeStaff(formData: FormData): Promise<ActionResult> {
   return { ok: true, message: "Staff member removed." };
 }
 
+type AuthUser = { id: string; invited_at?: string | null; user_metadata?: Record<string, unknown> };
+
+/** One list for the read in listStaff() AND the repair's returning select, so a repaired
+ *  row patched into the list has exactly the shape of the rows around it. */
+const PROFILE_COLUMNS =
+  "id, email, full_name, role, departments, can_manage_knowledge, is_active, last_seen_at, created_at";
+
+/** A profiles row as read by listStaff() — StaffRow before the auth.users fields join on. */
+type ProfileRow = Omit<StaffRow, "last_sign_in_at" | "invited_at" | "departments"> & {
+  departments: unknown;
+};
+
 /**
  * Finish the invites that migration 0022 left half-done.
  *
@@ -265,27 +277,54 @@ export async function removeStaff(formData: FormData): Promise<ActionResult> {
  * 0022 exists for) and is still client_member. Same guard as 0023's trigger, so once that
  * is pasted this has nothing left to do. Best-effort; a failure only means the row stays
  * hidden one more load.
+ *
+ * Who is stuck is decided HERE, from the profiles listStaff() already read (it includes
+ * client_member rows for exactly this), not by asking the database once per auth user. It
+ * used to send one guarded UPDATE per invited person, one after another, on every load of
+ * this page — nine round trips (~600 ms) in October 2026 that changed nothing on a healthy
+ * day, and one more with every hire. Now a healthy day sends none.
+ *
+ * Patches `profiles` IN PLACE with what each UPDATE returned, so a repaired person shows
+ * on THIS load, not the next one — the old order (repair, then read) gave that for free and
+ * it is the whole point: the admin who opens the page to look for them should find them.
  */
 async function repairStuckInvites(
   client: ReturnType<typeof createAdminClient>,
-  users: { id: string; invited_at?: string | null; user_metadata?: Record<string, unknown> }[]
+  users: AuthUser[],
+  profiles: ProfileRow[]
 ): Promise<void> {
-  for (const u of users) {
-    const role = parseRole(u.user_metadata?.role);
-    if (!u.invited_at || !role) continue;
-    const { data, error } = await client
-      .from("profiles")
-      .update({
-        role,
-        departments: role === "staff" ? normaliseDepartments(u.user_metadata?.departments) : [],
-        can_manage_knowledge: role === "staff" && u.user_metadata?.can_manage_knowledge === true,
-      })
-      .eq("id", u.id)
-      .eq("role", "client_member")
-      .select("email");
-    if (error) console.error("[admin] couldn't repair stuck invite:", error.message);
-    else if (data?.length) console.warn("[admin] repaired stuck invite for", data[0].email, "— apply migration 0023.");
-  }
+  const authById = new Map(users.map((u) => [u.id, u]));
+  const stuck = profiles.flatMap((p) => {
+    const u = authById.get(p.id);
+    const role = parseRole(u?.user_metadata?.role);
+    return p.role === "client_member" && u?.invited_at && role ? [{ profile: p, user: u, role }] : [];
+  });
+  if (stuck.length === 0) return;
+
+  await Promise.all(
+    stuck.map(async ({ profile, user, role }) => {
+      // ⚠️ Keep the role = 'client_member' guard even though the row was client_member a
+      // moment ago: an admin may have edited it since, and this must never demote anyone.
+      const { data, error } = await client
+        .from("profiles")
+        .update({
+          role,
+          departments: role === "staff" ? normaliseDepartments(user.user_metadata?.departments) : [],
+          can_manage_knowledge: role === "staff" && user.user_metadata?.can_manage_knowledge === true,
+        })
+        .eq("id", user.id)
+        .eq("role", "client_member")
+        .select(PROFILE_COLUMNS);
+      if (error) {
+        console.error("[admin] couldn't repair stuck invite:", error.message);
+        return;
+      }
+      const repaired = data?.[0] as ProfileRow | undefined;
+      if (!repaired) return; // no longer client_member — fixed elsewhere, shows next load
+      Object.assign(profile, repaired);
+      console.warn("[admin] repaired stuck invite for", repaired.email, "— apply migration 0023.");
+    })
+  );
 }
 
 /** Refuse the change if it would leave nobody able to administer the portal. */
@@ -323,8 +362,24 @@ export type StaffRow = {
   invited_at: string | null;
 };
 
-/** Everyone with a profile, newest first. Internal roles first so the staff list
- *  isn't buried under future client-portal users. */
+/** auth.users, or [] if it can't be read. Best-effort: if this call fails the list still
+ *  renders, just without the pending badges (and without the stuck-invite repair). A staff
+ *  list that loads is worth more than one that is perfectly labelled. */
+async function readAuthUsers(
+  client: ReturnType<typeof createAdminClient>
+): Promise<(AuthUser & { email?: string; last_sign_in_at?: string | null })[]> {
+  try {
+    const { data, error } = await client.auth.admin.listUsers({ perPage: 1000 });
+    if (error) throw error;
+    return data.users;
+  } catch (e) {
+    console.error("[admin] couldn't read auth users for invite status:", (e as Error).message);
+    return [];
+  }
+}
+
+/** Staff and admins, newest first. Client-portal profiles (client_admin / client_member)
+ *  are left out so the staff list isn't buried under future client-portal users. */
 export async function listStaff(): Promise<{ rows: StaffRow[]; error: string | null }> {
   await requireAdmin();
 
@@ -336,46 +391,46 @@ export async function listStaff(): Promise<{ rows: StaffRow[]; error: string | n
   // profiles.last_seen_at only started being written recently, so it would report
   // anyone who signed in before that as a pending invite. auth is the truth.
   //
-  // Best-effort: if this call fails the list still renders, just without the pending
-  // badges. A staff list that loads is worth more than one that is perfectly labelled.
-  //
-  // Read BEFORE profiles now, because it also feeds repairStuckInvites() below.
+  // The two reads are independent, so they go together. The profiles read takes
+  // client_member rows TOO: that is where a stuck invite sits, and repairStuckInvites()
+  // finds them in this result instead of probing the database once per auth user. They
+  // are filtered back out below unless the repair just promoted them.
+  const [users, profiles] = await Promise.all([
+    readAuthUsers(conn.client),
+    conn.client
+      .from("profiles")
+      .select(PROFILE_COLUMNS)
+      .in("role", [...ASSIGNABLE_ROLES, "client_member"])
+      .order("created_at", { ascending: false }),
+  ]);
+
+  if (profiles.error) return { rows: [], error: profiles.error.message };
+  const data = (profiles.data ?? []) as ProfileRow[];
+
+  await repairStuckInvites(conn.client, users, data);
+
   const authByEmail = new Map<string, { lastSignInAt: string | null; invitedAt: string | null }>();
-  try {
-    const { data: list } = await conn.client.auth.admin.listUsers({ perPage: 1000 });
-    for (const u of list?.users ?? []) {
-      if (!u.email) continue;
-      authByEmail.set(u.email.toLowerCase(), {
-        lastSignInAt: u.last_sign_in_at ?? null,
-        invitedAt: u.invited_at ?? null,
-      });
-    }
-    await repairStuckInvites(conn.client, list?.users ?? []);
-  } catch (e) {
-    console.error("[admin] couldn't read auth users for invite status:", (e as Error).message);
+  for (const u of users) {
+    if (!u.email) continue;
+    authByEmail.set(u.email.toLowerCase(), {
+      lastSignInAt: u.last_sign_in_at ?? null,
+      invitedAt: u.invited_at ?? null,
+    });
   }
 
-  const { data, error } = await conn.client
-    .from("profiles")
-    .select(
-      "id, email, full_name, role, departments, can_manage_knowledge, is_active, last_seen_at, created_at"
-    )
-    .in("role", ["staff", "admin", "superadmin"])
-    .order("created_at", { ascending: false });
-
-  if (error) return { rows: [], error: error.message };
-
   return {
-    rows: (data ?? []).map((r) => {
-      const auth = authByEmail.get((r.email ?? "").toLowerCase());
-      return {
-        ...r,
-        departments: normaliseDepartments(r.departments),
-        can_manage_knowledge: r.can_manage_knowledge === true,
-        last_sign_in_at: auth?.lastSignInAt ?? null,
-        invited_at: auth?.invitedAt ?? null,
-      };
-    }) as StaffRow[],
+    rows: data
+      .filter((r) => parseRole(r.role) !== null)
+      .map((r) => {
+        const auth = authByEmail.get((r.email ?? "").toLowerCase());
+        return {
+          ...r,
+          departments: normaliseDepartments(r.departments),
+          can_manage_knowledge: r.can_manage_knowledge === true,
+          last_sign_in_at: auth?.lastSignInAt ?? null,
+          invited_at: auth?.invitedAt ?? null,
+        };
+      }),
     error: null,
   };
 }

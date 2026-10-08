@@ -15,9 +15,12 @@ import { useSyncExternalStore } from "react";
  * ⚠️ NO explanatory copy under the heading, and no reassurance line under the button —
  * both were written and both were cut on 2026-09-30 (Rhys: "keep the wording to a
  * minimum"). Three labelled fields and a button that says what it does need no preamble;
- * the subtext only restated them. The button design stays as it is. The ONE line of copy
- * that survives is the marketing consent checkbox, because it is not decoration: it is the
- * only place the visitor is told what the address will be used for.
+ * the subtext only restated them. The button design stays as it is.
+ *
+ * ⚠️ NO marketing consent checkbox (removed 2026-10-08, Rhys: "we are not going to market to
+ * people who have done this"). The address is used to follow up the visit, nothing else. If
+ * marketing to this list is ever wanted, the consent box has to come back FIRST, unticked —
+ * the Spam Act wants permission recorded, and every row before then has none.
  *
  * Client component ONLY for the error line: the server page never reads searchParams (that
  * would make it dynamic and lose the ISR cache that survives a Box outage), so `?error=` is
@@ -83,19 +86,6 @@ export function SamplesUnlock() {
           aria-hidden
           className="hidden"
         />
-        {/* UNTICKED by default (Rhys, 2026-10-06; it was ticked from 2026-09-30). A pre-ticked
-            box is weak ground for marketing under the Spam Act, so consent is now an opt-in
-            the visitor makes. Unlocking the library does NOT depend on it. An unchecked
-            checkbox sends NO field at all, which is why the route reads a missing value as
-            false — `leads.marketing_consent` is false, not silence. */}
-        <label className="mt-1 flex items-start gap-2.5 text-sm text-ad-muted">
-          <input
-            type="checkbox"
-            name="marketing_consent"
-            className="mt-0.5 h-4 w-4 shrink-0 rounded border-ad-border text-ad-accent accent-ad-accent focus:outline-none"
-          />
-          <span>I consent to marketing.</span>
-        </label>
         {/* ORANGE, the conversion accent. The old pair of cards used charcoal because two
             equal buttons should not both shout; there is one action now. */}
         <button

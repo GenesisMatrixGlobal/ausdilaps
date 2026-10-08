@@ -23,10 +23,6 @@ const schema = z.object({
   email: z.string().trim().email().max(200),
   company: z.string().trim().max(200).optional().default(""),
   company_website: z.string().optional().default(""), // honeypot
-  // An unchecked checkbox sends NOTHING, so absent means they unticked it. The box ships
-  // ticked, so a missing value is a deliberate decline and is stored as an explicit false —
-  // never as null, which migration 0027 reserves for "we never asked".
-  marketing_consent: z.string().optional(),
 });
 
 
@@ -52,33 +48,25 @@ export async function POST(req: NextRequest) {
 
   // Best effort, never blocking: the visitor gets the library whether or not the row
   // saves or the email sends. Failing them over our plumbing would be the wrong trade.
-  const consented = d.marketing_consent !== undefined;
+  // No marketing consent is asked (removed 2026-10-08 — see components/marketing/samples-unlock.tsx),
+  // so `leads.marketing_consent` (migration 0027) is left NULL: "never asked".
   let leadId: string | null = null;
   try {
     const db = createAdminClient();
-    const row = {
-      name: d.name,
-      email: d.email,
-      company: d.company || null,
-      source_page: SAMPLES_PATH,
-      notes: `Opened the sample report library with their email (no access code). Marketing consent: ${consented ? "yes" : "no"}.`,
-      routing: "samples-unlock",
-      ip,
-      user_agent: userAgent,
-    };
-    let { data, error } = await db
+    const { data, error } = await db
       .from("leads")
-      .insert({ ...row, marketing_consent: consented })
+      .insert({
+        name: d.name,
+        email: d.email,
+        company: d.company || null,
+        source_page: SAMPLES_PATH,
+        notes: "Opened the sample report library with their email (no access code).",
+        routing: "samples-unlock",
+        ip,
+        user_agent: userAgent,
+      })
       .select("id")
       .single();
-
-    // 0027 is pasted into the SQL editor by hand, so a deploy can land before it. Losing a
-    // real lead over a missing column would be the worst possible trade — retry without it
-    // and say which migration is outstanding. The consent is still on the row, in `notes`.
-    if (error && /marketing_consent/.test(error.message)) {
-      console.warn("[samples/unlock] no `marketing_consent` column — apply migration 0027_lead_marketing_consent.sql.");
-      ({ data, error } = await db.from("leads").insert(row).select("id").single());
-    }
     if (error) throw error;
     leadId = data!.id;
   } catch (e) {
@@ -87,7 +75,7 @@ export async function POST(req: NextRequest) {
 
   let emailed = false;
   try {
-    emailed = await notify(d, leadId, consented);
+    emailed = await notify(d, leadId);
   } catch (e) {
     console.error("[samples/unlock] notify failed:", e);
   }
@@ -126,8 +114,7 @@ export async function POST(req: NextRequest) {
 
 async function notify(
   d: z.infer<typeof schema>,
-  leadId: string | null,
-  consented: boolean
+  leadId: string | null
 ): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
   if (!key) return false;
@@ -141,7 +128,6 @@ async function notify(
       <tr><td><strong>Name</strong></td><td>${escapeHtml(d.name)}</td></tr>
       <tr><td><strong>Email</strong></td><td><a href="mailto:${escapeHtml(d.email)}">${escapeHtml(d.email)}</a></td></tr>
       <tr><td><strong>Company</strong></td><td>${escapeHtml(d.company || "—")}</td></tr>
-      <tr><td><strong>Marketing</strong></td><td>${consented ? "Consented" : "<strong>Declined</strong> — do not add to a list"}</td></tr>
       <tr><td><strong>When</strong></td><td>${escapeHtml(when)} (Brisbane)</td></tr>
       <tr><td><strong>Lead id</strong></td><td>${escapeHtml(leadId ?? "not saved")}</td></tr>
     </table>`;

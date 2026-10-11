@@ -7,6 +7,7 @@ import { escapeHtml } from "@/lib/html";
 import { formatBrisbane } from "@/lib/dates";
 import { enquiryAckEmail } from "@/lib/emails/enquiry-ack";
 import { accessCodes } from "@/lib/samples-access";
+import { looksLikeJunk } from "@/lib/spam";
 
 /** Once per cold start, not per submission. */
 let warnedUnprotected = false;
@@ -207,6 +208,14 @@ export async function POST(req: NextRequest) {
   } else if (!warnedUnprotected) {
     warnedUnprotected = true;
     console.warn("[quote] Turnstile is not configured — the enquiry form is running on the honeypot alone.");
+  }
+
+  // Junk filter — the backstop behind Turnstile, for a bot that pays to solve it. Accepted
+  // and dropped like the honeypot: no row, and above all no acknowledgement, which would
+  // land in the inbox of the stranger whose address the bot typed in. See lib/spam.ts.
+  if (looksLikeJunk(d)) {
+    console.info("[quote] submission dropped as junk");
+    return NextResponse.json({ ok: true });
   }
 
   const tier = classifyTier(d);

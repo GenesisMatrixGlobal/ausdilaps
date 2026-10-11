@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Script from "next/script";
 import { useForm, useWatch, type UseFormRegister } from "react-hook-form";
 import { Check, FileText, MailOpen, MessageCircle, ClipboardList, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Turnstile } from "@/components/marketing/turnstile";
 import { cn } from "@/lib/utils";
 import {
   PROPERTY_ROLES,
@@ -226,6 +226,9 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
   });
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
   const [serverError, setServerError] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  // Bumped to hand the widget a fresh token after a failed submit (tokens are single-use).
+  const [turnstileResets, setTurnstileResets] = useState(0);
   const successRef = useRef<HTMLDivElement>(null);
 
   // Bring the confirmation into view. The form is long enough that submitting from
@@ -246,8 +249,13 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
   async function onSubmit(values: FormValues) {
     setStatus("idle");
     setServerError("");
-    const turnstileToken =
-      (document.querySelector('[name="cf-turnstile-response"]') as HTMLInputElement | null)?.value ?? "";
+    // Managed mode usually passes on its own within a second or two; a fast submit can
+    // beat it. Say so here rather than letting the server reject a blank token.
+    if (siteKey && !turnstileToken) {
+      setStatus("error");
+      setServerError("Just confirming you\u2019re not a bot \u2014 tick the box above if it\u2019s showing, then send again.");
+      return;
+    }
     try {
       // The compact form has ONE free-text address field (held in `contactAddress`);
       // for a New Quote it is the project's location, for everything else the
@@ -289,11 +297,16 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
         reset();
       } else {
         setStatus("error");
+        // A Turnstile token is single-use, so the retry needs a fresh one.
+        setTurnstileResets((n) => n + 1);
         // The route answers a validation failure with per-field `errors`, but this
         // only ever read `error` (singular) — so a rejected field showed as a generic
         // "something went wrong" with no clue which one. Put them back on the fields.
         const fieldErrors = data.errors as Record<string, string[]> | undefined;
-        if (fieldErrors) {
+        if (fieldErrors?.turnstileToken?.[0]) {
+          // Not a field on the form, so there is nothing to highlight.
+          setServerError(fieldErrors.turnstileToken[0]);
+        } else if (fieldErrors) {
           for (const [field, messages] of Object.entries(fieldErrors)) {
             if (messages?.[0]) {
               setError(field as keyof FormValues, { type: "server", message: messages[0] });
@@ -309,6 +322,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
       // in here used to be reported to the user as a network problem and left no
       // trace anywhere. Log it so the next fault is diagnosable from the console.
       console.error("[quote] submit failed:", e);
+      setTurnstileResets((n) => n + 1);
       setStatus("error");
       setServerError("Something went wrong. Please try again or call us on 1800 345 277.");
     }
@@ -561,10 +575,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
         </div>
 
         {siteKey && (
-          <>
-            <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
-            <div className="cf-turnstile mt-5" data-sitekey={siteKey} />
-          </>
+          <Turnstile resets={turnstileResets} siteKey={siteKey} onToken={setTurnstileToken} className="mt-5" />
         )}
 
         {status === "error" && (
@@ -795,10 +806,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
       <ContactMethodField register={register} className="mt-5" />
 
       {siteKey && (
-        <>
-          <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
-          <div className="cf-turnstile mt-5" data-sitekey={siteKey} />
-        </>
+        <Turnstile resets={turnstileResets} siteKey={siteKey} onToken={setTurnstileToken} className="mt-5" />
       )}
 
       {status === "error" && (

@@ -33,6 +33,7 @@
     "check:safe-next": "tsx scripts/check-safe-next.ts",
     "check:registry": "tsx scripts/check-tool-registry.ts",
     "check:ack": "tsx scripts/check-enquiry-ack.ts",
+    "check:spam": "tsx scripts/check-spam.ts",
     "send:ack": "node --env-file=.env.local node_modules/.bin/tsx scripts/send-enquiry-ack-tests.ts",
     "repair:tender-contacts": "tsx scripts/repair-tender-contacts.ts",
     "repair:mailbox-urls": "tsx scripts/repair-mailbox-urls.ts",

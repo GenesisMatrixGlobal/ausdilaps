@@ -108,9 +108,12 @@ async function sendEmails(
    */
   const accessLetterNotify =
     process.env.ACCESS_LETTER_NOTIFY_EMAIL ?? "projects@ausdilaps.com.au";
-  // Quote requests also go to the GM (Rhys, 2026-10-02). Report and general inquiries don't.
+  // Quote requests also go to the GM (Rhys, 2026-10-02). General inquiries don't.
   const quoteRequestNotify =
     process.env.QUOTE_REQUEST_NOTIFY_EMAIL ?? "rhys.m@ausdilaps.com.au";
+  // A question about a report is the reports team's to answer (Rhys, 2026-10-16).
+  const reportInquiryNotify =
+    process.env.REPORT_INQUIRY_NOTIFY_EMAIL ?? "reports@ausdilaps.com.au";
 
   const cc = [
     ...(tier === "tier1" && salesNotify ? [salesNotify] : []),
@@ -118,6 +121,7 @@ async function sendEmails(
       ? [accessLetterNotify]
       : []),
     ...(d.inquiryType === "New Quote" && quoteRequestNotify ? [quoteRequestNotify] : []),
+    ...(d.inquiryType === "Report Inquiry" && reportInquiryNotify ? [reportInquiryNotify] : []),
   ].filter((address, i, all) => address !== adminEmail && all.indexOf(address) === i);
 
   // Admin notice

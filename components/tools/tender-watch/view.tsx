@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TabBar } from "@/components/ui/tab-bar";
 import { sameParty, senderOrigin } from "@/lib/tenders/display";
@@ -108,11 +108,17 @@ function hostOf(url: string): string | null {
   }
 }
 
-export function TenderWatchView({ initial }: { initial: TenderSummary }) {
+/** The opportunity that holds a tender_items id — what an email's `?item=` link points at. */
+const groupHolding = (groups: Group[], itemId: string | undefined) =>
+  itemId ? groups.find((g) => g.members.some((m) => m.id === itemId)) : undefined;
+
+export function TenderWatchView({ initial, focus }: { initial: TenderSummary; focus?: string }) {
   const router = useRouter();
   const [data, setData] = useState(initial);
   const [pane, setPane] = useState<Pane>("opportunities");
-  const [filter, setFilter] = useState<Filter>("queue");
+  // A linked tender opens on whichever list it is in now — the email was written this
+  // morning, and someone may have sent or dismissed it since.
+  const [filter, setFilter] = useState<Filter>(() => groupHolding(initial.groups, focus)?.state ?? "queue");
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -402,6 +408,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
   // Nothing to scan and nothing scanned yet — the pipeline is built but not switched on.
   const comingSoon = neverRun && !data.sources.some((s) => s.configured);
   const selectedGroups = data.groups.filter((g) => selected.has(g.key));
+  const focusKey = groupHolding(data.groups, focus)?.key;
   const selectedRows = selectedGroups.reduce((n, g) => n + g.count, 0);
 
   return (
@@ -438,6 +445,11 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
       )}
 
       {error && <p className="mb-4 text-sm text-ad-orange">{error}</p>}
+      {focus && !focusKey && (
+        <p className="mb-4 text-sm text-ad-muted">
+          The tender that link points to isn&rsquo;t listed any more &mdash; it has most likely closed.
+        </p>
+      )}
       {flash && <p className="mb-4 text-sm font-medium text-ad-steel">{flash}</p>}
 
       <StatTiles stats={tiles} />
@@ -553,6 +565,7 @@ export function TenderWatchView({ initial }: { initial: TenderSummary }) {
                   selected={selected.has(g.key)}
                   onToggle={() => toggle(g.key)}
                   duplicates={dupes?.[g.key]}
+                  focused={g.key === focusKey}
                 />
               ))}
             </div>
@@ -911,6 +924,7 @@ function GroupCard({
   selected,
   onToggle,
   duplicates,
+  focused = false,
 }: {
   group: Group;
   now: number;
@@ -919,7 +933,15 @@ function GroupCard({
   onToggle: () => void;
   /** undefined = not checked yet. An empty list is a real answer; undefined is not. */
   duplicates?: DuplicateResult;
+  /** The card an email link opened the tool on — outlined and scrolled to on arrival. */
+  focused?: boolean;
 }) {
+  const ref = useRef<HTMLElement>(null);
+  // Scroll once, when the card first renders focused. It is DOM work only, no state.
+  useEffect(() => {
+    if (focused) ref.current?.scrollIntoView({ block: "center" });
+  }, [focused]);
+
   const lead = group.lead;
   const closes = closesLabel(lead.closesAt, now);
   const primary = group.sources.find((s) => s.url) ?? null;
@@ -928,9 +950,11 @@ function GroupCard({
 
   return (
     <article
+      ref={ref}
       className={cn(
         "border-b border-ad-border bg-white transition-colors last:border-b-0",
-        selected && "bg-ad-steel/5"
+        selected && "bg-ad-steel/5",
+        focused && "ring-2 ring-inset ring-ad-steel"
       )}
     >
       <div className="flex items-start gap-3 p-4">

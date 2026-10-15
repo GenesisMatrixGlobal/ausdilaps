@@ -7,6 +7,7 @@ import { STALE_TRIAGE_DAYS, STALLED_RUN_MS, WINDOW_DAYS } from "@/lib/tenders/co
 import { findRedundant } from "@/lib/tenders/redundancy";
 import { groupItems } from "@/lib/tenders/group";
 import { isActionable } from "@/lib/tenders/actionable";
+import { siteUrl } from "@/lib/tenders/notify";
 
 /**
  * The morning invariant check — 9am Brisbane, before anyone opens the inbox.
@@ -20,7 +21,15 @@ import { isActionable } from "@/lib/tenders/actionable";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-type Check = { level: "critical" | "warning"; title: string; detail: string };
+/** `links` point into the Command Centre, so an alert names a tender you can click straight to. */
+type Check = { level: "critical" | "warning"; title: string; detail: string; links?: { label: string; href: string }[] };
+
+/** Links listed under one check; past this the email says "+N more" and the tool has the rest. */
+const MAX_CHECK_LINKS = 5;
+
+/** The Command Centre's Tender Watch tab. `?item=` opens it on that tender, highlighted. */
+const tendersUrl = (itemId?: string) =>
+  `${siteUrl()}/admin/tenders${itemId ? `?item=${encodeURIComponent(itemId)}` : ""}`;
 
 /** Bearer only. Nothing in the UI calls this, and honouring the admin cookie on a GET meant
  *  any link an admin clicked could fire an alert email — SameSite=Lax cookies ride along
@@ -133,14 +142,22 @@ async function handle(req: NextRequest, allowSession: boolean) {
     const stuck = stillOpen.length;
 
     if (stuck > 0) {
-      const oldest = stillOpen
-        .slice(0, 3)
-        .map((i) => (i.title as string).slice(0, 60))
-        .join("; ");
+      // One link per TITLE: portal reminders put the same tender in the queue several times
+      // (group.ts merges them into one card), and five identical links read as five tenders.
+      const seenTitles = new Set<string>();
+      const links = stillOpen
+        .filter((i) => {
+          const t = ((i.title as string) ?? "").trim().toLowerCase();
+          if (seenTitles.has(t)) return false;
+          seenTitles.add(t);
+          return true;
+        })
+        .map((i) => ({ label: ((i.title as string) || "Untitled tender").slice(0, 90), href: tendersUrl(i.id as string) }));
       checks.push({
         level: "critical",
         title: `${stuck} open tender(s) untouched for over ${STALE_TRIAGE_DAYS} days`,
-        detail: `Nobody has sent or dismissed these. Oldest: ${oldest}`,
+        detail: "Nobody has sent or dismissed these. Oldest first:",
+        links,
       });
     }
 
@@ -263,9 +280,20 @@ async function sendHealthEmail(
   const waitingNote =
     waiting > 0
       ? `<tr><td style="padding:10px 0;border-top:1px solid #e3e5e7;font-size:12px;color:#5b6570">
-           ${waiting} matched tender(s) are waiting to be reviewed and sent in Tender Watch.
+           ${waiting} matched tender(s) are waiting to be reviewed and sent in
+           <a href="${tendersUrl()}" style="color:#46688a">Tender Watch</a>.
          </td></tr>`
       : "";
+
+  const linkList = (links: NonNullable<Check["links"]>) =>
+    `<ul style="margin:6px 0 0;padding-left:18px;font-size:12px;line-height:1.6">${links
+      .slice(0, MAX_CHECK_LINKS)
+      .map((l) => `<li><a href="${l.href}" style="color:#46688a">${safeText(l.label, 120)}</a></li>`)
+      .join("")}${
+      links.length > MAX_CHECK_LINKS
+        ? `<li style="list-style:none;margin-left:-18px;color:#5b6570">+${links.length - MAX_CHECK_LINKS} more in Tender Watch</li>`
+        : ""
+    }</ul>`;
 
   const subject = checks.length
     ? `Tender Watch — ${critical > 0 ? "action needed" : "check"}: ${checks.length} issue${checks.length === 1 ? "" : "s"}`
@@ -277,6 +305,7 @@ async function sendHealthEmail(
           (c) => `<tr><td style="padding:10px 0;border-bottom:1px solid #e3e5e7">
             <div style="font-size:13px;font-weight:600;color:${c.level === "critical" ? "#b8402c" : "#a8701a"}">${safeText(c.title, 160)}</div>
             <div style="font-size:12px;color:#5b6570;margin-top:2px">${safeText(c.detail, 400)}</div>
+            ${c.links?.length ? linkList(c.links) : ""}
           </td></tr>`
         )
         .join("")
@@ -292,6 +321,9 @@ async function sendHealthEmail(
         <div style="font-size:17px;font-weight:600;color:#fff;margin-top:4px">${isAllClear && !checks.length ? "All clear" : `${checks.length} issue${checks.length === 1 ? "" : "s"}`}</div>
       </td></tr>
       <tr><td style="padding:8px 22px 18px"><table role="presentation" width="100%">${body}</table></td></tr>
+      <tr><td style="padding:0 22px 20px">
+        <a href="${tendersUrl()}" style="display:inline-block;background:#46688a;color:#fff;font-size:13px;font-weight:600;text-decoration:none;padding:9px 16px;border-radius:6px">Open Tender Watch in the Command Centre</a>
+      </td></tr>
     </table></body></html>`;
 
   try {

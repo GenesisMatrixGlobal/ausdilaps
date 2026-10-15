@@ -71,7 +71,7 @@ const BRAND = {
   surface: "#f3f4f5",
 };
 
-function siteUrl(): string {
+export function siteUrl(): string {
   // NEXT_PUBLIC_SITE_URL is currently missing from Vercel (CLAUDE.md §10). Falling back
   // keeps the email sending rather than shipping broken links in an otherwise good one.
   return (process.env.NEXT_PUBLIC_SITE_URL ?? "https://ausdilaps.com.au").replace(/\/$/, "");

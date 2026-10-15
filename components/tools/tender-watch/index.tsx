@@ -26,8 +26,11 @@ import { TenderWatchView } from "./view";
  *
  * The route (and the department layout above it) has already proved the caller may be
  * here; isApiAdmin() only decides how much operator detail to include.
+ *
+ * `focus` is a tender_items id (`?item=` on /admin/tenders, from the morning check email):
+ * the view opens on that tender's list with its card highlighted and scrolled into view.
  */
-export async function TenderWatchTool() {
+export async function TenderWatchTool({ focus }: { focus?: string } = {}) {
   const summary = await loadTenderSummary(await isApiAdmin());
-  return <TenderWatchView initial={summary} />;
+  return <TenderWatchView initial={summary} focus={focus} />;
 }

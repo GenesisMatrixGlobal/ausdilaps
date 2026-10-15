@@ -23,9 +23,15 @@ export const metadata = {
  * drifting apart is exactly the "never copy a tool" rule in CLAUDE.md. Anything that should
  * differ between the two doors belongs on the operator flag the tool already reads.
  */
-export default async function AdminTendersPage() {
+export default async function AdminTendersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ item?: string | string[] }>;
+}) {
   // The layout has already done this; calling it again keeps the page honest on its own,
   // the way every /admin server action re-checks rather than trusting its caller.
   await requireAdmin("/admin/tenders");
-  return <TenderWatchTool />;
+  // `?item=<tender_items.id>` — the morning check email links each stuck tender here.
+  const { item } = await searchParams;
+  return <TenderWatchTool focus={typeof item === "string" ? item : undefined} />;
 }

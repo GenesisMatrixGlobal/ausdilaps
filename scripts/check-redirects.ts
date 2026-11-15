@@ -55,7 +55,10 @@ async function chase(path: string): Promise<{ status: number; finalPath: string;
       hops++;
       continue;
     }
-    return { status: res.status, finalPath: new URL(url).pathname, hops };
+    // Path + query: a redirect that tags its destination (the QR short links) must arrive
+    // with the tag. The #fragment never reaches a server, so it is compared without it.
+    const final = new URL(url);
+    return { status: res.status, finalPath: final.pathname + final.search, hops };
   }
   return { status: 0, finalPath: "too many redirects", hops };
 }
@@ -104,8 +107,8 @@ async function run(checks: Check[]): Promise<Outcome[]> {
       while (i < checks.length) {
         const c = checks[i++];
         const r = await chase(c.path);
-        const arrived = r.finalPath === c.expect;
-        const gated = !!c.staffGate && r.finalPath === "/staff/login";
+        const arrived = r.finalPath === c.expect.split("#")[0];
+        const gated = !!c.staffGate && r.finalPath.split("?")[0] === "/staff/login";
         out.push({ ...c, ...r, ok: (arrived || gated) && r.status < 400 });
       }
     })
@@ -131,7 +134,9 @@ function report(title: string, rows: Outcome[]): number {
   redirectRows.sort((a, b) => a.label.localeCompare(b.label));
   let failed = report("Redirects", redirectRows);
 
-  const gated = redirectRows.filter((r) => r.ok && r.staffGate && r.finalPath === "/staff/login");
+  const gated = redirectRows.filter(
+    (r) => r.ok && r.staffGate && r.finalPath.split("?")[0] === "/staff/login"
+  );
   if (gated.length) {
     console.log(`  note: ${gated.length} staff redirect(s) ended at /staff/login — correct for an anonymous request`);
   }

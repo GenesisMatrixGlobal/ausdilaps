@@ -93,6 +93,18 @@ export const REDIRECTS: Redirect[] = [
   { source: "/terms", destination: "/terms-and-conditions", permanent: true },
   { source: "/privacy", destination: "/privacy-policy", permanent: true },
 
+  // Printed QR codes (Rhys, 2026-11-16). Short links so the codes stay small and easy to
+  // scan, and NOT permanent: a 308 is cached by the phone, so a destination changed later
+  // would never reach anyone who had scanned before. `src` tags the enquiry ("Came from"
+  // on /admin/leads), `type` pre-selects the enquiry type, `#enquiry` lands on the form.
+  // The QR artwork lives in print/qr-codes/ — never rename these sources once printed.
+  { source: "/pamphlet", destination: "/quote?src=pamphlet#enquiry", permanent: false },
+  {
+    source: "/letter",
+    destination: "/quote?src=access-letter&type=access-letter#enquiry",
+    permanent: false,
+  },
+
   // WordPress media. After cutover ausdilaps.com.au IS this site, so every
   // /wp-content/uploads/* URL Google has indexed (and every external link to a
   // sample PDF) would land on a 404. The capability statement is committed to

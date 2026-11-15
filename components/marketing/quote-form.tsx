@@ -76,6 +76,30 @@ const TYPE_OPTIONS: { value: InquiryType; label: string; hint: string; cta: stri
   },
 ];
 
+/** Printed QR codes land on /quote through short links (data/redirects.ts). `?type=`
+ *  pre-selects the enquiry type; `?src=` tags where the enquiry came from. */
+const TYPE_FROM_LINK: Record<string, InquiryType> = {
+  "access-letter": "I Received An Access Letter",
+  quote: "New Quote",
+  report: "Report Inquiry",
+  general: "General Inquiry",
+};
+const SRC_KEY = "ad_enquiry_src";
+
+/** The `?src=` tag, kept for the browser session so it survives a look round the site
+ *  before sending. Lowercase slugs only — it is printed in the admin email. */
+function enquirySource(): string {
+  const fromUrl = new URLSearchParams(window.location.search).get("src") ?? "";
+  const src = /^[a-z0-9-]{1,40}$/.test(fromUrl) ? fromUrl : "";
+  try {
+    if (src) sessionStorage.setItem(SRC_KEY, src);
+    else return sessionStorage.getItem(SRC_KEY) ?? "";
+  } catch {
+    // Storage blocked (private mode etc.) — the tag in the URL still counts.
+  }
+  return src;
+}
+
 const inputCls =
   "mt-1.5 w-full rounded-md border border-ad-border bg-white px-4 py-2.5 text-[0.95rem] text-ad-ink placeholder:text-ad-muted/60 focus:border-ad-accent focus:outline-none focus:ring-2 focus:ring-ad-accent/30";
 const labelCls = "block text-sm font-medium text-ad-ink";
@@ -191,6 +215,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
     reset,
     control,
     setError,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     // Every field needs a default. react-hook-form only registers what is rendered,
@@ -243,6 +268,14 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
     });
   }, [status]);
 
+  // A QR link: remember its tag, and pre-select the enquiry type it names. In an effect,
+  // not defaultValues — the server render has no URL to read.
+  useEffect(() => {
+    enquirySource();
+    const type = TYPE_FROM_LINK[new URLSearchParams(window.location.search).get("type") ?? ""];
+    if (type) setValue("inquiryType", type);
+  }, [setValue]);
+
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const inquiryType = useWatch({ control, name: "inquiryType" });
 
@@ -279,6 +312,9 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
           ? values.contactAddress
           : composeAddress(values.addressLine, values.addressSuburb, values.addressState, values.addressPostcode);
 
+      // e.g. "/quote?src=pamphlet" — the tag is the only query kept, so ad-click junk
+      // (gclid, utm_*) never lands in "Came from".
+      const src = enquirySource();
       const res = await fetch("/api/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -287,8 +323,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
           projectLocation,
           contactAddress,
           turnstileToken,
-          sourcePage:
-            typeof window !== "undefined" ? `${window.location.pathname}${compact ? "#quote" : ""}` : "",
+          sourcePage: `${window.location.pathname}${src ? `?src=${src}` : ""}${compact ? "#quote" : ""}`,
         }),
       });
       const data = await res.json();
@@ -604,7 +639,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="rounded-xl border border-ad-border bg-white p-6 sm:p-8">
+    <form onSubmit={handleSubmit(onSubmit)} className="rounded-xl border border-ad-border bg-white p-5 sm:p-8">
       {/* Honeypot — hidden from users, catches bots */}
       {honeypot}
 

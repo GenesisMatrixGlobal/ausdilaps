@@ -30,22 +30,27 @@ export default function QuotePage() {
     <>
       <JsonLd data={[breadcrumbSchema(CRUMBS)]} />
 
-      <section className="border-b border-ad-border py-12 lg:py-16">
+      {/* Mobile is mostly people scanning a printed QR code, so the intro is kept short
+          there and the form starts on the first screen. Breadcrumbs are hidden on phones
+          only — the BreadcrumbList schema above is unaffected. */}
+      <section className="border-b border-ad-border py-7 sm:py-12 lg:py-16">
         <Container className="max-w-3xl">
-          <Breadcrumbs crumbs={CRUMBS} />
-          <Eyebrow className="mt-6 text-ad-accent">Request a Quote</Eyebrow>
-          <h1 className="mt-5 text-balance font-heading text-4xl font-semibold leading-[1.08] tracking-tight text-ad-ink sm:text-5xl">
+          <Breadcrumbs crumbs={CRUMBS} className="hidden sm:block" />
+          <Eyebrow className="text-ad-accent sm:mt-6">Request a Quote</Eyebrow>
+          <h1 className="mt-3 text-balance font-heading text-3xl font-semibold leading-[1.08] tracking-tight text-ad-ink sm:mt-5 sm:text-5xl">
             Get in touch.
           </h1>
-          <p className="mt-6 text-lg leading-relaxed text-ad-muted">
+          <p className="mt-3 text-base leading-relaxed text-ad-muted sm:mt-6 sm:text-lg">
             Tell us what you need — a new project quote, a question about an access letter, an
             existing report, or something else — and we&apos;ll route it straight to the right person.
           </p>
         </Container>
       </section>
 
-      <section className="py-16 lg:py-20">
-        <Container className="grid gap-12 lg:grid-cols-[1.4fr_1fr] lg:items-start">
+      {/* #enquiry is where the QR short links land (data/redirects.ts); the scroll margin
+          clears the sticky header. */}
+      <section id="enquiry" className="scroll-mt-16 py-6 sm:py-16 lg:py-20">
+        <Container className="grid gap-10 lg:grid-cols-[1.4fr_1fr] lg:items-start lg:gap-12">
           <QuoteForm />
 
           <aside className="lg:sticky lg:top-24">

@@ -201,6 +201,11 @@ export default function DilapidationReportsPage() {
               href: "/dilapidation-reports/samples",
               description: "See real example reports across every capture type.",
             },
+            {
+              label: "Dilapidation report cost",
+              href: "/insights/dilapidation-report-cost",
+              description: "Our prices for houses, units and commercial buildings.",
+            },
             ...LOCATIONS.map((l) => ({
               label: `Dilapidation Reports ${l.city}`,
               href: `/dilapidation-reports/${l.slug}`,

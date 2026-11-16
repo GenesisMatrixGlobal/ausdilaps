@@ -18,6 +18,10 @@ export const FAQ: FaqCategory[] = [
         a: "Generally the property owner, builder or developer arranges and pays for the report. Regulatory authorities or councils may require it as an approval condition. While one party usually bears responsibility, all affected parties — neighbouring owners, tenants and others potentially impacted — benefit from having the report.",
       },
       {
+        q: "How much does a dilapidation report cost?",
+        a: "For a standard house, a pre-construction report starts from $505 + GST and the post-construction report from $610 + GST. Units start from $420 each, and commercial buildings from $505. Projects with more properties usually come in lower per property, and road and infrastructure work is quoted per project. The full breakdown is in our dilapidation report cost guide.",
+      },
+      {
         q: "When should I get a dilapidation report?",
         a: "Ideally before any construction, renovation or demolition works begin on adjacent properties — as early as possible. They're also advisable near major works such as roadworks, excavation or high-rise development that could impact the property.",
       },

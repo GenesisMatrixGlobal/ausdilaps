@@ -23,6 +23,11 @@ const CONCURRENCY = 8;
 // example. Keep these realistic — they are the URLs actually in the wild.
 const CONCRETE: Record<string, string> = {
   "/portfolio_categories/:cat": "/portfolio_categories/rail",
+  "/category/:slug": "/category/news",
+  "/tag/:slug": "/tag/victorian-earthquake",
+  "/author/:slug": "/author/hemi",
+  "/tatsu_header/:slug": "/tatsu_header/ausdilaps-header",
+  "/tatsu_footer/:slug": "/tatsu_footer/ausdilaps-footer",
   "/wp-content/uploads/:path*":
     "/wp-content/uploads/2025/04/AusDilaps-Sample-Tunnel.pdf",
 };

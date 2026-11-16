@@ -52,6 +52,72 @@ export const REDIRECTS: Redirect[] = [
     permanent: true,
   },
 
+  // Old WordPress URLs that still 404'd after cutover (checked against the WP archive
+  // 2026-11-16, prompted by a Semrush audit flagging 4XX pages). Each goes to its
+  // closest live page.
+  // Services renamed or folded into another page.
+  {
+    source: "/our-services/structural-integrity-assessments-sia",
+    destination: "/our-services/structural-integrity-assessments",
+    permanent: true,
+  },
+  {
+    source: "/our-services/defect-comparison-assessments-dca",
+    destination: "/our-services/defect-comparison-assessments",
+    permanent: true,
+  },
+  {
+    source: "/our-services/3d-models-digital-twins",
+    destination: "/our-services/aerial-drone-surveys",
+    permanent: true,
+  },
+  {
+    source: "/our-services/lidar-point-cloud-capture-analysis",
+    destination: "/our-services/aerial-drone-surveys",
+    permanent: true,
+  },
+  {
+    source: "/our-services/culvert-and-pipe-reporting",
+    destination: "/our-services/highways-roads",
+    permanent: true,
+  },
+  // Access arrangement is step 3 of the process on the pillar page.
+  { source: "/our-services/access-management", destination: "/dilapidation-reports", permanent: true },
+  // Blog archives and the two Victorian earthquake posts (never rebuilt).
+  {
+    source: "/2023/10/23/lessons-from-melbournes-recent-earthquake",
+    destination: "/insights",
+    permanent: true,
+  },
+  {
+    source: "/2023/10/24/victorias-earthquakes-structural-checks",
+    destination: "/insights",
+    permanent: true,
+  },
+  { source: "/blog", destination: "/insights", permanent: true },
+  { source: "/category/:slug", destination: "/insights", permanent: true },
+  { source: "/tag/:slug", destination: "/insights", permanent: true },
+  { source: "/author/:slug", destination: "/insights", permanent: true },
+  { source: "/portfolios", destination: "/portfolio", permanent: true },
+  // The old access-letter response forms. Letters already posted to residents may still
+  // carry these addresses, so they land on the same form as the /letter QR code. Not
+  // permanent, for the same reason as /letter below.
+  {
+    source: "/access-letter-response",
+    destination: "/quote?src=access-letter&type=access-letter#enquiry",
+    permanent: false,
+  },
+  {
+    source: "/accessresponse",
+    destination: "/quote?src=access-letter&type=access-letter#enquiry",
+    permanent: false,
+  },
+  { source: "/newstaff", destination: "/staff", permanent: true },
+  // No equivalent: a COVID-era policy and the old theme's header/footer templates.
+  { source: "/infection-control-policy-coronavirus", destination: "/", permanent: true },
+  { source: "/tatsu_header/:slug", destination: "/", permanent: true },
+  { source: "/tatsu_footer/:slug", destination: "/", permanent: true },
+
   // Convenience shortcut — canonical page stays at /dilapidation-reports/samples
   // (preserves the live ranking URL); this is just a shorter alias.
   { source: "/samples", destination: "/dilapidation-reports/samples", permanent: true },
@@ -133,6 +199,20 @@ export const REDIRECTS: Redirect[] = [
   },
   {
     source: "/wp-content/uploads/2026/06/Email-Banner-GIF-FY26.gif",
+    destination: "/email/signature-banner.gif",
+    permanent: true,
+  },
+  // Two more images still used by Salesforce email templates (report delivery, H4P, T2D,
+  // Burswood — about 20 templates, checked 2026-11-16). The wildcard was sending both to
+  // the samples page, so every one of those emails showed broken images. The old logo was
+  // square (the templates draw it at 140x140), so it gets the square brand mark.
+  {
+    source: "/wp-content/uploads/2023/08/ausdilapsemaillogo.png",
+    destination: "/email/square-logo-v1.png",
+    permanent: true,
+  },
+  {
+    source: "/wp-content/uploads/2025/09/Email-Banner-Gif-FY26-6.gif",
     destination: "/email/signature-banner.gif",
     permanent: true,
   },

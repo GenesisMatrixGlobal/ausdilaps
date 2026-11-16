@@ -17,7 +17,7 @@ import {
 } from "@/lib/samples-data";
 
 export const metadata: Metadata = {
-  title: "Sample Dilapidation Reports | Examples, Formats & What's Included",
+  title: "Sample Dilapidation Reports | Examples & Format",
   description:
     "View real AusDilaps sample dilapidation reports across every capture type — residential, commercial, GPS, council assets, roadway video, tunnels, drone, culvert, plus DOA, SIA and DCA engineering reports.",
   alternates: { canonical: "/dilapidation-reports/samples" },

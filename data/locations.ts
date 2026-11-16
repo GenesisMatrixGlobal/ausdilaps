@@ -32,7 +32,7 @@ export const LOCATIONS: Location[] = [
     city: "Sydney",
     state: "NSW",
     region: "New South Wales",
-    title: "Dilapidation Reports Sydney | Pre-Construction Condition Surveys NSW",
+    title: "Dilapidation Reports Sydney | NSW Surveys",
     metaDescription:
       "Specialist dilapidation reports across Sydney and NSW. Pre and post-construction condition surveys for DA consent, compliant with AS 4349.0 — backed by structural engineers and proven on NorthConnex, WestConnex and Sydney Metro.",
     h1: "Dilapidation Reports Sydney",
@@ -78,7 +78,7 @@ export const LOCATIONS: Location[] = [
     city: "Brisbane",
     state: "QLD",
     region: "Queensland",
-    title: "Dilapidation Reports Brisbane | Property Condition Surveys QLD",
+    title: "Dilapidation Reports Brisbane | QLD Surveys",
     metaDescription:
       "Specialist dilapidation reports across Brisbane and South East Queensland. Pre and post-construction condition surveys compliant with AS 4349.0 — from a team with inspectors based in Queensland, proven on Queen's Wharf and Brisbane Airport.",
     h1: "Dilapidation Reports Brisbane",
@@ -117,7 +117,7 @@ export const LOCATIONS: Location[] = [
     city: "Melbourne",
     state: "VIC",
     region: "Victoria",
-    title: "Dilapidation Reports Melbourne | Pre-Construction Condition Surveys VIC",
+    title: "Dilapidation Reports Melbourne | VIC Surveys",
     metaDescription:
       "Specialist dilapidation reports across Melbourne and Victoria. Pre and post-construction property condition surveys compliant with AS 4349.0, backed by structural engineers and georeferenced capture.",
     h1: "Dilapidation Reports Melbourne",
@@ -156,7 +156,7 @@ export const LOCATIONS: Location[] = [
     city: "Wollongong",
     state: "NSW",
     region: "New South Wales",
-    title: "Dilapidation Reports Wollongong | Illawarra Condition Surveys NSW",
+    title: "Dilapidation Reports Wollongong | NSW Surveys",
     metaDescription:
       "Specialist dilapidation reports across Wollongong and the Illawarra. Pre and post-construction property condition surveys compliant with AS 4349.0 — proven on the Dapto bridge works for Wollongong City Council.",
     h1: "Dilapidation Reports Wollongong",
@@ -196,7 +196,7 @@ export const LOCATIONS: Location[] = [
     state: "ACT",
     region: "Australian Capital Territory",
     isNew: true,
-    title: "Dilapidation Reports Canberra | ACT Property Condition Surveys",
+    title: "Dilapidation Reports Canberra | ACT Surveys",
     metaDescription:
       "Specialist dilapidation reports across Canberra and the ACT. Pre and post-construction condition surveys compliant with AS 4349.0 — proven on the Australian War Memorial and Commonwealth government works.",
     h1: "Dilapidation Reports Canberra",
@@ -240,7 +240,7 @@ export const LOCATIONS: Location[] = [
     state: "WA",
     region: "Western Australia",
     isNew: true,
-    title: "Dilapidation Reports Perth | Property Condition Surveys WA",
+    title: "Dilapidation Reports Perth | WA Surveys",
     metaDescription:
       "Specialist dilapidation reports for Perth and Western Australia. Pre and post-construction property condition surveys compliant with AS 4349.0 — a national specialist available Australia-wide.",
     h1: "Dilapidation Reports Perth",

@@ -11,7 +11,7 @@ const CRUMBS = [
 // Internal staff resource page — unlisted (no nav link, no sitemap entry) and
 // kept out of search results. Not a marketing page.
 export const metadata: Metadata = {
-  title: "Inspector Links | AusDilaps",
+  title: "Inspector Links",
   robots: { index: false, follow: false },
 };
 

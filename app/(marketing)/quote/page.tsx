@@ -13,7 +13,7 @@ const CRUMBS = [
 ];
 
 export const metadata: Metadata = {
-  title: "Request a Quote | Dilapidation Report Scoping — AusDilaps",
+  title: "Request a Dilapidation Report Quote",
   description:
     "Get your dilapidation report scoped. Tell us the project, location and adjoining properties and we'll return an itemised quote. Reports compliant with AS 4349.0.",
   alternates: { canonical: "/quote" },

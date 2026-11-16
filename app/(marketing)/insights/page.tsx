@@ -13,7 +13,7 @@ const CRUMBS = [
 ];
 
 export const metadata: Metadata = {
-  title: "Insights | Dilapidation Knowledge, Standards & Advocacy — AusDilaps",
+  title: "Insights | Dilapidation Knowledge & Advocacy",
   description:
     "Insights from Australia's dilapidation specialists — what a dilapidation report is, the standards that make it defensible, and the case for compulsory condition reporting.",
   alternates: { canonical: "/insights" },

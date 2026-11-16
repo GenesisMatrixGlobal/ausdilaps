@@ -23,7 +23,7 @@ export async function generateMetadata({
   const post = getInsight(slug);
   if (!post) return {};
   return {
-    title: `${post.title} | AusDilaps Insights`,
+    title: post.seoTitle ?? post.title,
     description: post.excerpt,
     alternates: { canonical: `/insights/${post.slug}` },
   };

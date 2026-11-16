@@ -23,12 +23,12 @@ export async function generateMetadata({
   const p = PORTFOLIO_BY_SLUG[slug];
   if (!p) return {};
   return {
-    title: `${p.name} | AusDilaps Project`,
+    title: p.seoTitle ?? p.name,
     description: p.blurb,
     alternates: { canonical: `/portfolio/${p.slug}` },
     openGraph: p.image
       ? {
-          title: `${p.name} | AusDilaps Project`,
+          title: `${p.seoTitle ?? p.name} — AusDilaps`,
           description: p.blurb,
           images: [{ url: p.image, alt: p.imageAlt ?? p.name }],
         }

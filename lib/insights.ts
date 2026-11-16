@@ -18,6 +18,8 @@ export type InsightCategory = (typeof INSIGHT_CATEGORIES)[number];
 export type InsightMeta = {
   slug: string;
   title: string;
+  /** Shorter <title> when `title` would run past 60 characters with " — AusDilaps". */
+  seoTitle?: string;
   excerpt: string;
   date: string; // YYYY-MM-DD
   category: InsightCategory;

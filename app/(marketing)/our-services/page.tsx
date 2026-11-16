@@ -18,7 +18,7 @@ const DILAPIDATION = DILAPIDATION_SLUGS.map((slug) => SERVICE_BY_SLUG[slug]);
 const SPECIALIST = SPECIALIST_SLUGS.map((slug) => SERVICE_BY_SLUG[slug]);
 
 export const metadata: Metadata = {
-  title: "Our Services | Dilapidation, Structural & Specialist Building Inspections",
+  title: "Our Services | Dilapidation & Inspections",
   description:
     "AusDilaps' specialist services — dilapidation reports (commercial, residential, industrial), structural engineering, aerial drone surveys, noise & vibration monitoring, defect assessments and road condition reports.",
   alternates: { canonical: "/our-services" },

@@ -14,7 +14,7 @@ const CRUMBS = [
 ];
 
 export const metadata: Metadata = {
-  title: "Dilapidation Reports FAQ — Your Questions Answered",
+  title: "Dilapidation Reports FAQ | Questions Answered",
   description:
     "Answers to common questions about dilapidation reports, structural engineering, BASIX and NatHERS assessments — from AusDilaps, Australia's specialist building inspection firm.",
   alternates: { canonical: "/faq" },

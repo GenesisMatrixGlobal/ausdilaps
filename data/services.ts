@@ -43,7 +43,7 @@ export const SERVICES_CONTENT: Service[] = [
   /* ── Commercial dilapidation ─────────────────────────────────────── */
   {
     slug: "commercial-dilapidation-reports",
-    title: "Commercial Dilapidation Reports | Council-Ready Condition Reports",
+    title: "Commercial Dilapidation Reports & Surveys",
     metaDescription:
       "Independent commercial dilapidation reports that document the pre and post-construction condition of council-owned and adjoining assets — protecting your investment and your bond. Backed by structural engineers.",
     h1: "Commercial Dilapidation Reports",
@@ -112,7 +112,7 @@ export const SERVICES_CONTENT: Service[] = [
   /* ── Residential dilapidation ────────────────────────────────────── */
   {
     slug: "residential-dilapidation-reports",
-    title: "Residential Dilapidation Reports | Pre-Construction Site Surveys",
+    title: "Residential Dilapidation Reports & Surveys",
     metaDescription:
       "Residential dilapidation reports for builds, renovations and demolitions. Document the condition of neighbour- and council-owned assets to mitigate claims — from a team of structural engineers and building inspectors.",
     h1: "Residential Dilapidation Reports",
@@ -157,7 +157,7 @@ export const SERVICES_CONTENT: Service[] = [
   /* ── Industrial dilapidation ─────────────────────────────────────── */
   {
     slug: "industrial-dilapidation-reports",
-    title: "Industrial Dilapidation Reports | Factories, Warehouses & Pipelines",
+    title: "Industrial Dilapidation Reports & Surveys",
     metaDescription:
       "Industrial dilapidation reports for factories, warehouses, pipelines and railway sites. A two-step pre and post-construction process that verifies conditions and mitigates damage claims.",
     h1: "Industrial Dilapidation Reports",
@@ -208,7 +208,7 @@ export const SERVICES_CONTENT: Service[] = [
   /* ── Structural engineering ──────────────────────────────────────── */
   {
     slug: "structural-engineering",
-    title: "Structural Engineering | Design, Certificates & Existing-Structure Reviews",
+    title: "Structural Engineering Reports & Certificates",
     metaDescription:
       "Structural engineering from AusDilaps — concrete, steel and timber design, structural design certificates, existing-structure reviews, and excavation and demolition assessments. No project too small.",
     h1: "Structural Engineering",
@@ -256,7 +256,7 @@ export const SERVICES_CONTENT: Service[] = [
   /* ── Aerial drone surveys ────────────────────────────────────────── */
   {
     slug: "aerial-drone-surveys",
-    title: "Aerial Drone Surveys | UAV Site Inspection, Mapping & Photogrammetry",
+    title: "Aerial Drone Surveys | UAV Mapping & Inspection",
     metaDescription:
       "Aerial drone surveys from AusDilaps — UAV site inspections, 3D mapping and photogrammetry accurate to 10–20mm. Solar panel thermography, mine-site volumetrics, roof and façade inspection, and environmental mapping.",
     h1: "Aerial Drone Surveys",
@@ -330,7 +330,7 @@ export const SERVICES_CONTENT: Service[] = [
   /* ── Noise & vibration monitoring ────────────────────────────────── */
   {
     slug: "noise-and-vibration-monitoring-services",
-    title: "Noise & Vibration Monitoring Services | Construction Compliance",
+    title: "Noise & Vibration Monitoring Services",
     metaDescription:
       "Noise and vibration monitoring across Australia. Baseline site analysis plus real-time data capture to keep construction and industrial works compliant and protect nearby residents, wildlife and structures.",
     h1: "Noise & Vibration Monitoring Services",
@@ -399,7 +399,7 @@ export const SERVICES_CONTENT: Service[] = [
   /* ── Defect Origin Assessments (DOA) ─────────────────────────────── */
   {
     slug: "defect-origin-assessments-doa",
-    title: "Defect Origin Assessments (DOA) | What Caused the Damage, and When",
+    title: "Defect Origin Assessments (DOA)",
     metaDescription:
       "Defect Origin Assessments from AusDilaps — expert, evidence-based analysis of visible damage to determine what caused a defect, when it likely occurred, and how confidently that conclusion can be drawn.",
     h1: "Defect Origin Assessments (DOA)",
@@ -453,7 +453,7 @@ export const SERVICES_CONTENT: Service[] = [
   /* ── Highways & roads ────────────────────────────────────────────── */
   {
     slug: "highways-roads",
-    title: "Highway & Road Condition Reports | Roughness, Rutting & Texture Data",
+    title: "Road Dilapidation Surveys & Condition Reports",
     metaDescription:
       "Road condition surveys from AusDilaps — vehicle-mounted video and on-foot high-resolution capture of roughness, rutting and surface texture. Defensible before-and-after reporting for infrastructure, civil and haulage projects.",
     h1: "Highway & Road Reports",
@@ -510,7 +510,7 @@ export const SERVICES_CONTENT: Service[] = [
   /* ── Structural Integrity Assessments (SIA) ──────────────────────── */
   {
     slug: "structural-integrity-assessments",
-    title: "Structural Integrity Assessments (SIA) | Asset Performance & Stability",
+    title: "Structural Integrity Assessments (SIA)",
     metaDescription:
       "Structural Integrity Assessments from AusDilaps — evaluate the structural performance and stability of assets using advanced methods, identifying weaknesses or potential failures early for safety, compliance and informed remediation.",
     h1: "Structural Integrity Assessments (SIA)",
@@ -550,7 +550,7 @@ export const SERVICES_CONTENT: Service[] = [
   /* ── Defect Comparison Assessments (DCA) ─────────────────────────── */
   {
     slug: "defect-comparison-assessments",
-    title: "Defect Comparison Assessments (DCA) | Pre vs Post-Construction",
+    title: "Defect Comparison Assessments (DCA)",
     metaDescription:
       "Defect Comparison Assessments from AusDilaps — compare pre and post-construction asset conditions to identify changes, assess construction impacts, and provide independent, defensible reporting for claims management.",
     h1: "Defect Comparison Assessments (DCA)",

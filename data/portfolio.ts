@@ -23,6 +23,8 @@ export type PortfolioStat = { value: string; label: string };
 export type PortfolioItem = {
   slug: string;
   name: string;
+  /** Shorter <title> when `name` would run past 60 characters with " — AusDilaps". */
+  seoTitle?: string;
   sector: Sector;
   location: string;
   client?: string;
@@ -240,6 +242,7 @@ const PROJECTS: PortfolioItem[] = [
   {
     slug: "canberra-hospital-upgrade-royal-north-shore-hospital-and-westmead-private-hospital",
     name: "Canberra, Royal North Shore & Westmead Private Hospitals",
+    seoTitle: "Canberra, Royal North Shore & Westmead Hospitals",
     sector: "Hospital",
     location: "Garran ACT, Sydney & Westmead NSW",
     client: "Shape, Garde & Erilian",

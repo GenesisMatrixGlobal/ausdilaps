@@ -152,6 +152,49 @@ export const LOCATIONS: Location[] = [
     ],
   },
   {
+    // SA work checked in Salesforce 2026-11-17: T2D (active since 2025), Main South Road
+    // stages 1–2, Adelaide CBD and Glenelg street upgrades, Tailem Bend Solar Farm, Palmer
+    // Wind Farm, Mount Gambier. Client names left off except where already public.
+    slug: "dilapidation-reports-adelaide",
+    city: "Adelaide",
+    state: "SA",
+    region: "South Australia",
+    isNew: true,
+    title: "Dilapidation Reports Adelaide | SA Surveys",
+    metaDescription:
+      "Dilapidation reports across Adelaide and South Australia. Pre and post-construction condition surveys compliant with AS 4349.0, proven on T2D and the Main South Road duplication.",
+    h1: "Dilapidation Reports Adelaide",
+    intro:
+      "From the North–South Corridor to CBD street upgrades, Adelaide's major works sit right next to homes, shops and heritage buildings. A dilapidation report records the condition of adjoining property before and after works — the defensible baseline that settles damage claims on evidence, not argument.",
+    why: {
+      heading: "Proven on South Australia's biggest road projects.",
+      body: "We have staff based in South Australia and a long run of SA work behind us. On the River Torrens to Darlington (T2D) project, the final stage of Adelaide's North–South Corridor, we've been documenting adjoining properties since 2025. On the $1.1bn Main South Road duplication we inspected 175 properties and surveyed more than 50km of road on georeferenced video. Closer to the city, we've documented street upgrades on Hutt, Vincent, Morphett and Melbourne Streets and along Jetty Road, Glenelg.",
+    },
+    drivers: [
+      "Major road and transport works, including the North–South Corridor",
+      "CBD street upgrades and council public-realm works",
+      "Excavation, piling or demolition adjoining third-party property",
+      "Solar, wind and other energy projects across regional SA",
+    ],
+    localProjects: ["main-south-road-duplication"],
+    serviceNote:
+      "AusDilaps has staff based in South Australia. Our engineers attend sites across metropolitan Adelaide and regional SA, from the Fleurieu Peninsula to Mount Gambier.",
+    faq: [
+      {
+        q: "Has AusDilaps worked in Adelaide?",
+        a: "Yes. Our South Australian work includes the River Torrens to Darlington (T2D) project, the Main South Road duplication on the Fleurieu Peninsula, street upgrades across the Adelaide CBD and Glenelg, and solar and wind farm projects in regional SA.",
+      },
+      {
+        q: "Do you have staff in South Australia?",
+        a: "Yes. AusDilaps is a fully remote firm with staff based in South Australia, as well as New South Wales, Queensland and Victoria.",
+      },
+      {
+        q: "How do I get a quote for an Adelaide dilapidation report?",
+        a: "Tell us the project, location and number of adjoining properties, and we'll send an itemised quote.",
+      },
+    ],
+  },
+  {
     slug: "dilapidation-reports-wollongong",
     city: "Wollongong",
     state: "NSW",

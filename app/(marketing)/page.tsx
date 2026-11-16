@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { Check, FileDown } from "lucide-react";
@@ -12,6 +13,16 @@ import { faqPageSchema } from "@/lib/seo";
 import { SITE, STATS, SERVICES, PROCESS, TEAM, TIER1_PROJECTS, CAPABILITY_HREF } from "@/lib/site";
 import { CASE_STUDIES } from "@/data/case-studies";
 import { FAQ } from "@/data/faq";
+import { LOCATIONS } from "@/data/locations";
+
+/* The homepage ranks #2 for "dilap report" and "dilapidation services" (Semrush, Nov 2026)
+   without using either phrase anywhere. The title, description, hero intro and the
+   Services section now name both. */
+export const metadata: Metadata = {
+  title: { absolute: "Dilap Reports & Dilapidation Services — AusDilaps" },
+  description:
+    "Dilap reports and dilapidation services across Australia. Pre and post-construction condition reports that hold up when a damage claim is made.",
+};
 
 /* The four dilapidation questions a first-time visitor asks, lifted from the real
    FAQ (data/faq.ts) so the homepage and /faq can never disagree. Same items feed the
@@ -75,9 +86,9 @@ function Hero() {
             in court.
           </h1>
           <p className="mt-6 max-w-xl text-lg font-medium leading-relaxed text-ad-ink-deep sm:text-xl">
-            Pre and post-construction building condition reports for Australia&apos;s
-            most scrutinised projects. When a damage claim is made — not if — your
-            report has to defend it.
+            Dilapidation services for Australia&apos;s most scrutinised projects: pre
+            and post-construction building condition reports. When a damage claim is
+            made — not if — your report has to defend it.
           </p>
         </div>
 
@@ -219,8 +230,14 @@ function Services() {
           <div className="max-w-2xl">
             <Eyebrow className="text-ad-accent">What we do</Eyebrow>
             <h2 className="mt-5 font-heading text-3xl font-semibold tracking-tight text-ad-ink sm:text-4xl">
-              Specialist reports, backed by structural engineers.
+              Dilapidation services, backed by structural engineers.
             </h2>
+            <p className="mt-6 text-lg leading-relaxed text-ad-muted">
+              A dilapidation report (a dilap report for short) records a property&apos;s
+              condition before construction, renovation or demolition starts nearby.
+              It&apos;s the baseline that settles damage disputes, and councils and
+              building surveyors often require one as a condition of approval.
+            </p>
           </div>
           <Link href="/our-services" className="text-sm font-semibold text-ad-steel-dark transition-colors hover:text-ad-ink">
             View all services →
@@ -243,6 +260,25 @@ function Services() {
               <span className="mt-6 text-sm font-semibold text-ad-steel-dark">Learn more →</span>
             </Link>
           ))}
+        </div>
+        {/* The city pages had no link from the homepage or the footer, only from the pillar. */}
+        <div className="mt-10 flex flex-wrap items-center gap-3 text-sm">
+          <span className="font-semibold text-ad-ink">Dilap reports in</span>
+          {LOCATIONS.map((l) => (
+            <Link
+              key={l.slug}
+              href={`/dilapidation-reports/${l.slug}`}
+              className="inline-flex min-h-9 items-center rounded-full border border-ad-steel/20 bg-white px-4 font-medium text-ad-steel-dark transition-colors hover:border-ad-steel/40 hover:text-ad-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ad-steel focus-visible:ring-offset-2"
+            >
+              {l.city}
+            </Link>
+          ))}
+          <Link
+            href="/dilapidation-reports/samples"
+            className="font-semibold text-ad-steel-dark transition-colors hover:text-ad-ink sm:ml-auto"
+          >
+            See sample reports →
+          </Link>
         </div>
       </Container>
     </section>

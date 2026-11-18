@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xmlns:mailappor="http://schemas.microsoft.com/office/mailappversionoverrides/1.0"
+           xsi:type="MailApp">
+  <Id>be9ea08f-1c6d-4984-9562-c34b41125abc</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>AusDilaps</ProviderName>
+  <DefaultLocale>en-AU</DefaultLocale>
+  <DisplayName DefaultValue="Reply All with Attachments" />
+  <Description DefaultValue="Reply to all with the original attachments included." />
+  <IconUrl DefaultValue="https://ausdilaps.com.au/outlook-addins/reply-all-attachments/icon-64.png" />
+  <HighResolutionIconUrl DefaultValue="https://ausdilaps.com.au/outlook-addins/reply-all-attachments/icon-128.png" />
+  <SupportUrl DefaultValue="https://www.ausdilaps.com.au" />
+  <Hosts>
+    <Host Name="Mailbox" />
+  </Hosts>
+  <Requirements>
+    <Sets>
+      <Set Name="Mailbox" MinVersion="1.8" />
+    </Sets>
+  </Requirements>
+  <FormSettings>
+    <Form xsi:type="ItemRead">
+      <DesktopSettings>
+        <SourceLocation DefaultValue="https://ausdilaps.com.au/outlook-addins/reply-all-attachments/commands.html" />
+        <RequestedHeight>250</RequestedHeight>
+      </DesktopSettings>
+    </Form>
+  </FormSettings>
+  <Permissions>ReadItem</Permissions>
+  <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read" />
+  <DisableEntityHighlighting>false</DisableEntityHighlighting>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides/1.1" xsi:type="VersionOverridesV1_1">
+      <Requirements>
+        <bt:Sets DefaultMinVersion="1.8">
+          <bt:Set Name="Mailbox" />
+        </bt:Sets>
+      </Requirements>
+      <Hosts>
+        <Host xsi:type="MailHost">
+          <DesktopFormFactor>
+            <FunctionFile resid="Commands.Url" />
+            <ExtensionPoint xsi:type="MessageReadCommandSurface">
+              <OfficeTab id="TabDefault">
+                <Group id="replyAllAttachmentsGroup">
+                  <Label resid="Group.Label" />
+                  <Control xsi:type="Button" id="replyAllAttachmentsButton">
+                    <Label resid="Button.Label" />
+                    <Supertip>
+                      <Title resid="Button.Label" />
+                      <Description resid="Button.Tooltip" />
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="Icon.16" />
+                      <bt:Image size="32" resid="Icon.32" />
+                      <bt:Image size="80" resid="Icon.80" />
+                    </Icon>
+                    <Action xsi:type="ExecuteFunction">
+                      <FunctionName>replyAllWithAttachments</FunctionName>
+                    </Action>
+                  </Control>
+                </Group>
+              </OfficeTab>
+            </ExtensionPoint>
+          </DesktopFormFactor>
+        </Host>
+      </Hosts>
+      <Resources>
+        <bt:Images>
+          <bt:Image id="Icon.16" DefaultValue="https://ausdilaps.com.au/outlook-addins/reply-all-attachments/icon-16.png" />
+          <bt:Image id="Icon.32" DefaultValue="https://ausdilaps.com.au/outlook-addins/reply-all-attachments/icon-32.png" />
+          <bt:Image id="Icon.80" DefaultValue="https://ausdilaps.com.au/outlook-addins/reply-all-attachments/icon-80.png" />
+        </bt:Images>
+        <bt:Urls>
+          <bt:Url id="Commands.Url" DefaultValue="https://ausdilaps.com.au/outlook-addins/reply-all-attachments/commands.html" />
+        </bt:Urls>
+        <bt:ShortStrings>
+          <bt:String id="Group.Label" DefaultValue="AusDilaps" />
+          <bt:String id="Button.Label" DefaultValue="Reply All with Attachments" />
+        </bt:ShortStrings>
+        <bt:LongStrings>
+          <bt:String id="Button.Tooltip" DefaultValue="Reply to everyone and keep the original attachments on the reply." />
+        </bt:LongStrings>
+      </Resources>
+    </VersionOverrides>
+  </VersionOverrides>
+</OfficeApp>

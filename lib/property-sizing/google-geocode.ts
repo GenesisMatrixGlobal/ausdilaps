@@ -6,8 +6,8 @@
 // address->point step alone, while the part that actually matters — the DCDB cadastre —
 // is open and unauthenticated. One less key to provision, one less portal to depend on.
 //
-// QLD keeps its own QldLocator geocoder: it's open, needs no key, and returns a real
-// match score, so there's nothing to gain by moving it.
+// QLD asks its own QldLocator first — open, no key — and only comes here for an address the
+// locator doesn't hold (see qld.ts).
 
 import { recordApiCall } from "@/lib/api-usage";
 import { fetchJson as fetchJsonShared } from "@/lib/fetch-json";

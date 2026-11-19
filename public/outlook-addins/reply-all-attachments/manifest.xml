@@ -5,10 +5,10 @@
            xmlns:mailappor="http://schemas.microsoft.com/office/mailappversionoverrides/1.0"
            xsi:type="MailApp">
   <Id>be9ea08f-1c6d-4984-9562-c34b41125abc</Id>
-  <Version>1.0.0.0</Version>
+  <Version>1.1.0.0</Version>
   <ProviderName>AusDilaps</ProviderName>
   <DefaultLocale>en-AU</DefaultLocale>
-  <DisplayName DefaultValue="Reply All with Attachments" />
+  <DisplayName DefaultValue="Reply All + Files" />
   <Description DefaultValue="Reply to all with the original attachments included." />
   <IconUrl DefaultValue="https://ausdilaps.com.au/outlook-addins/reply-all-attachments/icon-64.png" />
   <HighResolutionIconUrl DefaultValue="https://ausdilaps.com.au/outlook-addins/reply-all-attachments/icon-128.png" />
@@ -29,7 +29,7 @@
       </DesktopSettings>
     </Form>
   </FormSettings>
-  <Permissions>ReadItem</Permissions>
+  <Permissions>ReadWriteItem</Permissions>
   <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read" />
   <DisableEntityHighlighting>false</DisableEntityHighlighting>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides" xsi:type="VersionOverridesV1_0">
@@ -41,6 +41,11 @@
       </Requirements>
       <Hosts>
         <Host xsi:type="MailHost">
+          <Runtimes>
+            <Runtime resid="Commands.Url">
+              <Override type="javascript" resid="Commands.Js" />
+            </Runtime>
+          </Runtimes>
           <DesktopFormFactor>
             <FunctionFile resid="Commands.Url" />
             <ExtensionPoint xsi:type="MessageReadCommandSurface">
@@ -65,6 +70,13 @@
                 </Group>
               </OfficeTab>
             </ExtensionPoint>
+            <!-- Outlook for Mac can't pass files to the reply form, so this attaches them once the reply opens. -->
+            <ExtensionPoint xsi:type="LaunchEvent">
+              <LaunchEvents>
+                <LaunchEvent Type="OnNewMessageCompose" FunctionName="attachStashed" />
+              </LaunchEvents>
+              <SourceLocation resid="Commands.Url" />
+            </ExtensionPoint>
           </DesktopFormFactor>
         </Host>
       </Hosts>
@@ -76,10 +88,11 @@
         </bt:Images>
         <bt:Urls>
           <bt:Url id="Commands.Url" DefaultValue="https://ausdilaps.com.au/outlook-addins/reply-all-attachments/commands.html" />
+          <bt:Url id="Commands.Js" DefaultValue="https://ausdilaps.com.au/outlook-addins/reply-all-attachments/commands.js" />
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="Group.Label" DefaultValue="AusDilaps" />
-          <bt:String id="Button.Label" DefaultValue="Reply All with Attachments" />
+          <bt:String id="Button.Label" DefaultValue="Reply All + Files" />
         </bt:ShortStrings>
         <bt:LongStrings>
           <bt:String id="Button.Tooltip" DefaultValue="Reply to everyone and keep the original attachments on the reply." />

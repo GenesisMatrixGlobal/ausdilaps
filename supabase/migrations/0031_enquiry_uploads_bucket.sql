@@ -16,6 +16,13 @@ values (
   'enquiry-uploads',
   false,
   10485760, -- 10 MB, = MAX_UPLOAD_FILE_BYTES in lib/enquiry-uploads-options.ts
-  array['application/pdf','image/jpeg','image/png','image/webp','image/heic','image/heif']
+  -- = UPLOAD_MIME_TYPES. ensureBucket() re-applies that list to the live bucket on every cold
+  -- start, so the code is the source of truth and this is only the starting point.
+  array[
+    'application/pdf','image/jpeg','image/png','image/webp','image/heic','image/heif',
+    'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.google-earth.kml+xml','application/vnd.google-earth.kmz'
+  ]
 )
 on conflict (id) do nothing;

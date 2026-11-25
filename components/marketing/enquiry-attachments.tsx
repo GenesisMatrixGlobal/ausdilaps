@@ -9,6 +9,7 @@ import {
   MAX_UPLOAD_TOTAL_BYTES,
   UPLOAD_ACCEPT,
   UPLOAD_HINT,
+  UPLOAD_KINDS,
   formatBytes,
   uploadTypeFor,
 } from "@/lib/enquiry-uploads-options";
@@ -87,6 +88,7 @@ export function AttachmentsField({
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
   const [preparing, setPreparing] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   async function add(picked: File[]) {
     setError("");
@@ -97,7 +99,7 @@ export function AttachmentsField({
     for (const original of picked) {
       if (next.some((f) => f.name === original.name && f.lastModified === original.lastModified)) continue;
       if (!uploadTypeFor(original.name)) {
-        problems.push(`${original.name} isn’t a PDF or image.`);
+        problems.push(`${original.name} can’t be attached. Use a ${UPLOAD_KINDS} file.`);
         continue;
       }
       if (next.length >= MAX_UPLOAD_FILES) {
@@ -124,7 +126,25 @@ export function AttachmentsField({
   }
 
   return (
-    <div className={className}>
+    // The whole field is the drop target, so a file dropped on the list or the hint lands too.
+    <div
+      className={className}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={(e) => {
+        // Fires when the pointer crosses onto a child as well; only a real exit counts.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        setDragging(false);
+        void add(Array.from(e.dataTransfer.files));
+      }}
+    >
       <span className={labelClassName}>
         Attachments <span className="font-normal text-ad-muted">(optional)</span>
       </span>
@@ -179,12 +199,23 @@ export function AttachmentsField({
           disabled={preparing}
           aria-describedby="attachments-hint"
           className={cn(
-            "mt-2 inline-flex items-center gap-2 rounded-md border border-dashed border-ad-accent/50 bg-white px-4 py-2.5 text-sm font-medium text-ad-accent transition-colors hover:border-ad-accent hover:bg-ad-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ad-accent/40",
+            "mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-4 py-3 text-sm font-medium text-ad-accent transition-colors hover:border-ad-accent hover:bg-ad-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ad-accent/40",
+            dragging ? "border-ad-accent bg-ad-accent/10" : "border-ad-accent/50 bg-white",
             preparing && "opacity-70"
           )}
         >
-          <Paperclip className="h-4 w-4" aria-hidden="true" />
-          {preparing ? "Adding…" : files.length > 0 ? "Add another file" : "Add files"}
+          <Paperclip className="h-4 w-4 shrink-0" aria-hidden="true" />
+          {preparing ? (
+            "Adding…"
+          ) : dragging ? (
+            "Drop to attach"
+          ) : (
+            <span>
+              {files.length > 0 ? "Add another file" : "Add files"}
+              {/* A phone has nothing to drag, so the prompt is desktop-only. */}
+              <span className="hidden font-normal text-ad-muted lg:inline"> or drag them here</span>
+            </span>
+          )}
         </button>
       )}
       {error && (

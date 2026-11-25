@@ -19,15 +19,29 @@ export const UPLOAD_TYPES: Record<string, string> = {
   webp: "image/webp",
   heic: "image/heic",
   heif: "image/heif",
+  // Macro-enabled Office files (.docm, .xlsm) are deliberately absent: these are emailed to
+  // staff from our own domain.
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  kml: "application/vnd.google-earth.kml+xml",
+  kmz: "application/vnd.google-earth.kmz",
 };
 
 export const UPLOAD_MIME_TYPES = [...new Set(Object.values(UPLOAD_TYPES))];
 
-/** The file picker's filter. HEIC is accepted but deliberately NOT listed: an iPhone converts
- *  a photo to JPEG unless the input asks for HEIC by name, and staff on Windows can't open one. */
-export const UPLOAD_ACCEPT = "application/pdf,image/jpeg,image/png,image/webp";
+/** The file picker's filter. Images go by MIME type so a phone offers its photo library;
+ *  HEIC is accepted but deliberately NOT listed, because an iPhone converts a photo to JPEG
+ *  unless the input asks for HEIC by name, and staff on Windows can't open one. The rest go
+ *  by extension, since browsers don't know a MIME type for KML. */
+export const UPLOAD_ACCEPT =
+  "application/pdf,image/jpeg,image/png,image/webp,.doc,.docx,.xls,.xlsx,.kml,.kmz";
 
-export const UPLOAD_HINT = `PDF, JPG or PNG. Up to ${MAX_UPLOAD_FILES} files, 10 MB each.`;
+/** For error messages: what can be attached, in a few words. */
+export const UPLOAD_KINDS = "PDF, image, Word, Excel or KML";
+
+export const UPLOAD_HINT = `PDF, photos, Word, Excel or KML. Up to ${MAX_UPLOAD_FILES} files, 10 MB each.`;
 
 /** The content type for a file name, or null when it isn't one we take. Goes by the
  *  extension because browsers report an empty `type` for files they don't know (HEIC on

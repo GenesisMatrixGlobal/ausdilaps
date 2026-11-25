@@ -7,6 +7,7 @@ import {
   MAX_UPLOAD_FILES,
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_TOTAL_BYTES,
+  UPLOAD_KINDS,
   uploadTypeFor,
 } from "@/lib/enquiry-uploads-options";
 import { SITE } from "@/lib/site";
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return fail("Those files can't be attached. Check the type and size, then try again.", 400);
   const { files, turnstileToken } = parsed.data;
 
-  if (files.some((f) => !uploadTypeFor(f.name))) return fail("Only PDF, JPG and PNG files can be attached.", 400);
+  if (files.some((f) => !uploadTypeFor(f.name))) return fail(`Only ${UPLOAD_KINDS} files can be attached.`, 400);
   if (files.reduce((sum, f) => sum + f.size, 0) > MAX_UPLOAD_TOTAL_BYTES) {
     return fail("Those files are too large together. Remove one and try again.", 400);
   }

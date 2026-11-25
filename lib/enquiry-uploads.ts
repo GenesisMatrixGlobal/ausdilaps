@@ -2,6 +2,7 @@ import "server-only";
 import { createHmac, randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { secretMatches } from "@/lib/auth/shared-secret";
+import { sniffUpload } from "@/lib/enquiry-upload-sniff";
 import {
   MAX_UPLOAD_FILES,
   MAX_UPLOAD_FILE_BYTES,
@@ -44,6 +45,16 @@ async function ensureBucket(): Promise<void> {
   // "already exists" arrives as an error, not a success — that is the normal case.
   if (error && !/exist/i.test(error.message)) {
     throw new Error(`Could not create the ${ENQUIRY_BUCKET} bucket: ${error.message}`);
+  }
+  // An existing bucket keeps the limits it was created with, so a file type added to
+  // UPLOAD_TYPES later would be refused by Storage. Once per cold start, make it match.
+  if (error) {
+    const { error: updateError } = await createAdminClient().storage.updateBucket(ENQUIRY_BUCKET, {
+      public: false,
+      fileSizeLimit: MAX_UPLOAD_FILE_BYTES,
+      allowedMimeTypes: UPLOAD_MIME_TYPES,
+    });
+    if (updateError) console.warn(`[quote] could not update the ${ENQUIRY_BUCKET} bucket: ${updateError.message}`);
   }
   ensured = true;
 }
@@ -88,18 +99,6 @@ export async function issueUploadSlots(
   return { uploadId, ticket: ticketFor(uploadId), uploads };
 }
 
-/** What the bytes actually are, whatever the file was called. Null = not something we take. */
-function sniff(b: Buffer): string | null {
-  if (b.subarray(0, 1024).includes("%PDF-")) return "application/pdf";
-  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
-  if (b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
-  if (b.toString("latin1", 0, 4) === "RIFF" && b.toString("latin1", 8, 12) === "WEBP") return "image/webp";
-  if (b.toString("latin1", 4, 8) === "ftyp" && /^(heic|heix|hevc|hevx|heim|heis|mif1|msf1)$/.test(b.toString("latin1", 8, 12))) {
-    return "image/heic";
-  }
-  return null;
-}
-
 export type EnquiryFile = {
   /** Object key in the bucket. */
   path: string;
@@ -110,7 +109,7 @@ export type EnquiryFile = {
 
 export type EnquiryFiles = {
   files: EnquiryFile[];
-  /** Names dropped because the contents weren't a PDF or image, or the batch ran over a limit. */
+  /** Names dropped because the contents weren't an accepted type, or the batch ran over a limit. */
   rejected: string[];
   /** Every object in the batch, kept or not — what `discardUploads` removes. */
   paths: string[];
@@ -142,7 +141,7 @@ export async function collectUploads(uploadId: string): Promise<EnquiryFiles> {
       continue;
     }
     const bytes = Buffer.from(await blob.arrayBuffer());
-    if (!sniff(bytes)) {
+    if (!sniffUpload(bytes)) {
       out.rejected.push(filename);
       continue;
     }

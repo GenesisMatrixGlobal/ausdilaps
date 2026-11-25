@@ -53,6 +53,10 @@ export const quoteSchema = z.object({
   company_website: z.string().max(200).optional().default(""), // honeypot — must stay empty
   turnstileToken: z.string().max(4096).optional().default(""),
   sourcePage: z.string().max(300).optional().default(""),
+  // Attachments: the files are already in storage (see lib/enquiry-uploads.ts); these two
+  // say which batch, and prove /api/quote/uploads issued it.
+  uploadId: z.string().max(60).optional().default(""),
+  uploadTicket: z.string().max(64).optional().default(""),
 });
 
 export type QuoteInput = z.infer<typeof quoteSchema>;

@@ -5,6 +5,7 @@ import { useForm, useWatch, type UseFormRegister } from "react-hook-form";
 import { Check, FileText, MailOpen, MessageCircle, ClipboardList, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Turnstile } from "@/components/marketing/turnstile";
+import { AttachmentsField, UploadError, uploadAttachments } from "@/components/marketing/enquiry-attachments";
 import { cn } from "@/lib/utils";
 import {
   PROPERTY_ROLES,
@@ -254,6 +255,10 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
   const [turnstileToken, setTurnstileToken] = useState("");
   // Bumped to hand the widget a fresh token after a failed submit (tokens are single-use).
   const [turnstileResets, setTurnstileResets] = useState(0);
+  // Not a react-hook-form field: a File can't go in the JSON body, so these are uploaded
+  // to storage first and the form posts a reference to them.
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
   const successRef = useRef<HTMLDivElement>(null);
 
   // Bring the confirmation into view. The form is long enough that submitting from
@@ -315,11 +320,21 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
       // e.g. "/quote?src=pamphlet" — the tag is the only query kept, so ad-click junk
       // (gclid, utm_*) never lands in "Came from".
       const src = enquirySource();
+      let upload: { uploadId: string; uploadTicket: string } | undefined;
+      if (attachments.length > 0) {
+        setUploading(true);
+        try {
+          upload = await uploadAttachments(attachments, turnstileToken);
+        } finally {
+          setUploading(false);
+        }
+      }
       const res = await fetch("/api/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...values,
+          ...upload,
           projectLocation,
           contactAddress,
           turnstileToken,
@@ -330,6 +345,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
       if (res.ok && data.ok) {
         setStatus("success");
         reset();
+        setAttachments([]);
       } else {
         setStatus("error");
         // A Turnstile token is single-use, so the retry needs a fresh one.
@@ -359,7 +375,11 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
       console.error("[quote] submit failed:", e);
       setTurnstileResets((n) => n + 1);
       setStatus("error");
-      setServerError("Something went wrong. Please try again or call us on 1800 345 277.");
+      setServerError(
+        e instanceof UploadError
+          ? e.message
+          : "Something went wrong. Please try again or call us on 1800 345 277."
+      );
     }
   }
 
@@ -607,6 +627,10 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
               />
             </div>
           )}
+
+          {(isNewQuote || isAccessLetter || isReport || isGeneral) && (
+            <AttachmentsField files={attachments} onChange={setAttachments} labelClassName={labelCls} />
+          )}
         </div>
 
         {siteKey && (
@@ -626,7 +650,7 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
           disabled={isSubmitting}
           className={cn("mt-5 w-full", isSubmitting && "opacity-70")}
         >
-          {isSubmitting ? "Sending…" : (selected?.cta ?? "Send")}
+          {uploading ? "Uploading files…" : isSubmitting ? "Sending…" : (selected?.cta ?? "Send")}
         </Button>
         <p className="mt-3 text-center text-xs text-ad-muted">
           We only use your details to respond to this enquiry.{" "}
@@ -838,6 +862,8 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
         <textarea id="notes" rows={4} className={inputCls} {...register("notes")} />
       </div>
 
+      <AttachmentsField files={attachments} onChange={setAttachments} labelClassName={labelCls} className="mt-5" />
+
       <ContactMethodField register={register} className="mt-5" />
 
       {siteKey && (
@@ -851,8 +877,8 @@ export function QuoteForm({ variant = "full" }: { variant?: "full" | "compact" }
       )}
 
       <div className="mt-6 flex flex-wrap items-center gap-4">
-        <Button type="submit" size="lg" variant="accent" className={cn(isSubmitting && "opacity-70")}>
-          {isSubmitting ? "Sending…" : "Submit"}
+        <Button type="submit" size="lg" variant="accent" disabled={isSubmitting} className={cn(isSubmitting && "opacity-70")}>
+          {uploading ? "Uploading files…" : isSubmitting ? "Sending…" : "Submit"}
         </Button>
         <p className="text-xs text-ad-muted">
           We use your details to respond to your enquiry. See our{" "}

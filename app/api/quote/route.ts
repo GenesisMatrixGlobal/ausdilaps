@@ -8,29 +8,25 @@ import { formatBrisbane } from "@/lib/dates";
 import { enquiryAckEmail } from "@/lib/emails/enquiry-ack";
 import { accessCodes } from "@/lib/samples-access";
 import { looksLikeJunk } from "@/lib/spam";
+import { checkTurnstile } from "@/lib/turnstile";
+import {
+  collectUploads,
+  discardUploads,
+  keepUploadsForLead,
+  ticketIsValid,
+  type EnquiryFiles,
+} from "@/lib/enquiry-uploads";
+import { formatBytes } from "@/lib/enquiry-uploads-options";
 
-/** Once per cold start, not per submission. */
-let warnedUnprotected = false;
-
-async function verifyTurnstile(secret: string, token: string, ip: string | null) {
-  try {
-    const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ secret, response: token, ...(ip ? { remoteip: ip } : {}) }),
-    });
-    const data = (await res.json()) as { success?: boolean };
-    return !!data.success;
-  } catch {
-    return false;
-  }
-}
+// Attachments are read back from storage and re-sent to Resend, up to ~27 MB encoded.
+export const maxDuration = 60;
 
 async function sendEmails(
   d: QuoteInput,
   tier: LeadTier,
   testMode: boolean,
-  leadId: string | null
+  leadId: string | null,
+  uploads: EnquiryFiles
 ): Promise<{ adminSent: boolean; ackSent: boolean }> {
   const key = process.env.RESEND_API_KEY;
   if (!key) return { adminSent: false, ackSent: false };
@@ -69,16 +65,27 @@ async function sendEmails(
     ["Submitted", submittedAt],
     ["Lead ID", leadId ?? "not saved — check Supabase"],
   ];
-  const tableRows = rows
-    .map(([k, v]) => {
-      const blank = v === undefined || v === null || v === "";
-      const value = blank ? "\u2014" : escapeHtml(String(v));
-      const style = blank
-        ? "color:#9ca3af;font-weight:400;"
-        : "color:#2f343a;font-weight:600;";
-      return `<tr><td style="padding:8px 0;color:#5b6570;width:210px;vertical-align:top;border-bottom:1px solid #f1f2f4;">${k}</td><td style="padding:8px 0;${style}vertical-align:top;border-bottom:1px solid #f1f2f4;">${value}</td></tr>`;
-    })
-    .join("");
+  const tableRow = (k: string, html: string) => {
+    const style = html ? "color:#2f343a;font-weight:600;" : "color:#9ca3af;font-weight:400;";
+    return `<tr><td style="padding:8px 0;color:#5b6570;width:210px;vertical-align:top;border-bottom:1px solid #f1f2f4;">${k}</td><td style="padding:8px 0;${style}vertical-align:top;border-bottom:1px solid #f1f2f4;">${html || "\u2014"}</td></tr>`;
+  };
+  // The Attachments cell: names when the files ride along on the email, download links
+  // when they couldn't be attached (`links`, the fallback further down).
+  const attachmentsCell = (links?: { filename: string; url: string }[]) => {
+    const parts = links
+      ? links.map((l) => `<a href="${escapeHtml(l.url)}" style="color:#46688a;">${escapeHtml(l.filename)}</a>`)
+      : uploads.files.map((f) => `${escapeHtml(f.filename)} (${formatBytes(f.bytes.length)})`);
+    if (links && links.length > 0) parts.push("Links expire in 7 days.");
+    if (uploads.rejected.length > 0) {
+      parts.push(`Not included (wrong type or over the size limit): ${uploads.rejected.map(escapeHtml).join(", ")}`);
+    }
+    return parts.join("<br>");
+  };
+  const tableRows = (attachmentsHtml: string) =>
+    rows
+      .map(([k, v]) => tableRow(k, v === undefined || v === null || v === "" ? "" : escapeHtml(String(v))))
+      .concat(tableRow("Attachments", attachmentsHtml))
+      .join("");
 
   const send = async (payload: Record<string, unknown>) => {
     const res = await fetch("https://api.resend.com/emails", {
@@ -125,7 +132,7 @@ async function sendEmails(
   ].filter((address, i, all) => address !== adminEmail && all.indexOf(address) === i);
 
   // Admin notice
-  const adminSent = await send({
+  const adminNotice = (attachmentsHtml: string) => ({
     from,
     to: [adminEmail],
     ...(cc.length > 0 ? { cc } : {}),
@@ -133,13 +140,37 @@ async function sendEmails(
     subject: `${enquiryLabel} — ${d.name}${d.company ? ` (${d.company})` : ""}${tier === "tier1" ? " · TIER 1" : ""}`,
     html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;color:#2f343a;">
       <h2 style="margin:0 0 20px;">${enquiryLabel} — ausdilaps.com.au</h2>
-      <table style="width:100%;border-collapse:collapse;">${tableRows}</table>
+      <table style="width:100%;border-collapse:collapse;">${tableRows(attachmentsHtml)}</table>
       <div style="margin-top:20px;padding-top:20px;border-top:1px solid #eee;">
         <p style="color:#5b6570;margin:0 0 8px;">Notes</p>
         <p style="white-space:pre-wrap;margin:0;${d.notes ? "" : "color:#9ca3af;"}">${d.notes ? escapeHtml(d.notes) : "\u2014"}</p>
       </div>
     </div>`,
   });
+
+  let adminSent = await send({
+    ...adminNotice(attachmentsCell()),
+    ...(uploads.files.length > 0
+      ? {
+          attachments: uploads.files.map((f) => ({
+            filename: f.filename,
+            content: f.bytes.toString("base64"),
+          })),
+        }
+      : {}),
+  });
+  if (uploads.paths.length > 0) {
+    if (adminSent || uploads.files.length === 0) {
+      // The email is the record from here; nothing stays in storage.
+      await discardUploads(uploads.paths);
+    } else if (leadId) {
+      // ⚠️ An attachment must never cost us the enquiry. If the send with files was refused
+      // (too big for Resend, a file it won't carry), send the notice again without them and
+      // link to the files instead, which are kept under the lead's id.
+      const links = await keepUploadsForLead(leadId, uploads.files);
+      adminSent = await send(adminNotice(attachmentsCell(links)));
+    }
+  }
 
   // Acknowledgement (routed to admin in test mode). Content is per enquiry type and lives in
   // lib/emails/enquiry-ack.ts — pure, so `npm run check:ack` renders every branch.
@@ -187,31 +218,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // Turnstile. Enforced whenever the widget is on the form (site key set) — and then a
-  // missing secret FAILS CLOSED rather than quietly waving every submission through, which
-  // is what the 2026-09-10 sweep found production doing on the honeypot alone. With
-  // NEITHER key set the form still works, unprotected, and says so once per cold start:
-  // taking the enquiry form down over a missing env var is worse than spam.
+  // Turnstile (lib/turnstile.ts says what each outcome means). A submission WITH attachments
+  // already passed it at /api/quote/uploads, which spent the single-use token; the ticket
+  // that route issued stands in for it here. The ticket is itself good for one submission:
+  // once the files are attached or moved, the batch reads back empty.
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-  const tsSecret = process.env.TURNSTILE_SECRET_KEY;
-  const tsSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-  if (tsSecret) {
-    const ok = await verifyTurnstile(tsSecret, d.turnstileToken, ip);
-    if (!ok) {
+  let uploads: EnquiryFiles = { files: [], rejected: [], paths: [] };
+  if (d.uploadId) {
+    const retry = "Your attachments didn’t come through. Please add them again and resend.";
+    if (!ticketIsValid(d.uploadId, d.uploadTicket)) {
+      return NextResponse.json({ ok: false, error: retry }, { status: 400 });
+    }
+    try {
+      uploads = await collectUploads(d.uploadId);
+    } catch (e) {
+      console.error("[quote] could not read uploads:", e);
+    }
+    if (uploads.paths.length === 0) {
+      return NextResponse.json({ ok: false, error: retry }, { status: 400 });
+    }
+  } else {
+    const turnstile = await checkTurnstile(d.turnstileToken, ip);
+    if (turnstile === "failed") {
       return NextResponse.json(
         { ok: false, errors: { turnstileToken: ["Verification failed — please try again."] } },
         { status: 400 }
       );
     }
-  } else if (tsSiteKey) {
-    console.error("[quote] NEXT_PUBLIC_TURNSTILE_SITE_KEY is set but TURNSTILE_SECRET_KEY is not — refusing.");
-    return NextResponse.json(
-      { ok: false, error: "Verification is not configured. Please email us instead." },
-      { status: 503 }
-    );
-  } else if (!warnedUnprotected) {
-    warnedUnprotected = true;
-    console.warn("[quote] Turnstile is not configured — the enquiry form is running on the honeypot alone.");
+    if (turnstile === "unconfigured") {
+      return NextResponse.json(
+        { ok: false, error: "Verification is not configured. Please email us instead." },
+        { status: 503 }
+      );
+    }
   }
 
   // Junk filter — the backstop behind Turnstile, for a bot that pays to solve it. Accepted
@@ -219,6 +258,7 @@ export async function POST(req: NextRequest) {
   // land in the inbox of the stranger whose address the bot typed in. See lib/spam.ts.
   if (looksLikeJunk(d)) {
     console.info("[quote] submission dropped as junk");
+    await discardUploads(uploads.paths);
     return NextResponse.json({ ok: true });
   }
 
@@ -273,7 +313,7 @@ export async function POST(req: NextRequest) {
   let emailed = false;
   let ackEmailed: boolean | null = null;
   try {
-    const sent = await sendEmails(d, tier, testMode, leadId);
+    const sent = await sendEmails(d, tier, testMode, leadId, uploads);
     emailed = sent.adminSent;
     ackEmailed = sent.ackSent;
   } catch (e) {

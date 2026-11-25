@@ -1,13 +1,38 @@
-// What an uploaded file actually is, judged by its bytes.
+// Pure helpers for an uploaded file: what it is called, and what its bytes actually are.
 //
 // Kept apart from lib/enquiry-uploads.ts (which is `server-only`) and import-free, so a tsx
-// script can run it against real files.
+// script can run them against real files.
+
+/** The uploader's own file name, made safe to show and attach: no path separators or control
+ *  characters, and capped from the front so the extension survives. Everything else — brackets,
+ *  ampersands, accents — is kept as typed. */
+export function cleanUploadName(name: string): string {
+  const cleaned = name.replace(/[\u0000-\u001f\u007f/\\]+/g, "_").replace(/\s+/g, " ").trim();
+  return cleaned.slice(-100) || "file";
+}
+
+/**
+ * The object name a file is stored under: its position, then its name in base64url.
+ *
+ * Storage only allows a narrow set of characters in a key, and swapping the rest for `_`
+ * turned "Plan (rev B).pdf" into "Plan _rev B_.pdf" on the email. Encoding the name carries
+ * ANY name through untouched, and there is no table to keep it in otherwise.
+ */
+export function uploadKeyFor(position: number, name: string): string {
+  return `${position}-${Buffer.from(cleanUploadName(name), "utf8").toString("base64url")}`;
+}
+
+/** The file name back out of `uploadKeyFor`'s object name. */
+export function nameFromUploadKey(key: string): string {
+  return cleanUploadName(Buffer.from(key.replace(/^\d+-/, ""), "base64url").toString("utf8"));
+}
 
 /**
  * The kind of file these bytes are, whatever it was called. Null = not something we take.
  *
- * The object key is server-minted with an allowed extension, so nothing can arrive NAMED
- * as a program; this is the second check, that the contents are a document too.
+ * A file's name is fixed when its upload URL is issued, and only allowed extensions get one,
+ * so nothing can arrive NAMED as a program; this is the second check, that the contents are
+ * a document too.
  */
 export function sniffUpload(b: Buffer): string | null {
   if (b.subarray(0, 1024).includes("%PDF-")) return "pdf";

@@ -2,7 +2,7 @@ import "server-only";
 import { createHmac, randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { secretMatches } from "@/lib/auth/shared-secret";
-import { sniffUpload } from "@/lib/enquiry-upload-sniff";
+import { cleanUploadName, nameFromUploadKey, sniffUpload, uploadKeyFor } from "@/lib/enquiry-upload-sniff";
 import {
   MAX_UPLOAD_FILES,
   MAX_UPLOAD_FILE_BYTES,
@@ -72,12 +72,6 @@ export function ticketIsValid(uploadId: string, ticket: string): boolean {
   return secretMatches(ticket, ticketFor(uploadId));
 }
 
-/** Keeps a readable name for the email while staying a valid single-segment object key. */
-function safeName(name: string): string {
-  const cleaned = name.replace(/[^A-Za-z0-9._ -]+/g, "_").replace(/\s+/g, " ").trim();
-  return cleaned.slice(-100) || "file";
-}
-
 export type UploadSlot = { signedUrl: string; contentType: string };
 
 /** Signed upload URLs for one submission's files, in the order given. */
@@ -89,11 +83,14 @@ export async function issueUploadSlots(
   const uploadId = `${Date.now()}-${randomUUID()}`;
   const uploads = await Promise.all(
     files.map(async (f, i) => {
+      // Judged on the cleaned name, because that is the name the email will carry.
+      const contentType = uploadTypeFor(cleanUploadName(f.name));
+      if (!contentType) throw new Error(`Not an accepted file type: ${f.name}`);
       const { data, error } = await bucket.createSignedUploadUrl(
-        `pending/${uploadId}/${i + 1}-${safeName(f.name)}`
+        `pending/${uploadId}/${uploadKeyFor(i + 1, f.name)}`
       );
       if (error || !data) throw new Error(`Could not prepare the upload: ${error?.message ?? "no data"}`);
-      return { signedUrl: data.signedUrl, contentType: uploadTypeFor(f.name) ?? "application/octet-stream" };
+      return { signedUrl: data.signedUrl, contentType };
     })
   );
   return { uploadId, ticket: ticketFor(uploadId), uploads };
@@ -102,7 +99,7 @@ export async function issueUploadSlots(
 export type EnquiryFile = {
   /** Object key in the bucket. */
   path: string;
-  /** The name shown in the email — the uploader's own, minus the `1-` ordering prefix. */
+  /** The name shown in the email — the uploader's own, decoded from the object key. */
   filename: string;
   bytes: Buffer;
 };
@@ -127,7 +124,7 @@ export async function collectUploads(uploadId: string): Promise<EnquiryFiles> {
   let total = 0;
   for (const entry of data ?? []) {
     const path = `${folder}/${entry.name}`;
-    const filename = entry.name.replace(/^\d+-/, "");
+    const filename = nameFromUploadKey(entry.name);
     out.paths.push(path);
     const size = Number((entry.metadata as { size?: number } | null)?.size ?? 0);
     if (out.files.length >= MAX_UPLOAD_FILES || total + size > MAX_UPLOAD_TOTAL_BYTES) {
@@ -176,7 +173,10 @@ export async function keepUploadsForLead(
   for (const f of files) {
     const kept = `leads/${leadId}/${f.path.split("/").pop()}`;
     const { error: moveError } = await bucket.move(f.path, kept);
-    const { data } = await bucket.createSignedUrl(moveError ? f.path : kept, 7 * 24 * 60 * 60);
+    // `download` gives the link the real file name; the object key is the encoded one.
+    const { data } = await bucket.createSignedUrl(moveError ? f.path : kept, 7 * 24 * 60 * 60, {
+      download: f.filename,
+    });
     if (data?.signedUrl) links.push({ filename: f.filename, url: data.signedUrl });
   }
   return links;
